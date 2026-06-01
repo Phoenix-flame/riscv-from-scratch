@@ -50,7 +50,7 @@ module cpu #(
     wire [2:0] funct3  = instr[14:12];
     wire [4:0] rs1_addr= instr[19:15];
     wire [4:0] rs2_addr= instr[24:20];
-    wire       funct7b5= instr[30];
+    wire [6:0] funct7  = instr[31:25];
 
     // -----------------------------------------------------------------
     // Control unit: opcode/funct -> control signals
@@ -59,10 +59,10 @@ module cpu #(
     wire       branch, jump, jalr;
     wire [1:0] wb_sel;
     wire [2:0] imm_type;
-    wire [3:0] alu_op;
+    wire [4:0] alu_op;
 
     control u_control (
-        .opcode(opcode), .funct3(funct3), .funct7b5(funct7b5),
+        .opcode(opcode), .funct3(funct3), .funct7(funct7),
         .reg_write(reg_write), .alu_src_a(alu_src_a), .alu_src_b(alu_src_b),
         .mem_read(mem_read), .mem_write(mem_write),
         .branch(branch), .jump(jump), .jalr(jalr),

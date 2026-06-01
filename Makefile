@@ -86,6 +86,31 @@ sw/irqdemo.hex: sw/irq_demo.c sw/firmware.c sw/firmware.h sw/crt0.s sw/link.ld s
 irq: sw/irqdemo.hex
 	$(IV) -o $(B)/irq_tb.vvp $(RTL_SOC) tb/irq_tb.v && $(VVP) $(B)/irq_tb.vvp
 
+# ---- RV32M demo (Step 16) -------------------------------------------
+sw/md.hex: sw/muldiv_demo.c sw/firmware.c sw/firmware.h sw/crt0.s sw/link.ld sw/bin2hex.py
+	riscv64-unknown-elf-gcc -march=rv32im -mabi=ilp32 -nostdlib \
+	  -nostartfiles -ffreestanding -fno-tree-loop-distribute-patterns -O1 \
+	  -I sw -T sw/link.ld sw/crt0.s sw/muldiv_demo.c sw/firmware.c \
+	  -o $(B)/md.elf -lgcc
+	riscv64-unknown-elf-objcopy -O binary $(B)/md.elf $(B)/md.bin
+	python3 sw/bin2hex.py $(B)/md.bin > sw/md.hex
+	riscv64-unknown-elf-objcopy -O verilog --verilog-data-width=1 \
+	  --only-section=.rodata --only-section=.data --only-section=.sdata \
+	  $(B)/md.elf /dev/stdout 2>/dev/null | tr -d '\r' > sw/md_data.hex
+
+muldiv: sw/md.hex
+	$(IV) -o $(B)/md_tb.vvp $(RTL_SOC) tb/md_tb.v && $(VVP) $(B)/md_tb.vvp
+
+# ---- Pipelined core (Step 17) ---------------------------------------
+RTL_PIPE = rtl/alu.v rtl/regfile.v rtl/imem.v rtl/dmem.v rtl/immgen.v \
+           rtl/control.v rtl/cpu_pipe.v
+
+pipe: sw/test_datapath.hex
+	$(IV) -o $(B)/pipe_tb.vvp $(RTL_PIPE) tb/pipe_tb.v && $(VVP) $(B)/pipe_tb.vvp
+
+pipe-sum: sw/sum.hex
+	$(IV) -o $(B)/pipe_sum_tb.vvp $(RTL_PIPE) tb/pipe_sum_tb.v && $(VVP) $(B)/pipe_sum_tb.vvp
+
 # ---- Synthesizable FPGA top + real UART (Step 14) -------------------
 RTL_FPGA = rtl/alu.v rtl/regfile.v rtl/imem.v rtl/dmem.v rtl/immgen.v \
            rtl/control.v rtl/csr.v rtl/timer.v rtl/uart_tx.v rtl/uart_hw.v \

@@ -41,6 +41,8 @@ sequence) and we will watch the registers change in the waveform viewer.
 | 13 | `docs/13-printf-without-libc.md` | Bonus: printf/snprintf via a mini-lib | **done & tested** |
 | 14 | `docs/14-fpga-zynq.md` | Bonus: real UART + synthesizable top for Zynq | **done & tested** |
 | 15 | `docs/15-interrupts.md` | Bonus: CSRs, traps & a timer interrupt | **done & tested** |
+| 16 | `docs/16-mul-div.md` | Bonus: multiply/divide (RV32M) | **done & tested** |
+| 17 | `docs/17-pipelining.md` | Bonus: a 5-stage pipelined core | **done & tested** |
 
 ## Directory layout
 
