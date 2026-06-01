@@ -62,6 +62,10 @@ sw/socdemo.hex: sw/soc_demo.c sw/crt0.s sw/link.ld sw/bin2hex.py
 	  -o $(B)/socdemo.elf
 	riscv64-unknown-elf-objcopy -O binary $(B)/socdemo.elf $(B)/socdemo.bin
 	python3 sw/bin2hex.py $(B)/socdemo.bin > sw/socdemo.hex
+	@# RAM image: initialized data (.rodata/.data) at its link addresses
+	riscv64-unknown-elf-objcopy -O verilog --verilog-data-width=1 \
+	  --only-section=.rodata --only-section=.data --only-section=.sdata \
+	  $(B)/socdemo.elf /dev/stdout 2>/dev/null | tr -d '\r' > sw/socdemo_data.hex
 
 soc: sw/socdemo.hex
 	$(IV) -o $(B)/soc_tb.vvp $(RTL_SOC) tb/soc_tb.v && $(VVP) $(B)/soc_tb.vvp

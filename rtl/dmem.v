@@ -13,7 +13,8 @@
 `default_nettype none
 
 module dmem #(
-    parameter BYTES = 1024            // capacity in bytes
+    parameter BYTES = 1024,           // capacity in bytes
+    parameter INIT_FILE = ""          // optional: preload RAM contents (hex bytes)
 ) (
     input  wire        clk,
     input  wire        we,            // store enable
@@ -27,7 +28,13 @@ module dmem #(
     reg [7:0] mem [0:BYTES-1];
 
     integer i;
-    initial for (i = 0; i < BYTES; i = i + 1) mem[i] = 8'd0;
+    initial begin
+        for (i = 0; i < BYTES; i = i + 1) mem[i] = 8'd0;
+        // Preload initialized data (.rodata/.data) so string and array
+        // constants are actually present in RAM. The file is byte-wide
+        // hex with @address records (see Step 12).
+        if (INIT_FILE != "") $readmemh(INIT_FILE, mem);
+    end
 
     wire [ABITS-1:0] a = addr[ABITS-1:0];
 

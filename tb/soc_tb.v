@@ -10,7 +10,7 @@ module soc_tb;
     reg clk, rst;
     wire [31:0] pc, instr;
 
-    soc #(.INIT_FILE("sw/socdemo.hex")) dut (
+    soc #(.INIT_FILE("sw/socdemo.hex"), .DATA_INIT("sw/socdemo_data.hex")) dut (
         .clk(clk), .rst(rst), .pc_out(pc), .instr_out(instr)
     );
 

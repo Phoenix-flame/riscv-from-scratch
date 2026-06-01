@@ -13,7 +13,8 @@
 `default_nettype none
 
 module soc #(
-    parameter INIT_FILE = ""
+    parameter INIT_FILE = "",
+    parameter DATA_INIT = ""          // RAM preload image (.rodata/.data)
 ) (
     input  wire        clk,
     input  wire        rst,
@@ -40,7 +41,7 @@ module soc #(
 
     // ---- RAM (reuse the dmem block as the system RAM) --------------
     wire [31:0] ram_rdata;
-    dmem #(.BYTES(4096)) u_ram (
+    dmem #(.BYTES(4096), .INIT_FILE(DATA_INIT)) u_ram (
         .clk(clk), .we(dwe && sel_ram),
         .addr(daddr), .wdata(dwdata), .funct3(dfunct3),
         .rdata(ram_rdata)
