@@ -11,14 +11,15 @@
  * register or memory.
  * ===================================================================== */
 
-
-int fib(int n)
+int sum_to(int n)
 {
-    if (n == 0 || n == 1) return 1;
-    return fib(n - 1) + fib(n - 2);
+    int sum = 0;
+    for (int i = 1; i <= n; i++)
+        sum += i;
+    return sum;
 }
 
 int main(void)
 {
-    return fib(5);   /* 55 */
+    return sum_to(10);   /* 55 */
 }

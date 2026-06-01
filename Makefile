@@ -51,6 +51,21 @@ sw/cprog.hex: sw/sum.c sw/crt0.s sw/link.ld sw/bin2hex.py
 cprog: sw/cprog.hex
 	$(IV) -o $(B)/c_tb.vvp $(RTL_CORE) tb/c_tb.v && $(VVP) $(B)/c_tb.vvp
 
+# ---- SoC with peripherals (Step 11) ---------------------------------
+RTL_SOC = rtl/alu.v rtl/regfile.v rtl/imem.v rtl/dmem.v rtl/immgen.v \
+          rtl/control.v rtl/uart.v rtl/timer.v rtl/syscon.v \
+          rtl/cpu_core.v rtl/soc.v
+
+sw/socdemo.hex: sw/soc_demo.c sw/crt0.s sw/link.ld sw/bin2hex.py
+	riscv64-unknown-elf-gcc -march=rv32i -mabi=ilp32 -nostdlib \
+	  -nostartfiles -ffreestanding -O1 -T sw/link.ld sw/crt0.s sw/soc_demo.c \
+	  -o $(B)/socdemo.elf
+	riscv64-unknown-elf-objcopy -O binary $(B)/socdemo.elf $(B)/socdemo.bin
+	python3 sw/bin2hex.py $(B)/socdemo.bin > sw/socdemo.hex
+
+soc: sw/socdemo.hex
+	$(IV) -o $(B)/soc_tb.vvp $(RTL_SOC) tb/soc_tb.v && $(VVP) $(B)/soc_tb.vvp
+
 wave-cpu:
 	gtkwave $(B)/cpu_tb.vcd &
 
