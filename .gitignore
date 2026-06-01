@@ -1,1 +1,4 @@
 build/*
+sw/*.hex
+sw/*.o
+sw/*.elf
