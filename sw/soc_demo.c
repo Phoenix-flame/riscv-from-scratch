@@ -1,19 +1,28 @@
-/* soc_demo.c - drive peripherals; now WITH a string constant in .rodata */
-#define UART_TX  (*(volatile unsigned char *)0x10000000)
-#define TIMER    (*(volatile unsigned int  *)0x10010000)
-#define SYSCON   (*(volatile unsigned int  *)0x20000000)
-#define RAM0     (*(volatile unsigned int  *)0x00000000)
+/* =====================================================================
+ * soc_demo.c  -  Uses the freestanding mini-library (firmware.h) for
+ * printf/snprintf-style output over the UART. No host libc needed.
+ * ===================================================================== */
+#include "firmware.h"
 
-static void uart_putc(char c) { UART_TX = (unsigned char)c; }
-static void uart_puts(const char* msg, int len) {
-    for (int i = 0; i < len; i++) uart_putc(msg[i]);
-}
-int main(void) {
-    uart_puts("Hello World from my custom risc-v processor ...\n", 49);
+#define RAM0 (*(volatile unsigned int *)0x00000000)
+
+int main(void)
+{
+    char buffer[100];
+
+    ksnprintf(buffer, sizeof buffer, "Test %02d", 5);
+    kprintf("%s\n", buffer);
+
+    kprintf("Hello World from my custom risc-v processor ...\n");
+    kprintf("formatting: dec=%d  uns=%u  hex=0x%08x  char=%c\n",
+            -42, 1234u, 0xCAFE, '!');
+
     unsigned t0 = TIMER;
-    for (volatile int i = 0; i < 5; i++) { }
+    for (volatile int i = 0; i < 5; i++) { /* burn cycles */ }
     unsigned t1 = TIMER;
+
     RAM0 = t1 - t0;
-    SYSCON = 0;
-    for (;;) { }
+    kprintf("loop took %u timer cycles\n", t1 - t0);
+
+    halt(0);            /* SYSCON write -> stop simulation */
 }

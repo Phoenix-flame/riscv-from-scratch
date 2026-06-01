@@ -27,8 +27,10 @@ module soc_tb;
         $display("---- UART output ----");
         rst = 1; @(posedge clk); #1; rst = 0;
 
-        // Safety timeout: the program should halt itself well before this.
-        repeat (2000) @(posedge clk);
+        // Safety timeout: printf with software divide is slow, so allow
+        // plenty of cycles. The program halts itself via syscon well
+        // before this when working correctly.
+        repeat (500000) @(posedge clk);
         $display("\n[testbench] TIMEOUT - syscon halt never happened");
         $finish;
     end

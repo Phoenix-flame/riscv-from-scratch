@@ -35,6 +35,7 @@ sequence) and we will watch the registers change in the waveform viewer.
 | 10 | `docs/10-running-c.md` | Bonus: compile C and run it | **done & tested** |
 | 11 | `docs/11-peripherals.md` | Bonus: UART, timer & a bus (SoC) | **done & tested** |
 | 12 | `docs/12-initialized-data.md` | Bonus: string/array constants in RAM | **done & tested** |
+| 13 | `docs/13-printf-without-libc.md` | Bonus: printf/snprintf via a mini-lib | **done & tested** |
 
 ## Directory layout
 

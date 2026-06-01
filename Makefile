@@ -56,10 +56,11 @@ RTL_SOC = rtl/alu.v rtl/regfile.v rtl/imem.v rtl/dmem.v rtl/immgen.v \
           rtl/control.v rtl/uart.v rtl/timer.v rtl/syscon.v \
           rtl/cpu_core.v rtl/soc.v
 
-sw/socdemo.hex: sw/soc_demo.c sw/crt0.s sw/link.ld sw/bin2hex.py
+sw/socdemo.hex: sw/soc_demo.c sw/firmware.c sw/firmware.h sw/crt0.s sw/link.ld sw/bin2hex.py
 	riscv64-unknown-elf-gcc -march=rv32i -mabi=ilp32 -nostdlib \
-	  -nostartfiles -ffreestanding -O1 -T sw/link.ld sw/crt0.s sw/soc_demo.c \
-	  -o $(B)/socdemo.elf
+	  -nostartfiles -ffreestanding -fno-tree-loop-distribute-patterns -O1 \
+	  -I sw -T sw/link.ld sw/crt0.s sw/soc_demo.c sw/firmware.c \
+	  -o $(B)/socdemo.elf -lgcc
 	riscv64-unknown-elf-objcopy -O binary $(B)/socdemo.elf $(B)/socdemo.bin
 	python3 sw/bin2hex.py $(B)/socdemo.bin > sw/socdemo.hex
 	@# RAM image: initialized data (.rodata/.data) at its link addresses
