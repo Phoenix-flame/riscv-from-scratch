@@ -20,10 +20,13 @@ module timer (
     input  wire        we,
     input  wire [7:0]  addr,
     input  wire [31:0] wdata,
-    output reg  [31:0] rdata
+    output reg  [31:0] rdata,
+    output wire        irq          // level: MTIME >= MTIMECMP
 );
     reg [31:0] mtime;
     reg [31:0] mtimecmp;
+
+    assign irq = (mtime >= mtimecmp);
 
     always @(posedge clk) begin
         if (rst) begin

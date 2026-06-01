@@ -53,7 +53,7 @@ cprog: sw/cprog.hex
 
 # ---- SoC with peripherals (Step 11) ---------------------------------
 RTL_SOC = rtl/alu.v rtl/regfile.v rtl/imem.v rtl/dmem.v rtl/immgen.v \
-          rtl/control.v rtl/uart.v rtl/timer.v rtl/syscon.v \
+          rtl/control.v rtl/csr.v rtl/uart.v rtl/timer.v rtl/syscon.v \
           rtl/cpu_core.v rtl/soc.v
 
 sw/socdemo.hex: sw/soc_demo.c sw/firmware.c sw/firmware.h sw/crt0.s sw/link.ld sw/bin2hex.py
@@ -71,9 +71,24 @@ sw/socdemo.hex: sw/soc_demo.c sw/firmware.c sw/firmware.h sw/crt0.s sw/link.ld s
 soc: sw/socdemo.hex
 	$(IV) -o $(B)/soc_tb.vvp $(RTL_SOC) tb/soc_tb.v && $(VVP) $(B)/soc_tb.vvp
 
+# ---- Timer interrupt demo (Step 15) ---------------------------------
+sw/irqdemo.hex: sw/irq_demo.c sw/firmware.c sw/firmware.h sw/crt0.s sw/link.ld sw/bin2hex.py
+	riscv64-unknown-elf-gcc -march=rv32i_zicsr -mabi=ilp32 -nostdlib \
+	  -nostartfiles -ffreestanding -fno-tree-loop-distribute-patterns -O1 \
+	  -I sw -T sw/link.ld sw/crt0.s sw/irq_demo.c sw/firmware.c \
+	  -o $(B)/irqdemo.elf -lgcc
+	riscv64-unknown-elf-objcopy -O binary $(B)/irqdemo.elf $(B)/irqdemo.bin
+	python3 sw/bin2hex.py $(B)/irqdemo.bin > sw/irqdemo.hex
+	riscv64-unknown-elf-objcopy -O verilog --verilog-data-width=1 \
+	  --only-section=.rodata --only-section=.data --only-section=.sdata \
+	  $(B)/irqdemo.elf /dev/stdout 2>/dev/null | tr -d '\r' > sw/irqdemo_data.hex
+
+irq: sw/irqdemo.hex
+	$(IV) -o $(B)/irq_tb.vvp $(RTL_SOC) tb/irq_tb.v && $(VVP) $(B)/irq_tb.vvp
+
 # ---- Synthesizable FPGA top + real UART (Step 14) -------------------
 RTL_FPGA = rtl/alu.v rtl/regfile.v rtl/imem.v rtl/dmem.v rtl/immgen.v \
-           rtl/control.v rtl/timer.v rtl/uart_tx.v rtl/uart_hw.v \
+           rtl/control.v rtl/csr.v rtl/timer.v rtl/uart_tx.v rtl/uart_hw.v \
            rtl/cpu_core.v rtl/fpga_top.v
 
 uart_tx:

@@ -36,9 +36,10 @@ module fpga_top #(
     wire        dwe;
     wire [2:0]  dfunct3;
     wire [31:0] pc, instr;
+    wire        timer_irq;
 
     cpu_core #(.INIT_FILE(INIT_FILE)) u_core (
-        .clk(clk), .rst(rst),
+        .clk(clk), .rst(rst), .timer_irq(timer_irq),
         .pc_out(pc), .instr_out(instr),
         .dmem_addr(daddr), .dmem_wdata(dwdata), .dmem_we(dwe),
         .dmem_funct3(dfunct3), .dmem_rdata(drdata)
@@ -68,7 +69,7 @@ module fpga_top #(
     wire [31:0] timer_rdata;
     timer u_timer (
         .clk(clk), .rst(rst), .sel(sel_timer), .we(dwe && sel_timer),
-        .addr(daddr[7:0]), .wdata(dwdata), .rdata(timer_rdata)
+        .addr(daddr[7:0]), .wdata(dwdata), .rdata(timer_rdata), .irq(timer_irq)
     );
 
     // ---- "syscon" halt: no $finish in hardware; light an LED instead ----

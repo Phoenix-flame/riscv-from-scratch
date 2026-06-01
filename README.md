@@ -5,6 +5,9 @@ processor in Verilog, simulated with **Icarus Verilog** and inspected with
 **GTKWave**, on **Ubuntu 24.04**. Every module is delivered with a
 self-checking testbench, so you always know whether a step works.
 
+> _Developed collaboratively with Claude (Anthropic) — RTL, tests, software,
+> and docs._
+
 ## What you will end up with
 
 A processor that can execute real RISC-V machine code, including:
@@ -37,6 +40,7 @@ sequence) and we will watch the registers change in the waveform viewer.
 | 12 | `docs/12-initialized-data.md` | Bonus: string/array constants in RAM | **done & tested** |
 | 13 | `docs/13-printf-without-libc.md` | Bonus: printf/snprintf via a mini-lib | **done & tested** |
 | 14 | `docs/14-fpga-zynq.md` | Bonus: real UART + synthesizable top for Zynq | **done & tested** |
+| 15 | `docs/15-interrupts.md` | Bonus: CSRs, traps & a timer interrupt | **done & tested** |
 
 ## Directory layout
 
@@ -62,3 +66,11 @@ gtkwave build/alu_tb.vcd
 ```
 
 Start with `docs/00-overview.md`.
+
+## Acknowledgements
+
+This project was developed collaboratively with **Claude**, Anthropic's AI
+assistant. Claude helped design and write the RTL, the self-checking
+testbenches, the bare-metal software and toolchain flow, and all of the
+step-by-step tutorial documents — with each module built bottom-up and verified
+in simulation along the way.
