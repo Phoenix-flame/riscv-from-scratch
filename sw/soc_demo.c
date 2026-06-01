@@ -9,7 +9,7 @@ static void uart_puts(const char* msg, int len) {
     for (int i = 0; i < len; i++) uart_putc(msg[i]);
 }
 int main(void) {
-    uart_puts("Hello World\n", 12);
+    uart_puts("Hello World from my custom risc-v processor ...\n", 49);
     unsigned t0 = TIMER;
     for (volatile int i = 0; i < 5; i++) { }
     unsigned t1 = TIMER;
