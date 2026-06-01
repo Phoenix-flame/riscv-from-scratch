@@ -36,6 +36,7 @@ sequence) and we will watch the registers change in the waveform viewer.
 | 11 | `docs/11-peripherals.md` | Bonus: UART, timer & a bus (SoC) | **done & tested** |
 | 12 | `docs/12-initialized-data.md` | Bonus: string/array constants in RAM | **done & tested** |
 | 13 | `docs/13-printf-without-libc.md` | Bonus: printf/snprintf via a mini-lib | **done & tested** |
+| 14 | `docs/14-fpga-zynq.md` | Bonus: real UART + synthesizable top for Zynq | **done & tested** |
 
 ## Directory layout
 

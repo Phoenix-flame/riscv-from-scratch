@@ -71,6 +71,17 @@ sw/socdemo.hex: sw/soc_demo.c sw/firmware.c sw/firmware.h sw/crt0.s sw/link.ld s
 soc: sw/socdemo.hex
 	$(IV) -o $(B)/soc_tb.vvp $(RTL_SOC) tb/soc_tb.v && $(VVP) $(B)/soc_tb.vvp
 
+# ---- Synthesizable FPGA top + real UART (Step 14) -------------------
+RTL_FPGA = rtl/alu.v rtl/regfile.v rtl/imem.v rtl/dmem.v rtl/immgen.v \
+           rtl/control.v rtl/timer.v rtl/uart_tx.v rtl/uart_hw.v \
+           rtl/cpu_core.v rtl/fpga_top.v
+
+uart_tx:
+	$(IV) -o $(B)/uart_tx_tb.vvp rtl/uart_tx.v tb/uart_tx_tb.v && $(VVP) $(B)/uart_tx_tb.vvp
+
+fpga: sw/socdemo.hex
+	$(IV) -o $(B)/fpga_top_tb.vvp $(RTL_FPGA) tb/fpga_top_tb.v && $(VVP) $(B)/fpga_top_tb.vvp
+
 wave-cpu:
 	gtkwave $(B)/cpu_tb.vcd &
 

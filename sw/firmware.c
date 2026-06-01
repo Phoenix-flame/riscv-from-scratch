@@ -15,7 +15,10 @@ void    *memset(void *d, int c, unsigned n) { unsigned char *p = d; while (n--) 
 void    *memcpy(void *d, const void *s, unsigned n) { unsigned char *a = d; const unsigned char *b = s; while (n--) *a++ = *b++; return d; }
 
 /* ---- UART primitives ---- */
-void uart_putc(char c)        { UART_TX = (unsigned char)c; }
+/* Wait until the UART can accept a byte (STATUS bit0 = ready), then send.
+ * In the simulation model STATUS always reads ready, so this is a no-op
+ * there; on real hardware it paces writes to the baud rate. */
+void uart_putc(char c)        { while (!(UART_ST & 1u)) { } UART_TX = (unsigned char)c; }
 void uart_puts(const char *s) { while (*s) uart_putc(*s++); }
 
 /* ---- formatting core ---- */

@@ -16,8 +16,6 @@
 #define TIMER    (*(volatile unsigned int  *)0x10010000)  /* MTIME   */
 #define SYSCON   (*(volatile unsigned int  *)0x20000000)  /* halt    */
 
-#define __NOP() __asm__ __volatile__("nop")
-
 /* ---- Minimal string/memory helpers ---- */
 unsigned strlen(const char *s);
 void    *memset(void *dst, int c, unsigned n);
