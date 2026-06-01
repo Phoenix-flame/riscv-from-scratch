@@ -1,0 +1,60 @@
+# Building a RISC-V CPU from Scratch (Simulation)
+
+A step-by-step tutorial that builds a working **RV32I** single-cycle
+processor in Verilog, simulated with **Icarus Verilog** and inspected with
+**GTKWave**, on **Ubuntu 24.04**. Every module is delivered with a
+self-checking testbench, so you always know whether a step works.
+
+## What you will end up with
+
+A processor that can execute real RISC-V machine code, including:
+
+- Integer arithmetic / logic (`add`, `sub`, `and`, `or`, `xor`, `slt`, ...)
+- Immediate instructions (`addi`, `andi`, `slli`, ...)
+- Loads and stores (`lw`, `sw`)
+- Branches and jumps (`beq`, `bne`, `blt`, `jal`, `jalr`)
+- Upper-immediate instructions (`lui`, `auipc`)
+
+It will run a small assembly program (computing a sum / a Fibonacci
+sequence) and we will watch the registers change in the waveform viewer.
+
+## Roadmap
+
+| Step | Document | What we build | Status |
+|------|----------|---------------|--------|
+| 00 | `docs/00-overview.md` | The plan, the ISA, the architecture | written |
+| 01 | `docs/01-environment-setup.md` | Install & verify the toolchain | written |
+| 02 | `docs/02-verilog-crash-course.md` | Verilog refresher tied to real code | written |
+| 03 | `docs/03-alu.md` | The ALU + testbench | **done & tested** |
+| 04 | `docs/04-register-file.md` | The 32-register file | **done & tested** |
+| 05 | `docs/05-memories.md` | Instruction & data memory | **done & tested** |
+| 06 | `docs/06-immediate-and-control.md` | Immediate decode + control unit | **done & tested** |
+| 07 | `docs/07-datapath.md` | Wiring the single-cycle datapath | **done & tested** |
+| 08 | `docs/08-program-and-run.md` | Assemble a program & run it | **done & tested** |
+| 09 | `docs/09-debugging-in-gtkwave.md` | Reading waveforms like a pro | **done & tested** |
+| 10 | `docs/10-running-c.md` | Bonus: compile C and run it | **done & tested** |
+
+## Directory layout
+
+```
+riscv-cpu-tutorial/
+├── README.md          <- this file
+├── docs/              <- the tutorial, one markdown file per step
+├── rtl/               <- synthesizable hardware (the CPU itself)
+├── tb/                <- testbenches (simulation-only checking code)
+├── sw/                <- assembly programs the CPU will run
+└── build/             <- compiled simulations + .vcd waveforms (generated)
+```
+
+## Quick start (after reading step 01)
+
+```bash
+# Compile and run the ALU test
+iverilog -g2012 -Wall -o build/alu_tb.vvp rtl/alu.v tb/alu_tb.v
+vvp build/alu_tb.vvp
+
+# Open its waveform
+gtkwave build/alu_tb.vcd
+```
+
+Start with `docs/00-overview.md`.
