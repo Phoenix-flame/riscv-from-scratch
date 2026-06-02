@@ -84,7 +84,20 @@ module cpu_core #(
 
     wire        irq_pending;
     wire [31:0] csr_rdata, mtvec_out, mepc_out;
-    wire        take_trap = irq_pending;   // single source: timer interrupt
+
+    // Illegal-instruction detection: opcodes we actually decode. Anything
+    // else faults instead of silently becoming a NOP. FENCE and SYSTEM are
+    // treated as legal (SYSTEM = CSR/mret; FENCE is a NOP on this in-order
+    // core). An interrupt is maskable (MIE); an illegal-instruction
+    // exception is NOT -- it always traps.
+    wire op_known =
+        (opcode==7'b0110011) || (opcode==7'b0010011) || (opcode==7'b0000011) ||
+        (opcode==7'b0100011) || (opcode==7'b1100011) || (opcode==7'b1101111) ||
+        (opcode==7'b1100111) || (opcode==7'b0110111) || (opcode==7'b0010111) ||
+        (opcode==7'b1110011) || (opcode==7'b0001111);   // + SYSTEM + FENCE
+    wire illegal_instr = ~op_known;
+
+    wire take_trap = illegal_instr | irq_pending;   // exception or interrupt
 
     csr u_csr (
         .clk(clk), .rst(rst),
@@ -93,6 +106,7 @@ module cpu_core #(
         .csr_rdata(csr_rdata),
         .pc(pc), .timer_irq(timer_irq),
         .instr_is_mret(is_mret & ~take_trap), .take_trap(take_trap),
+        .is_illegal(illegal_instr),
         .mtvec_out(mtvec_out), .mepc_out(mepc_out), .irq_pending(irq_pending)
     );
 

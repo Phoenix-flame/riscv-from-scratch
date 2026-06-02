@@ -28,10 +28,11 @@ module csr (
     output reg  [31:0] csr_rdata,   // current value (written to rd)
 
     // trap interface
-    input  wire [31:0] pc,          // PC of the interrupted instruction
+    input  wire [31:0] pc,          // PC of the interrupted/faulting instruction
     input  wire        timer_irq,   // level: timer says "fire"
     input  wire        instr_is_mret,
     input  wire        take_trap,   // computed in the core this cycle
+    input  wire        is_illegal,  // trap is a synchronous illegal-instruction
     output wire [31:0] mtvec_out,
     output wire [31:0] mepc_out,
     output wire        irq_pending  // MIE & MTIE & timer_irq
@@ -88,10 +89,12 @@ module csr (
             mepc     <= 32'd0;
             mcause   <= 32'd0;
         end else if (take_trap) begin
-            mepc        <= pc;                 // resume here after handler
-            mcause      <= 32'h8000_0007;      // interrupt, code 7 = M timer
-            mstatus[7]  <= mstatus[3];         // MPIE <- MIE
-            mstatus[3]  <= 1'b0;               // MIE  <- 0 (disable during ISR)
+            mepc       <= pc;                 // resume/faulting instruction
+            // illegal instruction = synchronous exception, cause 2 (bit31=0)
+            // timer interrupt      = asynchronous, cause 7 with bit31 set
+            mcause     <= is_illegal ? 32'h0000_0002 : 32'h8000_0007;
+            mstatus[7] <= mstatus[3];         // MPIE <- MIE
+            mstatus[3] <= 1'b0;               // MIE  <- 0 (disable during ISR)
         end else if (instr_is_mret) begin
             mstatus[3]  <= mstatus[7];         // MIE  <- MPIE
             mstatus[7]  <= 1'b1;               // MPIE <- 1

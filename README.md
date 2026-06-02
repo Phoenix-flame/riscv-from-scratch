@@ -43,6 +43,7 @@ sequence) and we will watch the registers change in the waveform viewer.
 | 15 | `docs/15-interrupts.md` | Bonus: CSRs, traps & a timer interrupt | **done & tested** |
 | 16 | `docs/16-mul-div.md` | Bonus: multiply/divide (RV32M) | **done & tested** |
 | 17 | `docs/17-pipelining.md` | Bonus: a 5-stage pipelined core | **done & tested** |
+| 18 | `docs/18-illegal-instruction-and-isa-faq.md` | FAQ: assembler vs hardware + illegal-instruction trap | **done & tested** |
 
 ## Directory layout
 

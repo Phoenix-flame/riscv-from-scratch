@@ -86,6 +86,21 @@ sw/irqdemo.hex: sw/irq_demo.c sw/firmware.c sw/firmware.h sw/crt0.s sw/link.ld s
 irq: sw/irqdemo.hex
 	$(IV) -o $(B)/irq_tb.vvp $(RTL_SOC) tb/irq_tb.v && $(VVP) $(B)/irq_tb.vvp
 
+# ---- Illegal-instruction trap demo (Step 18) ------------------------
+sw/ill.hex: sw/illegal_demo.c sw/firmware.c sw/firmware.h sw/crt0.s sw/link.ld sw/bin2hex.py
+	riscv64-unknown-elf-gcc -march=rv32i_zicsr -mabi=ilp32 -nostdlib \
+	  -nostartfiles -ffreestanding -fno-tree-loop-distribute-patterns -O1 \
+	  -I sw -T sw/link.ld sw/crt0.s sw/illegal_demo.c sw/firmware.c \
+	  -o $(B)/ill.elf -lgcc
+	riscv64-unknown-elf-objcopy -O binary $(B)/ill.elf $(B)/ill.bin
+	python3 sw/bin2hex.py $(B)/ill.bin > sw/ill.hex
+	riscv64-unknown-elf-objcopy -O verilog --verilog-data-width=1 \
+	  --only-section=.rodata --only-section=.data --only-section=.sdata \
+	  $(B)/ill.elf /dev/stdout 2>/dev/null | tr -d '\r' > sw/ill_data.hex
+
+illegal: sw/ill.hex
+	$(IV) -o $(B)/ill_tb.vvp $(RTL_SOC) tb/ill_tb.v && $(VVP) $(B)/ill_tb.vvp
+
 # ---- RV32M demo (Step 16) -------------------------------------------
 sw/md.hex: sw/muldiv_demo.c sw/firmware.c sw/firmware.h sw/crt0.s sw/link.ld sw/bin2hex.py
 	riscv64-unknown-elf-gcc -march=rv32im -mabi=ilp32 -nostdlib \
