@@ -126,6 +126,50 @@ pipe: sw/test_datapath.hex
 pipe-sum: sw/sum.hex
 	$(IV) -o $(B)/pipe_sum_tb.vvp $(RTL_PIPE) tb/pipe_sum_tb.v && $(VVP) $(B)/pipe_sum_tb.vvp
 
+# ---- ecall syscalls on the single-cycle core (Step 19) --------------
+sw/ec.hex: sw/ecall_demo.c sw/trap_handler.S sw/firmware.c sw/firmware.h sw/crt0.s sw/link.ld sw/bin2hex.py
+	riscv64-unknown-elf-gcc -march=rv32i_zicsr -mabi=ilp32 -nostdlib \
+	  -nostartfiles -ffreestanding -fno-tree-loop-distribute-patterns -O1 \
+	  -I sw -T sw/link.ld sw/crt0.s sw/trap_handler.S sw/ecall_demo.c sw/firmware.c \
+	  -o $(B)/ec.elf -lgcc
+	riscv64-unknown-elf-objcopy -O binary $(B)/ec.elf $(B)/ec.bin
+	python3 sw/bin2hex.py $(B)/ec.bin > sw/ec.hex
+	riscv64-unknown-elf-objcopy -O verilog --verilog-data-width=1 \
+	  --only-section=.rodata --only-section=.data --only-section=.sdata \
+	  $(B)/ec.elf /dev/stdout 2>/dev/null | tr -d '\r' > sw/ec_data.hex
+
+ecall: sw/ec.hex
+	$(IV) -o $(B)/ecall_tb.vvp $(RTL_SOC) tb/ecall_tb.v && $(VVP) $(B)/ecall_tb.vvp
+
+# ---- Machine/User privilege levels (Step 21) ------------------------
+sw/pv.hex: sw/priv_demo.c sw/ptrap.S sw/firmware.c sw/firmware.h sw/crt0.s sw/link.ld sw/bin2hex.py
+	riscv64-unknown-elf-gcc -march=rv32i_zicsr -mabi=ilp32 -nostdlib \
+	  -nostartfiles -ffreestanding -fno-tree-loop-distribute-patterns -O1 \
+	  -I sw -T sw/link.ld sw/crt0.s sw/ptrap.S sw/priv_demo.c sw/firmware.c \
+	  -o $(B)/pv.elf -lgcc
+	riscv64-unknown-elf-objcopy -O binary $(B)/pv.elf $(B)/pv.bin
+	python3 sw/bin2hex.py $(B)/pv.bin > sw/pv.hex
+	riscv64-unknown-elf-objcopy -O verilog --verilog-data-width=1 \
+	  --only-section=.rodata --only-section=.data --only-section=.sdata \
+	  $(B)/pv.elf /dev/stdout 2>/dev/null | tr -d '\r' > sw/pv_data.hex
+
+priv: sw/pv.hex
+	$(IV) -o $(B)/priv_tb.vvp $(RTL_SOC) tb/priv_tb.v && $(VVP) $(B)/priv_tb.vvp
+
+# ---- Pipelined core WITH precise traps (Step 20) --------------------
+RTL_SOCP = rtl/alu.v rtl/regfile.v rtl/imem.v rtl/dmem.v rtl/immgen.v \
+           rtl/control.v rtl/csr.v rtl/uart.v rtl/timer.v rtl/syscon.v \
+           rtl/cpu_pipe_trap.v rtl/soc_pipe.v
+
+pipe-irq: sw/irqdemo.hex
+	$(IV) -o $(B)/irq_pipe_tb.vvp $(RTL_SOCP) tb/irq_pipe_tb.v && $(VVP) $(B)/irq_pipe_tb.vvp
+
+pipe-ecall: sw/ec.hex
+	$(IV) -o $(B)/ecall_pipe_tb.vvp $(RTL_SOCP) tb/ecall_pipe_tb.v && $(VVP) $(B)/ecall_pipe_tb.vvp
+
+pipe-illegal: sw/ill.hex
+	$(IV) -o $(B)/ill_pipe_tb.vvp $(RTL_SOCP) tb/ill_pipe_tb.v && $(VVP) $(B)/ill_pipe_tb.vvp
+
 # ---- Synthesizable FPGA top + real UART (Step 14) -------------------
 RTL_FPGA = rtl/alu.v rtl/regfile.v rtl/imem.v rtl/dmem.v rtl/immgen.v \
            rtl/control.v rtl/csr.v rtl/timer.v rtl/uart_tx.v rtl/uart_hw.v \

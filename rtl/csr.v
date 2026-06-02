@@ -32,15 +32,20 @@ module csr (
     input  wire        timer_irq,   // level: timer says "fire"
     input  wire        instr_is_mret,
     input  wire        take_trap,   // computed in the core this cycle
-    input  wire        is_illegal,  // trap is a synchronous illegal-instruction
+    input  wire [31:0] trap_cause,  // mcause value to record on trap
     output wire [31:0] mtvec_out,
     output wire [31:0] mepc_out,
-    output wire        irq_pending  // MIE & MTIE & timer_irq
+    output wire        irq_pending, // MIE & MTIE & timer_irq
+    output wire [1:0]  cur_priv     // current privilege: 2'b11=M, 2'b00=U
 );
     localparam MSTATUS=12'h300, MIE_A=12'h304, MTVEC=12'h305,
                MSCRATCH=12'h340, MEPC=12'h341, MCAUSE=12'h342, MIP=12'h344;
+    localparam PRIV_M=2'b11, PRIV_U=2'b00;
 
     reg [31:0] mstatus, mie, mtvec, mscratch, mepc, mcause;
+    reg [1:0]  priv;                 // current privilege level
+
+    assign cur_priv = priv;
 
     wire mstatus_mie  = mstatus[3];
     wire mstatus_mpie = mstatus[7];
@@ -88,16 +93,19 @@ module csr (
             mscratch <= 32'd0;
             mepc     <= 32'd0;
             mcause   <= 32'd0;
+            priv     <= PRIV_M;               // reset into machine mode
         end else if (take_trap) begin
-            mepc       <= pc;                 // resume/faulting instruction
-            // illegal instruction = synchronous exception, cause 2 (bit31=0)
-            // timer interrupt      = asynchronous, cause 7 with bit31 set
-            mcause     <= is_illegal ? 32'h0000_0002 : 32'h8000_0007;
-            mstatus[7] <= mstatus[3];         // MPIE <- MIE
-            mstatus[3] <= 1'b0;               // MIE  <- 0 (disable during ISR)
+            mepc        <= pc;                 // resume/faulting instruction
+            mcause      <= trap_cause;         // supplied by the core
+            mstatus[7]  <= mstatus[3];         // MPIE <- MIE
+            mstatus[3]  <= 1'b0;               // MIE  <- 0 (disable during ISR)
+            mstatus[12:11] <= priv;            // MPP  <- privilege we came from
+            priv        <= PRIV_M;             // traps always enter M-mode
         end else if (instr_is_mret) begin
             mstatus[3]  <= mstatus[7];         // MIE  <- MPIE
             mstatus[7]  <= 1'b1;               // MPIE <- 1
+            priv        <= mstatus[12:11];     // restore privilege from MPP
+            mstatus[12:11] <= PRIV_U;          // MPP  <- least privilege (U)
         end else if (csr_we) begin
             case (csr_addr)
                 MSTATUS : mstatus  <= csr_next(mstatus,  csr_wsrc, csr_funct3);

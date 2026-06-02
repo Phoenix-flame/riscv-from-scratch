@@ -155,23 +155,16 @@ module cpu_pipe #(
     reg [4:0]  exmem_rd;
     reg [31:0] exmem_result;        // the value this instr will write back
 
-    // forwardA / forwardB: most recent producer wins (EX/MEM over MEM/WB)
-    function [1:0] fwd_sel;
-        input [4:0] src;
-        begin
-            if (exmem_reg_write && exmem_rd!=5'd0 && exmem_rd==src)      fwd_sel = 2'd1;
-            else if (wb_reg_write && wb_rd!=5'd0 && wb_rd==src)          fwd_sel = 2'd2;
-            else                                                        fwd_sel = 2'd0;
-        end
-    endfunction
-
-    wire [1:0] fa = fwd_sel(idex_rs1);
-    wire [1:0] fb = fwd_sel(idex_rs2);
-
-    wire [31:0] opA_fwd = (fa==2'd1) ? exmem_result :
-                          (fa==2'd2) ? wb_data      : idex_rs1d;
-    wire [31:0] opB_fwd = (fb==2'd1) ? exmem_result :
-                          (fb==2'd2) ? wb_data      : idex_rs2d;
+    // forwardA / forwardB as plain continuous assignments (a function call
+    // in an assign only re-evaluates on its arguments, not on exmem_*/wb_*,
+    // which drops forwards when adjacent instrs share a source register).
+    // Priority: EX/MEM (most recent) over MEM/WB.
+    wire fwdA_exmem = exmem_reg_write && exmem_rd!=0 && exmem_rd==idex_rs1;
+    wire fwdA_memwb = wb_reg_write    && wb_rd!=0    && wb_rd==idex_rs1;
+    wire fwdB_exmem = exmem_reg_write && exmem_rd!=0 && exmem_rd==idex_rs2;
+    wire fwdB_memwb = wb_reg_write    && wb_rd!=0    && wb_rd==idex_rs2;
+    wire [31:0] opA_fwd = fwdA_exmem ? exmem_result : fwdA_memwb ? wb_data : idex_rs1d;
+    wire [31:0] opB_fwd = fwdB_exmem ? exmem_result : fwdB_memwb ? wb_data : idex_rs2d;
 
     wire [31:0] alu_a = idex_alu_src_a ? idex_pc  : opA_fwd;
     wire [31:0] alu_b = idex_alu_src_b ? idex_imm : opB_fwd;

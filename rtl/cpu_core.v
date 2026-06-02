@@ -75,6 +75,10 @@ module cpu_core #(
     wire        is_csr    = is_system && (funct3 != 3'b000);
     wire        is_mret   = is_system && (funct3 == 3'b000) &&
                             (instr[31:20] == 12'h302);
+    wire        is_ecall  = is_system && (funct3 == 3'b000) &&
+                            (instr[31:20] == 12'h000);
+    wire        is_ebreak = is_system && (funct3 == 3'b000) &&
+                            (instr[31:20] == 12'h001);
     wire [11:0] csr_addr  = instr[31:20];
     wire [4:0]  zimm      = rs1_addr;                       // instr[19:15]
     // immediate CSR forms (funct3[2]==1) use zimm; others use rs1.
@@ -83,6 +87,8 @@ module cpu_core #(
     wire [31:0] csr_wsrc = funct3[2] ? {27'b0, zimm} : rs1_data;
 
     wire        irq_pending;
+    wire [1:0]  cur_priv;
+    wire        in_user = (cur_priv == 2'b00);
     wire [31:0] csr_rdata, mtvec_out, mepc_out;
 
     // Illegal-instruction detection: opcodes we actually decode. Anything
@@ -95,9 +101,20 @@ module cpu_core #(
         (opcode==7'b0100011) || (opcode==7'b1100011) || (opcode==7'b1101111) ||
         (opcode==7'b1100111) || (opcode==7'b0110111) || (opcode==7'b0010111) ||
         (opcode==7'b1110011) || (opcode==7'b0001111);   // + SYSTEM + FENCE
-    wire illegal_instr = ~op_known;
+    // Privilege protection: user mode may not execute mret or touch the
+    // machine CSRs. Attempting either is an illegal instruction.
+    wire priv_violation = in_user & (is_mret | is_csr);
+    wire illegal_instr  = ~op_known | priv_violation;
 
-    wire take_trap = illegal_instr | irq_pending;   // exception or interrupt
+    // Synchronous exceptions (unmaskable) plus the maskable timer interrupt.
+    wire exception = illegal_instr | is_ecall | is_ebreak;
+    wire take_trap = exception | irq_pending;
+    // mcause: priority illegal > ecall > ebreak > timer interrupt.
+    // ecall reports a different cause from user (8) vs machine (11) mode.
+    wire [31:0] trap_cause = illegal_instr ? 32'd2  :   // illegal instruction
+                             is_ecall       ? (in_user ? 32'd8 : 32'd11) :
+                             is_ebreak      ? 32'd3  :   // breakpoint
+                                              32'h8000_0007; // M timer interrupt
 
     csr u_csr (
         .clk(clk), .rst(rst),
@@ -106,8 +123,9 @@ module cpu_core #(
         .csr_rdata(csr_rdata),
         .pc(pc), .timer_irq(timer_irq),
         .instr_is_mret(is_mret & ~take_trap), .take_trap(take_trap),
-        .is_illegal(illegal_instr),
-        .mtvec_out(mtvec_out), .mepc_out(mepc_out), .irq_pending(irq_pending)
+        .trap_cause(trap_cause),
+        .mtvec_out(mtvec_out), .mepc_out(mepc_out), .irq_pending(irq_pending),
+        .cur_priv(cur_priv)
     );
 
     // ---- Register file ----------------------------------------------
