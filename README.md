@@ -51,6 +51,7 @@ sequence) and we will watch the registers change in the waveform viewer.
 | 23 | `docs/23-synthesizable-fpga.md` | Bonus: synthesizable BRAM SoC for Zynq-7010 (multi-cycle core) | **done & tested** |
 | 24 | `docs/24-synthesizable-mmu.md` | Bonus: synthesizable Sv32 MMU (multi-cycle page-table walker, BRAM page tables) | **done & tested** |
 | 25 | `docs/25-preemptive-multitasking.md` | Bonus: preemptive multitasking — timer-driven two-task scheduler | **done & tested** |
+| 26 | `docs/26-atomic-extension.md` | Bonus: RV32A atomic extension (LR/SC + AMOs) for locks & synchronization | **done & tested** |
 
 ## Directory layout
 

@@ -252,3 +252,17 @@ sw/sch.hex: sw/sched.c sw/sched_asm.S sw/firmware.h sw/crt0.s sw/link.ld sw/bin2
 
 sched: sw/sch.hex
 	$(IV) -o $(B)/sched_tb.vvp $(RTL_SOC) tb/sched_tb.v && $(VVP) $(B)/sched_tb.vvp
+
+# ---- A extension (atomics) demo ---------------------------------------
+sw/at.hex: sw/atomic_demo.c sw/firmware.c sw/firmware.h sw/crt0.s sw/link.ld sw/bin2hex.py
+	riscv64-unknown-elf-gcc -march=rv32ima_zicsr -mabi=ilp32 -nostdlib -nostartfiles \
+	  -ffreestanding -O1 -I sw -T sw/link.ld sw/crt0.s sw/firmware.c sw/atomic_demo.c \
+	  -o $(B)/at.elf -lgcc
+	riscv64-unknown-elf-objcopy -O binary $(B)/at.elf $(B)/at.bin
+	python3 sw/bin2hex.py $(B)/at.bin > sw/at.hex
+	riscv64-unknown-elf-objcopy -O verilog --verilog-data-width=1 --only-section=.rodata \
+	  $(B)/at.elf $(B)/at_data.vh
+	tr -d '\r' < $(B)/at_data.vh > sw/at_data.hex
+
+atomic: sw/at.hex
+	$(IV) -o $(B)/atomic_tb.vvp $(RTL_SOC) tb/atomic_tb.v && $(VVP) $(B)/atomic_tb.vvp

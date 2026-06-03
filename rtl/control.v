@@ -28,7 +28,7 @@ module control (
                OP_LOAD  = 7'b0000011, OP_STORE= 7'b0100011,
                OP_BR    = 7'b1100011, OP_JAL  = 7'b1101111,
                OP_JALR  = 7'b1100111, OP_LUI  = 7'b0110111,
-               OP_AUIPC = 7'b0010111;
+               OP_AUIPC = 7'b0010111, OP_AMO  = 7'b0101111;
 
     localparam IMM_I=3'b000, IMM_S=3'b001, IMM_B=3'b010, IMM_U=3'b011, IMM_J=3'b100;
     localparam WB_ALU=2'b00, WB_MEM=2'b01, WB_PC4=2'b10, WB_IMM=2'b11;
@@ -114,6 +114,13 @@ module control (
             OP_AUIPC: begin
                 reg_write=1'b1; alu_src_a=1'b1; alu_src_b=1'b1;
                 imm_type=IMM_U; alu_op=ALU_ADD; wb_sel=WB_ALU;
+            end
+            OP_AMO: begin
+                // A-extension (LR/SC/AMO). The core supplies the address
+                // (rs1, no immediate), the read-modify-write value, and the
+                // store-conditional result; here we just mark it as a
+                // register-writing memory op whose rd takes the loaded word.
+                reg_write=1'b1; mem_read=1'b1; wb_sel=WB_MEM; alu_op=ALU_ADD;
             end
             default: ;
         endcase

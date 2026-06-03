@@ -100,7 +100,7 @@ module cpu_core #(
         (opcode==7'b0110011) || (opcode==7'b0010011) || (opcode==7'b0000011) ||
         (opcode==7'b0100011) || (opcode==7'b1100011) || (opcode==7'b1101111) ||
         (opcode==7'b1100111) || (opcode==7'b0110111) || (opcode==7'b0010111) ||
-        (opcode==7'b1110011) || (opcode==7'b0001111);   // + SYSTEM + FENCE
+        (opcode==7'b1110011) || (opcode==7'b0001111) || (opcode==7'b0101111);  // +AMO
     // Privilege protection: user mode may not execute mret or touch the
     // machine CSRs. Attempting either is an illegal instruction.
     wire priv_violation = in_user & (is_mret | is_csr);
@@ -134,8 +134,9 @@ module cpu_core #(
     // Effective write enables: a trap suppresses the interrupted
     // instruction; a CSR instruction always writes its rd.
     wire reg_write_eff = take_trap ? 1'b0 : (is_csr ? 1'b1 : reg_write);
-    wire mem_write_eff = take_trap ? 1'b0 : mem_write;
-    wire [31:0] wb_final = is_csr ? csr_rdata : wb_data;
+    wire [31:0] wb_final = is_csr ? csr_rdata :
+                           is_sc  ? {31'b0, ~sc_ok} :   // SC: 0 = success, 1 = fail
+                                    wb_data;
 
     regfile u_regfile (
         .clk(clk), .we(reg_write_eff),
@@ -154,12 +155,49 @@ module cpu_core #(
         .result(alu_result), .zero(alu_zero)
     );
 
-    // ---- Data bus master (was the dmem instance) --------------------
-    assign dmem_addr   = alu_result;     // address = rs1 + imm
-    assign dmem_wdata  = rs2_data;
-    assign dmem_we     = mem_write_eff;
-    assign dmem_funct3 = funct3;
-    wire [31:0] mem_rdata = dmem_rdata;
+    // ---- Data bus master, with A-extension (atomics) ----------------
+    wire [31:0] mem_rdata = dmem_rdata;          // combinational read of old value
+
+    wire        is_amo_op  = (opcode == 7'b0101111);
+    wire [4:0]  amo_f5     = funct7[6:2];        // funct7 = {funct5, aq, rl}
+    wire        is_lr      = is_amo_op & (amo_f5 == 5'b00010);
+    wire        is_sc      = is_amo_op & (amo_f5 == 5'b00011);
+    wire        is_amo_rmw = is_amo_op & ~is_lr & ~is_sc;
+
+    // Atomic read-modify-write value: op(old memory value, rs2).
+    reg [31:0] amo_alu;
+    always @(*) begin
+        case (amo_f5)
+            5'b00001: amo_alu = rs2_data;                                // AMOSWAP
+            5'b00000: amo_alu = mem_rdata + rs2_data;                    // AMOADD
+            5'b00100: amo_alu = mem_rdata ^ rs2_data;                    // AMOXOR
+            5'b01100: amo_alu = mem_rdata & rs2_data;                    // AMOAND
+            5'b01000: amo_alu = mem_rdata | rs2_data;                    // AMOOR
+            5'b10000: amo_alu = ($signed(mem_rdata) < $signed(rs2_data)) ? mem_rdata : rs2_data; // AMOMIN
+            5'b10100: amo_alu = ($signed(mem_rdata) > $signed(rs2_data)) ? mem_rdata : rs2_data; // AMOMAX
+            5'b11000: amo_alu = (mem_rdata < rs2_data) ? mem_rdata : rs2_data; // AMOMINU
+            5'b11100: amo_alu = (mem_rdata > rs2_data) ? mem_rdata : rs2_data; // AMOMAXU
+            default:  amo_alu = rs2_data;
+        endcase
+    end
+
+    // LR/SC reservation: a single address watched on this hart.
+    reg         resv_valid;
+    reg  [31:0] resv_addr;
+    wire        sc_ok     = resv_valid & (resv_addr == rs1_data);
+    wire        amo_store = is_amo_rmw | (is_sc & sc_ok);   // ops that write memory
+
+    assign dmem_addr   = is_amo_op ? rs1_data : alu_result;  // atomics: addr = rs1, no imm
+    assign dmem_wdata  = is_amo_rmw ? amo_alu : rs2_data;    // RMW writes the computed value
+    assign dmem_we     = take_trap ? 1'b0 : (mem_write | amo_store);
+    assign dmem_funct3 = is_amo_op ? 3'b010 : funct3;        // atomics are word-sized
+
+    always @(posedge clk) begin
+        if (rst)                     resv_valid <= 1'b0;
+        else if (take_trap)          resv_valid <= 1'b0;     // a trap breaks an LR/SC pair
+        else if (is_lr)              begin resv_valid <= 1'b1; resv_addr <= rs1_data; end
+        else if (is_sc | is_amo_rmw) resv_valid <= 1'b0;     // SC and AMO clear the reservation
+    end
 
     // ---- Branch comparator -----------------------------------------
     reg branch_cond;
