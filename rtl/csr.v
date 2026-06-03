@@ -36,16 +36,19 @@ module csr (
     output wire [31:0] mtvec_out,
     output wire [31:0] mepc_out,
     output wire        irq_pending, // MIE & MTIE & timer_irq
-    output wire [1:0]  cur_priv     // current privilege: 2'b11=M, 2'b00=U
+    output wire [1:0]  cur_priv,    // current privilege: 2'b11=M, 2'b00=U
+    output wire [31:0] satp_out     // address-translation control (Sv32)
 );
     localparam MSTATUS=12'h300, MIE_A=12'h304, MTVEC=12'h305,
-               MSCRATCH=12'h340, MEPC=12'h341, MCAUSE=12'h342, MIP=12'h344;
+               MSCRATCH=12'h340, MEPC=12'h341, MCAUSE=12'h342, MIP=12'h344,
+               SATP=12'h180;
     localparam PRIV_M=2'b11, PRIV_U=2'b00;
 
-    reg [31:0] mstatus, mie, mtvec, mscratch, mepc, mcause;
+    reg [31:0] mstatus, mie, mtvec, mscratch, mepc, mcause, satp;
     reg [1:0]  priv;                 // current privilege level
 
     assign cur_priv = priv;
+    assign satp_out = satp;
 
     wire mstatus_mie  = mstatus[3];
     wire mstatus_mpie = mstatus[7];
@@ -79,6 +82,7 @@ module csr (
             MSCRATCH: csr_rdata = mscratch;
             MEPC    : csr_rdata = mepc;
             MCAUSE  : csr_rdata = mcause;
+            SATP    : csr_rdata = satp;
             MIP     : csr_rdata = {24'b0, timer_irq, 7'b0}; // MTIP at bit 7
             default : csr_rdata = 32'd0;
         endcase
@@ -93,6 +97,7 @@ module csr (
             mscratch <= 32'd0;
             mepc     <= 32'd0;
             mcause   <= 32'd0;
+            satp     <= 32'd0;
             priv     <= PRIV_M;               // reset into machine mode
         end else if (take_trap) begin
             mepc        <= pc;                 // resume/faulting instruction
@@ -114,6 +119,7 @@ module csr (
                 MSCRATCH: mscratch <= csr_next(mscratch, csr_wsrc, csr_funct3);
                 MEPC    : mepc     <= csr_next(mepc,     csr_wsrc, csr_funct3);
                 MCAUSE  : mcause   <= csr_next(mcause,   csr_wsrc, csr_funct3);
+                SATP    : satp     <= csr_next(satp,     csr_wsrc, csr_funct3);
                 default : ; // mip is read-only here
             endcase
         end

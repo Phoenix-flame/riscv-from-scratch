@@ -156,6 +156,25 @@ sw/pv.hex: sw/priv_demo.c sw/ptrap.S sw/firmware.c sw/firmware.h sw/crt0.s sw/li
 priv: sw/pv.hex
 	$(IV) -o $(B)/priv_tb.vvp $(RTL_SOC) tb/priv_tb.v && $(VVP) $(B)/priv_tb.vvp
 
+# ---- Sv32 virtual memory / MMU (Step 22) ----------------------------
+RTL_MMU = rtl/alu.v rtl/regfile.v rtl/imem.v rtl/dmem.v rtl/immgen.v \
+          rtl/control.v rtl/csr.v rtl/mmu.v rtl/uart.v rtl/timer.v \
+          rtl/syscon.v rtl/cpu_core_mmu.v rtl/soc_mmu.v
+
+sw/mm.hex: sw/mmu_demo.c sw/mtrap.S sw/firmware.c sw/firmware.h sw/crt0.s sw/link.ld sw/bin2hex.py
+	riscv64-unknown-elf-gcc -march=rv32i_zicsr -mabi=ilp32 -nostdlib \
+	  -nostartfiles -ffreestanding -fno-tree-loop-distribute-patterns -O1 \
+	  -I sw -T sw/link.ld sw/crt0.s sw/mtrap.S sw/mmu_demo.c sw/firmware.c \
+	  -o $(B)/mm.elf -lgcc
+	riscv64-unknown-elf-objcopy -O binary $(B)/mm.elf $(B)/mm.bin
+	python3 sw/bin2hex.py $(B)/mm.bin > sw/mm.hex
+	riscv64-unknown-elf-objcopy -O verilog --verilog-data-width=1 \
+	  --only-section=.rodata --only-section=.data --only-section=.sdata \
+	  $(B)/mm.elf /dev/stdout 2>/dev/null | tr -d '\r' > sw/mm_data.hex
+
+mmu: sw/mm.hex
+	$(IV) -o $(B)/mmu_tb.vvp $(RTL_MMU) tb/mmu_tb.v && $(VVP) $(B)/mmu_tb.vvp
+
 # ---- Pipelined core WITH precise traps (Step 20) --------------------
 RTL_SOCP = rtl/alu.v rtl/regfile.v rtl/imem.v rtl/dmem.v rtl/immgen.v \
            rtl/control.v rtl/csr.v rtl/uart.v rtl/timer.v rtl/syscon.v \
@@ -189,3 +208,33 @@ wave-sum:
 
 clean:
 	rm -f $(B)/*.vvp $(B)/*.vcd
+
+# ---- Synthesizable BRAM SoC for Zynq-7010 (Step 23) -----------------
+RTL_FPGA_FULL = rtl/alu.v rtl/regfile.v rtl/immgen.v rtl/control.v rtl/csr.v \
+                rtl/timer.v rtl/uart_tx.v rtl/uart_hw.v rtl/bram_rom.v \
+                rtl/bram_ram.v rtl/cpu_mc.v rtl/soc_fpga.v
+
+sw/fp.hex: sw/fpga_demo.c sw/firmware.h sw/crt0.s sw/link.ld sw/bin2hex.py
+	riscv64-unknown-elf-gcc -march=rv32im -mabi=ilp32 -nostdlib -nostartfiles \
+	  -ffreestanding -O1 -I sw -T sw/link.ld sw/crt0.s sw/fpga_demo.c \
+	  -o $(B)/fp.elf -lgcc
+	riscv64-unknown-elf-objcopy -O binary $(B)/fp.elf $(B)/fp.bin
+	python3 sw/bin2hex.py $(B)/fp.bin > sw/fp.hex
+
+fpga-full: sw/fp.hex
+	$(IV) -o $(B)/fpga_full_tb.vvp $(RTL_FPGA_FULL) tb/fpga_full_tb.v && $(VVP) $(B)/fpga_full_tb.vvp
+
+# ---- Synthesizable MMU on hardware (multi-cycle Sv32 walker, BRAM PTs) -
+RTL_FPGA_MMU = rtl/alu.v rtl/regfile.v rtl/immgen.v rtl/control.v rtl/csr.v \
+               rtl/timer.v rtl/uart_tx.v rtl/uart_hw.v rtl/bram_rom.v \
+               rtl/bram_ram.v rtl/cpu_mc_mmu.v rtl/soc_fpga_mmu.v
+
+sw/mh.hex: sw/mmu_hw_demo.c sw/mmu_htrap.S sw/firmware.h sw/crt0.s sw/link.ld sw/bin2hex.py
+	riscv64-unknown-elf-gcc -march=rv32im_zicsr -mabi=ilp32 -nostdlib -nostartfiles \
+	  -ffreestanding -O1 -I sw -T sw/link.ld sw/crt0.s sw/mmu_htrap.S sw/mmu_hw_demo.c \
+	  -o $(B)/mh.elf -lgcc
+	riscv64-unknown-elf-objcopy -O binary $(B)/mh.elf $(B)/mh.bin
+	python3 sw/bin2hex.py $(B)/mh.bin > sw/mh.hex
+
+mmu-hw: sw/mh.hex
+	$(IV) -o $(B)/mmu_hw_tb.vvp $(RTL_FPGA_MMU) tb/mmu_hw_tb.v && $(VVP) $(B)/mmu_hw_tb.vvp

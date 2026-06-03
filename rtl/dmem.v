@@ -21,11 +21,24 @@ module dmem #(
     input  wire [31:0] addr,          // byte address
     input  wire [31:0] wdata,         // data to store
     input  wire [2:0]  funct3,        // width/sign select (see header)
-    output reg  [31:0] rdata          // loaded data (sign/zero extended)
+    output reg  [31:0] rdata,         // loaded data (sign/zero extended)
+    // ---- page-table-walk read ports (combinational, word reads) ----
+    // Used by the MMU to fetch PTEs from RAM during translation. Unused
+    // (and harmless) when no MMU is attached.
+    input  wire [31:0] walk_addr1,
+    input  wire [31:0] walk_addr2,
+    output wire [31:0] walk_data1,
+    output wire [31:0] walk_data2
 );
     localparam ABITS = $clog2(BYTES);
 
     reg [7:0] mem [0:BYTES-1];
+
+    // word reads for the page walker
+    wire [ABITS-1:0] w1 = walk_addr1[ABITS-1:0];
+    wire [ABITS-1:0] w2 = walk_addr2[ABITS-1:0];
+    assign walk_data1 = {mem[w1+3], mem[w1+2], mem[w1+1], mem[w1]};
+    assign walk_data2 = {mem[w2+3], mem[w2+2], mem[w2+1], mem[w2]};
 
     integer i;
     initial begin

@@ -47,6 +47,9 @@ sequence) and we will watch the registers change in the waveform viewer.
 | 19 | `docs/19-ecall-syscalls.md` | Bonus: `ecall` system calls + a syscall ABI | **done & tested** |
 | 20 | `docs/20-pipelined-exceptions.md` | Bonus: precise exceptions/interrupts in the pipeline | **done & tested** |
 | 21 | `docs/21-privilege-modes.md` | Bonus: machine/user privilege levels + protection | **done & tested** |
+| 22 | `docs/22-mmu-virtual-memory.md` | Bonus: Sv32 MMU — virtual memory & page faults | **done & tested** |
+| 23 | `docs/23-synthesizable-fpga.md` | Bonus: synthesizable BRAM SoC for Zynq-7010 (multi-cycle core) | **done & tested** |
+| 24 | `docs/24-synthesizable-mmu.md` | Bonus: synthesizable Sv32 MMU (multi-cycle page-table walker, BRAM page tables) | **done & tested** |
 
 ## Directory layout
 
