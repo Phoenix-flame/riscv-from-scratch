@@ -238,3 +238,17 @@ sw/mh.hex: sw/mmu_hw_demo.c sw/mmu_htrap.S sw/firmware.h sw/crt0.s sw/link.ld sw
 
 mmu-hw: sw/mh.hex
 	$(IV) -o $(B)/mmu_hw_tb.vvp $(RTL_FPGA_MMU) tb/mmu_hw_tb.v && $(VVP) $(B)/mmu_hw_tb.vvp
+
+# ---- Preemptive multitasking (two tasks, timer-driven scheduler) ------
+RTL_SOC = rtl/alu.v rtl/regfile.v rtl/immgen.v rtl/control.v rtl/csr.v rtl/imem.v \
+          rtl/dmem.v rtl/uart.v rtl/timer.v rtl/syscon.v rtl/cpu_core.v rtl/soc.v
+
+sw/sch.hex: sw/sched.c sw/sched_asm.S sw/firmware.h sw/crt0.s sw/link.ld sw/bin2hex.py
+	riscv64-unknown-elf-gcc -march=rv32i_zicsr -mabi=ilp32 -nostdlib -nostartfiles \
+	  -ffreestanding -O1 -I sw -T sw/link.ld sw/crt0.s sw/sched_asm.S sw/sched.c \
+	  -o $(B)/sch.elf -lgcc
+	riscv64-unknown-elf-objcopy -O binary $(B)/sch.elf $(B)/sch.bin
+	python3 sw/bin2hex.py $(B)/sch.bin > sw/sch.hex
+
+sched: sw/sch.hex
+	$(IV) -o $(B)/sched_tb.vvp $(RTL_SOC) tb/sched_tb.v && $(VVP) $(B)/sched_tb.vvp
