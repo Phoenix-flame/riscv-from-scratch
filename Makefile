@@ -266,3 +266,7 @@ sw/at.hex: sw/atomic_demo.c sw/firmware.c sw/firmware.h sw/crt0.s sw/link.ld sw/
 
 atomic: sw/at.hex
 	$(IV) -o $(B)/atomic_tb.vvp $(RTL_SOC) tb/atomic_tb.v && $(VVP) $(B)/atomic_tb.vvp
+
+# ---- FreeRTOS prep: Step 1, the 64-bit CLINT machine timer ------------
+clint:
+	$(IV) -o $(B)/clint_tb.vvp rtl/clint.v tb/clint_tb.v && $(VVP) $(B)/clint_tb.vvp
