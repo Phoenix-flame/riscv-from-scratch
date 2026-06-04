@@ -8,6 +8,7 @@
 IV     = iverilog -g2012 -Wall
 VVP    = vvp
 B      = build
+KERNEL = kernel
 
 RTL_CORE = rtl/alu.v rtl/regfile.v rtl/imem.v rtl/dmem.v \
            rtl/immgen.v rtl/control.v rtl/cpu.v
@@ -289,7 +290,7 @@ rtos-smoke: sw/rs.hex
 
 # ---- FreeRTOS prep: Step 3, build the kernel + port + demo ------------
 # Point FREERTOS_KERNEL at a clone of github.com/FreeRTOS/FreeRTOS-Kernel
-FREERTOS_KERNEL ?= $(HOME)/FreeRTOS-Kernel
+FREERTOS_KERNEL ?= $(KERNEL)/FreeRTOS-Kernel
 FR_PORT  = $(FREERTOS_KERNEL)/portable/GCC/RISC-V
 FR_INC   = -I sw/freertos/shim -I sw/freertos -I sw -I $(FREERTOS_KERNEL)/include -I $(FR_PORT) \
            -I $(FR_PORT)/chip_specific_extensions/RV32I_CLINT_no_extensions
@@ -300,7 +301,7 @@ FR_SRC   = sw/freertos/start.S sw/freertos/main.c sw/firmware.c \
 FRCFLAGS = -march=rv32ima_zicsr -mabi=ilp32 -nostdlib -nostartfiles -ffreestanding -O2 -g -Wno-unused-parameter
 
 freertos:
-	@test -d "$(FREERTOS_KERNEL)" || { echo ">> Set FREERTOS_KERNEL=/path/to/FreeRTOS-Kernel"; echo ">> git clone https://github.com/FreeRTOS/FreeRTOS-Kernel"; exit 1; }
+	@test -d "$(FREERTOS_KERNEL)" || { echo ${FREERTOS_KERNEL} && echo ">> Set FREERTOS_KERNEL=/path/to/FreeRTOS-Kernel"; echo ">> git clone https://github.com/FreeRTOS/FreeRTOS-Kernel"; exit 1; }
 	riscv64-unknown-elf-gcc $(FRCFLAGS) $(FR_INC) -T sw/freertos/freertos.ld $(FR_SRC) -o $(B)/fr.elf -lgcc
 	riscv64-unknown-elf-size $(B)/fr.elf
 	riscv64-unknown-elf-objcopy -O binary $(B)/fr.elf $(B)/fr.bin
