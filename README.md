@@ -52,6 +52,8 @@ sequence) and we will watch the registers change in the waveform viewer.
 | 24 | `docs/24-synthesizable-mmu.md` | Bonus: synthesizable Sv32 MMU (multi-cycle page-table walker, BRAM page tables) | **done & tested** |
 | 25 | `docs/25-preemptive-multitasking.md` | Bonus: preemptive multitasking — timer-driven two-task scheduler | **done & tested** |
 | 26 | `docs/26-atomic-extension.md` | Bonus: RV32A atomic extension (LR/SC + AMOs) for locks & synchronization | **done & tested** |
+| 27 | `docs/27-freertos.md` | Bonus: running FreeRTOS (64-bit CLINT + RTOS SoC + port scaffolding) | **done & tested** |
+| 28 | `docs/28-freertos-fpga.md` | Bonus: FreeRTOS on the synthesizable Zynq-7010 SoC (BRAM, real UART) | **done & tested (sim)** |
 
 ## Directory layout
 
@@ -85,3 +87,48 @@ assistant. Claude helped design and write the RTL, the self-checking
 testbenches, the bare-metal software and toolchain flow, and all of the
 step-by-step tutorial documents — with each module built bottom-up and verified
 in simulation along the way.
+
+## Future directions (roadmap beyond Step 27)
+
+A menu of where this project can go next, grouped by goal. Rough difficulty:
+🟢 weekend–week · 🟡 multi-week · 🔴 multi-month.
+
+### Onto real silicon
+- ✅ **Run FreeRTOS on the Zynq-7010** — synthesizable BRAM SoC (`soc_rtos_fpga` + `fpga_top_rtos`), real UART, verified in sim (Step 28). Vivado bitstream is the remaining manual step.
+- 🟡 **AXI4-Lite / AXI-HP master to the PS** — bus-to-AXI adapter + stall-capable memory to reach the Zynq DDR and PS peripherals.
+- 🔴 **Tape-out flow** — push RTL through OpenLane + SkyWater sky130 to a GDSII layout.
+
+### Deeper OS
+- 🟡 **Memory-isolated processes** — merge the MMU (22/24) with the scheduler (25): per-task page tables, switch `satp` on context switch.
+- 🟡 **Supervisor mode + `medeleg`/`mideleg`** — delegate faults/interrupts to an S-mode kernel.
+- 🟡 **Instruction-fetch translation + TLB** — translate fetch (today only data is), cache translations.
+- 🔴 **Port xv6-riscv, then Linux** — xv6 is the realistic next OS; Linux needs S-mode, full MMU+TLB, atomics, device tree.
+
+### Make it fast (microarchitecture)
+- 🟢 **Branch predictor** — 2-bit saturating counter + BTB; measure misprediction rate.
+- 🟡 **I-cache / D-cache** — the payoff of understanding BRAM latency; prerequisite for DDR.
+- 🟡 **Unify the cores** — fold atomics + MMU into the pipelined core so the fast path has every feature.
+- 🔴 **Superscalar / out-of-order** — Tomasulo, register renaming, reorder buffer.
+
+### Broaden the ISA
+- 🟢 **C (compressed)** — 16-bit instructions; variable-length, unaligned fetch.
+- 🟡 **F/D (floating point)** — an FPU, the float regfile, `fcsr`.
+- 🟡 **Zb (bit-manip)** — small, high-value. **V (vector)** — deep and modern.
+- 🔴 **RV64** — widen to 64-bit; required for Linux.
+
+### Rigorous correctness
+- 🟢 **riscv-tests** — official per-instruction suite against the core.
+- 🟡 **Differential testing vs Spike** — same program on core + reference sim, compare state each step.
+- 🟡 **Benchmark** — Dhrystone / CoreMark, report DMIPS/MHz and CoreMark/MHz.
+- 🔴 **Formal verification** — riscv-formal + SymbiYosys.
+
+### Multi-core / SMP
+- 🔴 **Two harts** — duplicate the core with distinct `mhartid`, shared memory + arbiter, cross-core LR/SC (where `aq`/`rl` finally matter); then SMP FreeRTOS / Linux.
+
+### Tooling & ecosystem
+- 🟡 **Debug stub** — RISC-V Debug Module / JTAG TAP so `gdb` can halt/step/inspect.
+- 🟢 **Real libc** — swap the shims for newlib/picolibc (full `printf`, `malloc`).
+- 🟡 **Bootloader + device tree** — load/run arbitrary programs; Linux prerequisite.
+
+### For fun / applications
+- 🟢🟡 **Doom (bare-metal RV32)**, a tiny TCP stack (lwIP), a shell, or framebuffer graphics — proof it's a *computer*.

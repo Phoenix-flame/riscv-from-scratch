@@ -13,6 +13,7 @@
 
 module cpu_core #(
     parameter INIT_FILE = "",
+    parameter IMEM_WORDS = 1024,
     parameter RESET_PC  = 32'h0000_0000
 ) (
     input  wire        clk,
@@ -40,7 +41,7 @@ module cpu_core #(
     // ---- Fetch ------------------------------------------------------
     wire [31:0] instr;
     assign instr_out = instr;
-    imem #(.WORDS(1024), .INIT_FILE(INIT_FILE)) u_imem (
+    imem #(.WORDS(IMEM_WORDS), .INIT_FILE(INIT_FILE)) u_imem (
         .addr(pc), .instr(instr)
     );
 
