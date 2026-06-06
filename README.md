@@ -54,6 +54,9 @@ sequence) and we will watch the registers change in the waveform viewer.
 | 26 | `docs/26-atomic-extension.md` | Bonus: RV32A atomic extension (LR/SC + AMOs) for locks & synchronization | **done & tested** |
 | 27 | `docs/27-freertos.md` | Bonus: running FreeRTOS (64-bit CLINT + RTOS SoC + port scaffolding) | **done & tested** |
 | 28 | `docs/28-freertos-fpga.md` | Bonus: FreeRTOS on the synthesizable Zynq-7010 SoC (BRAM, real UART) | **done & tested (sim)** |
+| 29 | `docs/29-debug-stub.md` | Bonus: debug stub — hardware debug module (halt/step/breakpoints) + gdb RSP server | **done & tested** |
+| 30 | `docs/30-configurable-uart.md` | Bonus: configurable UART with RX path (runtime baud/data/parity/stop) on Zynq-7010 | **done & tested (sim)** |
+| 31 | `docs/31-uart-interrupts.md` | Bonus: UART interrupts + receive-to-idle (machine external interrupt, IDLE-line detection) on Zynq-7010 | **done & tested (sim)** |
 
 ## Directory layout
 
@@ -126,9 +129,14 @@ A menu of where this project can go next, grouped by goal. Rough difficulty:
 - 🔴 **Two harts** — duplicate the core with distinct `mhartid`, shared memory + arbiter, cross-core LR/SC (where `aq`/`rl` finally matter); then SMP FreeRTOS / Linux.
 
 ### Tooling & ecosystem
-- 🟡 **Debug stub** — RISC-V Debug Module / JTAG TAP so `gdb` can halt/step/inspect.
+- ✅ **Debug stub** — hardware debug module (halt/step/4 HW breakpoints/reg+mem access) + gdb RSP server (Step 29); transport bridge to live gdb is the remaining glue.
 - 🟢 **Real libc** — swap the shims for newlib/picolibc (full `printf`, `malloc`).
 - 🟡 **Bootloader + device tree** — load/run arbitrary programs; Linux prerequisite.
+
+### Peripherals & interrupts
+- ✅ **UART interrupts + receive-to-idle** — machine external interrupt (cause 11) wired to a configurable UART, with STM32-style IDLE-line detection to receive whole variable-length messages (Step 31).
+- 🟢 **Interrupt controller (PLIC)** — multiplex several peripheral lines into `MEIP` with per-source priority/claim, instead of one ORed line.
+- 🟡 **Richer peripherals** — SPI/I2C masters, GPIO with edge interrupts, a PWM/timer-capture block — each behind the same MMIO + IRQ pattern.
 
 ### For fun / applications
 - 🟢🟡 **Doom (bare-metal RV32)**, a tiny TCP stack (lwIP), a shell, or framebuffer graphics — proof it's a *computer*.

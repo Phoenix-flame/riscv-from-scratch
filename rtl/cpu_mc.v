@@ -24,6 +24,7 @@ module cpu_mc #(
     input  wire        clk,
     input  wire        rst,
     input  wire        timer_irq,
+    input  wire        ext_irq,             // external (UART) interrupt
     input  wire        halt,                 // freeze (set by SYSCON)
     // instruction ROM (synchronous read)
     output wire [31:0] imem_addr,            // byte address (use [.. :2])
@@ -82,6 +83,7 @@ module cpu_mc #(
     wire [31:0] csr_wsrc  = funct3[2] ? {27'b0, zimm} : rs1_data;
 
     wire        irq_pending;
+    wire [31:0] irq_cause;
     wire [1:0]  cur_priv;
     wire        in_user = (cur_priv == 2'b00);
     wire [31:0] csr_rdata, mtvec_out, mepc_out;
@@ -95,11 +97,14 @@ module cpu_mc #(
     wire illegal_instr  = ~op_known | priv_violation;
 
     wire exception = illegal_instr | is_ecall | is_ebreak;
-    wire take_trap = exception | irq_pending;
+    // An interrupt must not be taken *on* an mret: doing so would suppress the
+    // mret and capture mepc = the mret's own PC, corrupting the trap return /
+    // privilege stack. Let mret retire; the pending IRQ fires next instruction.
+    wire take_trap = exception | (irq_pending & ~is_mret);
     wire [31:0] trap_cause = illegal_instr ? 32'd2  :
                              is_ecall       ? (in_user ? 32'd8 : 32'd11) :
                              is_ebreak      ? 32'd3  :
-                                              32'h8000_0007;
+                                              irq_cause;
 
     // CSR state only advances when an instruction actually commits (EXEC).
     csr u_csr (
@@ -107,11 +112,11 @@ module cpu_mc #(
         .csr_addr(csr_addr), .csr_funct3(funct3), .csr_wsrc(csr_wsrc),
         .csr_we(is_csr & in_exec & ~take_trap),
         .csr_rdata(csr_rdata),
-        .pc(pc), .timer_irq(timer_irq),
+        .pc(pc), .timer_irq(timer_irq), .ext_irq(ext_irq),
         .instr_is_mret(is_mret & in_exec & ~take_trap),
         .take_trap(take_trap & in_exec),
         .trap_cause(trap_cause),
-        .mtvec_out(mtvec_out), .mepc_out(mepc_out), .irq_pending(irq_pending),
+        .mtvec_out(mtvec_out), .mepc_out(mepc_out), .irq_pending(irq_pending), .irq_cause(irq_cause),
         .cur_priv(cur_priv)
     );
 
@@ -194,14 +199,20 @@ module cpu_mc #(
     wire branch_taken = branch & branch_cond;
     wire [31:0] pc_target   = pc + imm;
     wire [31:0] jalr_target = {alu_result[31:1], 1'b0};
+    // A trap (or mret) only redirects the PC in EXEC. If an interrupt becomes
+    // pending while a load is in its MEM cycle, the load must still complete
+    // (pc+4); the pending interrupt is then taken at the next instruction's
+    // EXEC. Without this gate, S_MEM would jump to mtvec while the CSR (which
+    // only traps in EXEC) failed to record mepc/MIE -> double-trap corruption.
+    wire trap_take = take_trap & in_exec;
     reg  [31:0] next_pc;
     always @(*) begin
-        if      (take_trap)    next_pc = mtvec_out;
-        else if (is_mret)      next_pc = mepc_out;
-        else if (jalr)         next_pc = jalr_target;
-        else if (jump)         next_pc = pc_target;
-        else if (branch_taken) next_pc = pc_target;
-        else                   next_pc = pc_plus4;
+        if      (trap_take)         next_pc = mtvec_out;
+        else if (is_mret & in_exec) next_pc = mepc_out;
+        else if (jalr)              next_pc = jalr_target;
+        else if (jump)              next_pc = pc_target;
+        else if (branch_taken)      next_pc = pc_target;
+        else                        next_pc = pc_plus4;
     end
 
     // ---- the control FSM ----

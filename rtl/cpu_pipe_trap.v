@@ -215,7 +215,7 @@ module cpu_pipe_trap #(
         .clk(clk), .rst(rst),
         .csr_addr(idex_csr_addr), .csr_funct3(idex_funct3), .csr_wsrc(csr_wsrc),
         .csr_we(csr_commit), .csr_rdata(csr_rdata),
-        .pc(idex_pc), .timer_irq(timer_irq),
+        .pc(idex_pc), .timer_irq(timer_irq), .ext_irq(1'b0),
         .instr_is_mret(mret_ex), .take_trap(take_trap), .trap_cause(trap_cause),
         .mtvec_out(mtvec_out), .mepc_out(mepc_out), .irq_pending(irq_pending)
     );

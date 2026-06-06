@@ -126,7 +126,7 @@ module cpu_core_mmu #(
         .csr_addr(csr_addr), .csr_funct3(funct3), .csr_wsrc(csr_wsrc),
         .csr_we(is_csr & ~take_trap),
         .csr_rdata(csr_rdata),
-        .pc(pc), .timer_irq(timer_irq),
+        .pc(pc), .timer_irq(timer_irq), .ext_irq(1'b0),
         .instr_is_mret(is_mret & ~take_trap), .take_trap(take_trap),
         .trap_cause(trap_cause),
         .mtvec_out(mtvec_out), .mepc_out(mepc_out), .irq_pending(irq_pending),

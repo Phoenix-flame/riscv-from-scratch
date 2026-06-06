@@ -30,12 +30,14 @@ module csr (
     // trap interface
     input  wire [31:0] pc,          // PC of the interrupted/faulting instruction
     input  wire        timer_irq,   // level: timer says "fire"
+    input  wire        ext_irq,     // level: external (e.g. UART) interrupt
     input  wire        instr_is_mret,
     input  wire        take_trap,   // computed in the core this cycle
     input  wire [31:0] trap_cause,  // mcause value to record on trap
     output wire [31:0] mtvec_out,
     output wire [31:0] mepc_out,
-    output wire        irq_pending, // MIE & MTIE & timer_irq
+    output wire        irq_pending, // MIE & ((MTIE&timer) | (MEIE&ext))
+    output wire [31:0] irq_cause,   // cause to record for the pending interrupt
     output wire [1:0]  cur_priv,    // current privilege: 2'b11=M, 2'b00=U
     output wire [31:0] satp_out     // address-translation control (Sv32)
 );
@@ -53,8 +55,13 @@ module csr (
     wire mstatus_mie  = mstatus[3];
     wire mstatus_mpie = mstatus[7];
     wire mie_mtie     = mie[7];
+    wire mie_meie     = mie[11];                // machine external interrupt enable
 
-    assign irq_pending = mstatus_mie & mie_mtie & timer_irq;
+    wire ext_fire   = mie_meie & ext_irq;
+    wire timer_fire = mie_mtie & timer_irq;
+    assign irq_pending = mstatus_mie & (ext_fire | timer_fire);
+    // External interrupt (cause 11) takes priority over the timer (cause 7).
+    assign irq_cause   = ext_fire ? 32'h8000_000B : 32'h8000_0007;
     assign mtvec_out   = mtvec;
     assign mepc_out    = mepc;
 
@@ -83,7 +90,7 @@ module csr (
             MEPC    : csr_rdata = mepc;
             MCAUSE  : csr_rdata = mcause;
             SATP    : csr_rdata = satp;
-            MIP     : csr_rdata = {24'b0, timer_irq, 7'b0}; // MTIP at bit 7
+            MIP     : csr_rdata = {20'b0, ext_irq, 3'b0, timer_irq, 7'b0}; // MEIP@11, MTIP@7
             default : csr_rdata = 32'd0;
         endcase
     end

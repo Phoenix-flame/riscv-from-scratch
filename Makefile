@@ -8,7 +8,7 @@
 IV     = iverilog -g2012 -Wall
 VVP    = vvp
 B      = build
-KERNEL = kernel
+$(shell mkdir -p $(B))            # ensure the build dir exists (works from a clean checkout)
 
 RTL_CORE = rtl/alu.v rtl/regfile.v rtl/imem.v rtl/dmem.v \
            rtl/immgen.v rtl/control.v rtl/cpu.v
@@ -290,7 +290,7 @@ rtos-smoke: sw/rs.hex
 
 # ---- FreeRTOS prep: Step 3, build the kernel + port + demo ------------
 # Point FREERTOS_KERNEL at a clone of github.com/FreeRTOS/FreeRTOS-Kernel
-FREERTOS_KERNEL ?= $(KERNEL)/FreeRTOS-Kernel
+FREERTOS_KERNEL ?= $(HOME)/FreeRTOS-Kernel
 FR_PORT  = $(FREERTOS_KERNEL)/portable/GCC/RISC-V
 FR_INC   = -I sw/freertos/shim -I sw/freertos -I sw -I $(FREERTOS_KERNEL)/include -I $(FR_PORT) \
            -I $(FR_PORT)/chip_specific_extensions/RV32I_CLINT_no_extensions
@@ -301,7 +301,7 @@ FR_SRC   = sw/freertos/start.S sw/freertos/main.c sw/firmware.c \
 FRCFLAGS = -march=rv32ima_zicsr -mabi=ilp32 -nostdlib -nostartfiles -ffreestanding -O2 -g -Wno-unused-parameter
 
 freertos:
-	@test -d "$(FREERTOS_KERNEL)" || { echo ${FREERTOS_KERNEL} && echo ">> Set FREERTOS_KERNEL=/path/to/FreeRTOS-Kernel"; echo ">> git clone https://github.com/FreeRTOS/FreeRTOS-Kernel"; exit 1; }
+	@test -d "$(FREERTOS_KERNEL)" || { echo ">> Set FREERTOS_KERNEL=/path/to/FreeRTOS-Kernel"; echo ">> git clone https://github.com/FreeRTOS/FreeRTOS-Kernel"; exit 1; }
 	riscv64-unknown-elf-gcc $(FRCFLAGS) $(FR_INC) -T sw/freertos/freertos.ld $(FR_SRC) -o $(B)/fr.elf -lgcc
 	riscv64-unknown-elf-size $(B)/fr.elf
 	riscv64-unknown-elf-objcopy -O binary $(B)/fr.elf $(B)/fr.bin
@@ -329,3 +329,48 @@ freertos-fpga: ## build FreeRTOS image for the synthesizable BRAM SoC (rv32im, 6
 
 freertos-fpga-run: ## run the synthesizable FreeRTOS SoC in simulation
 	$(IV) -o $(B)/frf_tb.vvp $(RTL_RTOS_FPGA) tb/freertos_fpga_tb.v && $(VVP) $(B)/frf_tb.vvp
+
+# ---- Debug stub: hardware debug module + gdb RSP server ---------------
+RTL_DBG = rtl/alu.v rtl/regfile.v rtl/immgen.v rtl/control.v rtl/csr.v rtl/imem.v \
+          rtl/dmem.v rtl/uart.v rtl/timer.v rtl/syscon.v rtl/cpu_core_dbg.v \
+          rtl/debug_module.v rtl/soc_dbg.v
+
+sw/dbg.hex: sw/dbg_demo.c sw/firmware.c sw/firmware.h sw/crt0.s sw/link.ld sw/bin2hex.py
+	riscv64-unknown-elf-gcc -march=rv32i_zicsr -mabi=ilp32 -nostdlib -nostartfiles \
+	  -ffreestanding -O1 -I sw -T sw/link.ld sw/crt0.s sw/firmware.c sw/dbg_demo.c \
+	  -o $(B)/dbg.elf -lgcc
+	riscv64-unknown-elf-objcopy -O binary $(B)/dbg.elf $(B)/dbg.bin
+	python3 sw/bin2hex.py $(B)/dbg.bin > sw/dbg.hex
+
+debug: sw/dbg.hex   ## run a full debug session (halt/step/breakpoint/reg/mem) in sim
+	$(IV) -o $(B)/debug_tb.vvp $(RTL_DBG) tb/debug_tb.v && $(VVP) $(B)/debug_tb.vvp
+
+debug-selftest:     ## self-test the gdb RSP server (no hardware/gdb needed)
+	python3 sw/gdbstub.py --selftest
+
+# ---- Configurable UART: RX + TX, runtime baud/data-bits/parity/stop ----
+RTL_UART_CFG = rtl/uart_rx.v rtl/uart_tx_cfg.v
+RTL_UART_SOC = rtl/control.v rtl/alu.v rtl/regfile.v rtl/immgen.v rtl/csr.v rtl/cpu_mc.v \
+               rtl/bram_rom.v rtl/bram_ram.v rtl/uart_rx.v rtl/uart_tx_cfg.v \
+               rtl/uart_full.v rtl/soc_uart_fpga.v
+
+uart-loopback: ## loopback-test the configurable UART (8N1/7E1/8O2/5N1 + parity errors)
+	$(IV) -o $(B)/uart_loop_tb.vvp $(RTL_UART_CFG) tb/uart_loop_tb.v && $(VVP) $(B)/uart_loop_tb.vvp
+
+sw/uart_echo.hex: sw/uart_echo.c sw/crt0.s sw/link.ld sw/bin2hex.py
+	riscv64-unknown-elf-gcc -march=rv32im -mabi=ilp32 -nostdlib -nostartfiles -ffreestanding \
+	  -O1 -DCLKS=16 -I sw -T sw/link.ld sw/crt0.s sw/uart_echo.c -o $(B)/uecho.elf -lgcc
+	riscv64-unknown-elf-objcopy -O binary $(B)/uecho.elf $(B)/uecho.bin
+	python3 sw/bin2hex.py $(B)/uecho.bin > sw/uart_echo.hex
+
+uart-echo: sw/uart_echo.hex ## end-to-end: CPU configures the UART, receives + echoes bytes
+	$(IV) -o $(B)/uart_echo_tb.vvp $(RTL_UART_SOC) tb/uart_echo_tb.v && $(VVP) $(B)/uart_echo_tb.vvp
+
+sw/uart_irq.hex: sw/uart_irq_demo.c sw/crt0.s sw/link.ld sw/bin2hex.py
+	riscv64-unknown-elf-gcc -march=rv32im_zicsr -mabi=ilp32 -nostdlib -nostartfiles -ffreestanding \
+	  -O1 -DCLKS=64 -I sw -T sw/link.ld sw/crt0.s sw/uart_irq_demo.c -o $(B)/uirq.elf -lgcc
+	riscv64-unknown-elf-objcopy -O binary $(B)/uirq.elf $(B)/uirq.bin
+	python3 sw/bin2hex.py $(B)/uirq.bin > sw/uart_irq.hex
+
+uart-irq: sw/uart_irq.hex ## interrupt-driven receive-to-idle: collect a whole message via IRQs, echo it
+	$(IV) -o $(B)/uart_irq_tb.vvp $(RTL_UART_SOC) tb/uart_irq_tb.v && $(VVP) $(B)/uart_irq_tb.vvp

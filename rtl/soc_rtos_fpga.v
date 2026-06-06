@@ -33,7 +33,7 @@ module soc_rtos_fpga #(
     wire        timer_irq, halt_q;
 
     cpu_mc u_core (
-        .clk(clk), .rst(rst), .timer_irq(timer_irq), .halt(halt_q),
+        .clk(clk), .rst(rst), .timer_irq(timer_irq), .ext_irq(1'b0), .halt(halt_q),
         .imem_addr(iaddr), .imem_rdata(irdata),
         .dmem_addr(daddr), .dmem_we(dwe), .dmem_wdata(dwdata), .dmem_rdata(drdata),
         .pc_out()
