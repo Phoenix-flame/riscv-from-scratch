@@ -57,6 +57,7 @@ sequence) and we will watch the registers change in the waveform viewer.
 | 29 | `docs/29-debug-stub.md` | Bonus: debug stub — hardware debug module (halt/step/breakpoints) + gdb RSP server | **done & tested** |
 | 30 | `docs/30-configurable-uart.md` | Bonus: configurable UART with RX path (runtime baud/data/parity/stop) on Zynq-7010 | **done & tested (sim)** |
 | 31 | `docs/31-uart-interrupts.md` | Bonus: UART interrupts + receive-to-idle (machine external interrupt, IDLE-line detection) on Zynq-7010 | **done & tested (sim)** |
+| 32 | `docs/32-branch-predictor.md` | Bonus: branch predictor (BTB + 2-bit saturating counters) on the pipelined core, with measured misprediction rate | **done & tested (sim)** |
 
 ## Directory layout
 
@@ -108,7 +109,7 @@ A menu of where this project can go next, grouped by goal. Rough difficulty:
 - 🔴 **Port xv6-riscv, then Linux** — xv6 is the realistic next OS; Linux needs S-mode, full MMU+TLB, atomics, device tree.
 
 ### Make it fast (microarchitecture)
-- 🟢 **Branch predictor** — 2-bit saturating counter + BTB; measure misprediction rate.
+- ✅ **Branch predictor** — BTB + 2-bit saturating counters on the pipelined core (Step 32): 3544 flushes → 879 mispredictions on the demo, ~1.3x fewer cycles. Return-address stack is the natural follow-up.
 - 🟡 **I-cache / D-cache** — the payoff of understanding BRAM latency; prerequisite for DDR.
 - 🟡 **Unify the cores** — fold atomics + MMU into the pipelined core so the fast path has every feature.
 - 🔴 **Superscalar / out-of-order** — Tomasulo, register renaming, reorder buffer.

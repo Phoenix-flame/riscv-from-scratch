@@ -127,6 +127,19 @@ pipe: sw/test_datapath.hex
 pipe-sum: sw/sum.hex
 	$(IV) -o $(B)/pipe_sum_tb.vvp $(RTL_PIPE) tb/pipe_sum_tb.v && $(VVP) $(B)/pipe_sum_tb.vvp
 
+# ---- branch predictor: BTB + 2-bit counters vs predict-not-taken (Step 32) --
+RTL_PIPE_BP = rtl/alu.v rtl/regfile.v rtl/imem.v rtl/dmem.v rtl/immgen.v \
+              rtl/control.v rtl/cpu_pipe.v rtl/branch_predictor.v rtl/cpu_pipe_bp.v
+
+sw/bpred_bench.hex: sw/bpred_bench.c sw/crt0.s sw/link.ld sw/bin2hex.py
+	riscv64-unknown-elf-gcc -march=rv32im -mabi=ilp32 -nostdlib -nostartfiles -ffreestanding \
+	  -O1 -T sw/link.ld sw/crt0.s sw/bpred_bench.c -o $(B)/bpbench.elf -lgcc
+	riscv64-unknown-elf-objcopy -O binary $(B)/bpbench.elf $(B)/bpbench.bin
+	python3 sw/bin2hex.py $(B)/bpbench.bin > sw/bpred_bench.hex
+
+bpred: sw/bpred_bench.hex ## compare predict-not-taken vs BTB+2-bit predictor (misprediction rate + speedup)
+	$(IV) -o $(B)/bpred_tb.vvp $(RTL_PIPE_BP) tb/bpred_tb.v && $(VVP) $(B)/bpred_tb.vvp
+
 # ---- ecall syscalls on the single-cycle core (Step 19) --------------
 sw/ec.hex: sw/ecall_demo.c sw/trap_handler.S sw/firmware.c sw/firmware.h sw/crt0.s sw/link.ld sw/bin2hex.py
 	riscv64-unknown-elf-gcc -march=rv32i_zicsr -mabi=ilp32 -nostdlib \
