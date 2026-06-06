@@ -8,6 +8,7 @@
 IV     = iverilog -g2012 -Wall
 VVP    = vvp
 B      = build
+KERNEL = kernel
 
 RTL_CORE = rtl/alu.v rtl/regfile.v rtl/imem.v rtl/dmem.v \
            rtl/immgen.v rtl/control.v rtl/cpu.v
@@ -270,3 +271,61 @@ atomic: sw/at.hex
 # ---- FreeRTOS prep: Step 1, the 64-bit CLINT machine timer ------------
 clint:
 	$(IV) -o $(B)/clint_tb.vvp rtl/clint.v tb/clint_tb.v && $(VVP) $(B)/clint_tb.vvp
+
+# ---- FreeRTOS prep: Step 2, the RTOS-sized SoC (smoke test) -----------
+RTL_RTOS = rtl/alu.v rtl/regfile.v rtl/immgen.v rtl/control.v rtl/csr.v rtl/imem.v \
+           rtl/dmem.v rtl/uart.v rtl/clint.v rtl/syscon.v rtl/cpu_core.v rtl/soc_rtos.v
+
+sw/rs.hex: sw/rtos_smoke.c sw/firmware.c sw/firmware.h sw/crt0.s sw/link.ld sw/bin2hex.py
+	riscv64-unknown-elf-gcc -march=rv32ima_zicsr -mabi=ilp32 -nostdlib -nostartfiles \
+	  -ffreestanding -O1 -I sw -T sw/link.ld sw/crt0.s sw/firmware.c sw/rtos_smoke.c \
+	  -o $(B)/rs.elf -lgcc
+	riscv64-unknown-elf-objcopy -O binary $(B)/rs.elf $(B)/rs.bin
+	python3 sw/bin2hex.py $(B)/rs.bin > sw/rs.hex
+	riscv64-unknown-elf-objcopy -O verilog --verilog-data-width=1 --only-section=.rodata $(B)/rs.elf $(B)/rs_data.vh
+	tr -d '\r' < $(B)/rs_data.vh > sw/rs_data.hex
+
+rtos-smoke: sw/rs.hex
+	$(IV) -o $(B)/rtos_smoke_tb.vvp $(RTL_RTOS) tb/rtos_smoke_tb.v && $(VVP) $(B)/rtos_smoke_tb.vvp
+
+# ---- FreeRTOS prep: Step 3, build the kernel + port + demo ------------
+# Point FREERTOS_KERNEL at a clone of github.com/FreeRTOS/FreeRTOS-Kernel
+FREERTOS_KERNEL ?= $(KERNEL)/FreeRTOS-Kernel
+FR_PORT  = $(FREERTOS_KERNEL)/portable/GCC/RISC-V
+FR_INC   = -I sw/freertos/shim -I sw/freertos -I sw -I $(FREERTOS_KERNEL)/include -I $(FR_PORT) \
+           -I $(FR_PORT)/chip_specific_extensions/RV32I_CLINT_no_extensions
+FR_SRC   = sw/freertos/start.S sw/freertos/main.c sw/firmware.c \
+           $(FREERTOS_KERNEL)/tasks.c $(FREERTOS_KERNEL)/list.c $(FREERTOS_KERNEL)/queue.c \
+           $(FR_PORT)/port.c $(FR_PORT)/portASM.S \
+           $(FREERTOS_KERNEL)/portable/MemMang/heap_4.c
+FRCFLAGS = -march=rv32ima_zicsr -mabi=ilp32 -nostdlib -nostartfiles -ffreestanding -O2 -g -Wno-unused-parameter
+
+freertos:
+	@test -d "$(FREERTOS_KERNEL)" || { echo ${FREERTOS_KERNEL} && echo ">> Set FREERTOS_KERNEL=/path/to/FreeRTOS-Kernel"; echo ">> git clone https://github.com/FreeRTOS/FreeRTOS-Kernel"; exit 1; }
+	riscv64-unknown-elf-gcc $(FRCFLAGS) $(FR_INC) -T sw/freertos/freertos.ld $(FR_SRC) -o $(B)/fr.elf -lgcc
+	riscv64-unknown-elf-size $(B)/fr.elf
+	riscv64-unknown-elf-objcopy -O binary $(B)/fr.elf $(B)/fr.bin
+	python3 sw/bin2hex.py $(B)/fr.bin > sw/freertos/fr.hex
+	riscv64-unknown-elf-objcopy -O verilog --verilog-data-width=1 --only-section=.rodata --only-section=.data $(B)/fr.elf $(B)/fr_data.vh
+	tr -d '\r' < $(B)/fr_data.vh > sw/freertos/fr_data.hex
+	@echo "OK: built FreeRTOS image (sw/freertos/fr.hex)"
+
+freertos-run: ## run the prebuilt FreeRTOS image on soc_rtos (needs sw/freertos/fr.hex)
+	$(IV) -o $(B)/freertos_tb.vvp $(RTL_RTOS) tb/freertos_tb.v && $(VVP) $(B)/freertos_tb.vvp
+
+# ---- FreeRTOS on the synthesizable BRAM SoC (Zynq-7010 target) --------
+RTL_RTOS_FPGA = rtl/alu.v rtl/regfile.v rtl/immgen.v rtl/control.v rtl/csr.v rtl/timer.v \
+                rtl/uart_tx.v rtl/uart_hw.v rtl/clint.v rtl/bram_rom.v rtl/bram_ram.v \
+                rtl/cpu_mc.v rtl/soc_rtos_fpga.v
+FRF_CFLAGS = -march=rv32im_zicsr -mabi=ilp32 -nostdlib -nostartfiles -ffreestanding -O2 -g -Wno-unused-parameter
+
+freertos-fpga: ## build FreeRTOS image for the synthesizable BRAM SoC (rv32im, 64KB)
+	@test -d "$(FREERTOS_KERNEL)" || { echo ">> git clone FreeRTOS-Kernel and set FREERTOS_KERNEL=..."; exit 1; }
+	riscv64-unknown-elf-gcc $(FRF_CFLAGS) $(FR_INC) -T sw/freertos/freertos_fpga.ld $(FR_SRC) -o $(B)/frf.elf -lgcc
+	riscv64-unknown-elf-size $(B)/frf.elf
+	riscv64-unknown-elf-objcopy -O binary $(B)/frf.elf $(B)/frf.bin
+	python3 sw/bin2hex.py $(B)/frf.bin > sw/freertos/fr_fpga.hex
+	@echo "OK: sw/freertos/fr_fpga.hex (init for BOTH bram_rom and bram_ram)"
+
+freertos-fpga-run: ## run the synthesizable FreeRTOS SoC in simulation
+	$(IV) -o $(B)/frf_tb.vvp $(RTL_RTOS_FPGA) tb/freertos_fpga_tb.v && $(VVP) $(B)/frf_tb.vvp
