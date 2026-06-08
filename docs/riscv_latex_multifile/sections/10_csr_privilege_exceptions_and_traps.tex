@@ -1,0 +1,133 @@
+\section{CSR, Privilege, Exceptions, and Traps}
+
+\subsection{Why CSRs exist}
+
+General-purpose registers hold normal program data. A CPU also needs control/status registers for privileged state: interrupt enables, trap handler address, trap cause, saved exception PC, timers, and address translation control.
+
+RISC-V calls these \textbf{CSRs}: Control and Status Registers.
+
+\subsection{What a trap is}
+
+A trap is a controlled redirection of execution caused by an exception or interrupt.
+
+\begin{itemize}
+\item An \textbf{exception} is caused by the current instruction, such as illegal instruction or \texttt{ecall}.
+\item An \textbf{interrupt} is caused by an external/asynchronous event, such as a timer.
+\end{itemize}
+On a trap, the CPU must save enough information so software can handle the event and later return.
+
+Conceptually:
+
+\begin{lstlisting}[language={}]
+mepc   = PC of interrupted/faulting instruction
+mcause = reason for trap
+PC     = mtvec
+mode   = machine mode
+\end{lstlisting}
+
+\subsection{Privilege model in this design}
+
+\texttt{rtl/csr.v} implements a minimal privilege model:
+
+\begin{longtable}{|>{\RaggedRight\arraybackslash}p{0.28\textwidth}|>{\RaggedRight\arraybackslash}p{0.32\textwidth}|>{\RaggedRight\arraybackslash}p{0.30\textwidth}|}
+\hline
+\textbf{Mode} & \textbf{Encoding} & \textbf{Meaning} \\
+\hline
+\endfirsthead
+\hline
+\textbf{Mode} & \textbf{Encoding} & \textbf{Meaning} \\
+\hline
+\endhead
+U-mode & \texttt{2'b00} & User mode, restricted. \\
+\hline
+M-mode & \texttt{2'b11} & Machine mode, privileged. \\
+\hline
+\end{longtable}
+
+The design resets into machine mode. Traps enter machine mode. \texttt{mret} restores the previous privilege mode using bits saved in \texttt{mstatus}.
+
+\subsection{Supported CSRs}
+
+\texttt{rtl/csr.v} supports:
+
+\begin{longtable}{|>{\RaggedRight\arraybackslash}p{0.28\textwidth}|>{\RaggedRight\arraybackslash}p{0.32\textwidth}|>{\RaggedRight\arraybackslash}p{0.30\textwidth}|}
+\hline
+\textbf{CSR} & \textbf{Address} & \textbf{Role} \\
+\hline
+\endfirsthead
+\hline
+\textbf{CSR} & \textbf{Address} & \textbf{Role} \\
+\hline
+\endhead
+\texttt{mstatus} & \texttt{0x300} & Global interrupt enable and previous interrupt enable bits. \\
+\hline
+\texttt{mie} & \texttt{0x304} & Machine interrupt enable bits, including timer/external. \\
+\hline
+\texttt{mtvec} & \texttt{0x305} & Trap handler base address. \\
+\hline
+\texttt{mscratch} & \texttt{0x340} & Scratch register for trap handlers. \\
+\hline
+\texttt{mepc} & \texttt{0x341} & Saved PC for trap return. \\
+\hline
+\texttt{mcause} & \texttt{0x342} & Trap cause. \\
+\hline
+\texttt{mip} & \texttt{0x344} & Pending interrupt bits, read-only style here. \\
+\hline
+\texttt{satp} & \texttt{0x180} & Address translation control for MMU variants. \\
+\hline
+\end{longtable}
+
+\subsection{CSR instructions}
+
+The CSR unit supports the CSR read/write family through the \texttt{csr\_next} function:
+
+\begin{longtable}{|>{\RaggedRight\arraybackslash}p{0.38\textwidth}|>{\RaggedRight\arraybackslash}p{0.52\textwidth}|}
+\hline
+\textbf{Operation} & \textbf{Meaning} \\
+\hline
+\endfirsthead
+\hline
+\textbf{Operation} & \textbf{Meaning} \\
+\hline
+\endhead
+\texttt{csrrw} / \texttt{csrrwi} & Write source value into CSR. \\
+\hline
+\texttt{csrrs} / \texttt{csrrsi} & Set CSR bits selected by source. \\
+\hline
+\texttt{csrrc} / \texttt{csrrci} & Clear CSR bits selected by source. \\
+\hline
+\end{longtable}
+
+The CPU writes the old CSR value to \texttt{rd} and updates the CSR according to the instruction.
+
+\subsection{10.6 Trap entry and \texttt{mret}}
+
+\texttt{csr.v} prioritizes updates as:
+
+\begin{lstlisting}[language={}]
+reset > trap entry > mret > CSR write
+\end{lstlisting}
+
+On trap entry:
+
+\begin{itemize}
+\item \texttt{mepc} receives the trap PC;
+\item \texttt{mcause} receives the cause;
+\item \texttt{mstatus.MPIE} receives old \texttt{MIE};
+\item \texttt{mstatus.MIE} is cleared to disable nested interrupts by default;
+\item current privilege is saved into \texttt{mstatus.MPP};
+\item current privilege becomes machine mode.
+\end{itemize}
+On \texttt{mret}:
+
+\begin{itemize}
+\item \texttt{MIE} is restored from \texttt{MPIE};
+\item privilege is restored from \texttt{MPP};
+\item \texttt{MPP} is cleared down toward user mode;
+\item PC redirects to \texttt{mepc}.
+\end{itemize}
+\subsection{Illegal instruction detection}
+
+Trap-capable CPU wrappers compute whether the opcode/instruction is known. If not, they raise illegal instruction cause \texttt{2}. They also treat user-mode attempts to execute privileged instructions such as CSR access or \texttt{mret} as privilege violations.
+
+\bigskip

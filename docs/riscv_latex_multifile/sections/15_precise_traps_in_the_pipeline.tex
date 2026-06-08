@@ -1,0 +1,37 @@
+\section{Precise Traps in the Pipeline}
+
+\subsection{Why traps are harder in a pipeline}
+
+In a non-pipelined CPU, only one instruction is active, so taking a trap is straightforward. In a pipeline, several instructions are active at once. If an instruction traps, older instructions should already be committed, but younger instructions must not commit.
+
+This property is called a \textbf{precise trap}.
+
+\subsection{What precise means}
+
+A precise trap means the machine state looks as if execution stopped exactly at one instruction boundary:
+
+\begin{lstlisting}[language={}]
+all older instructions completed
+trapping instruction did not incorrectly commit partial side effects
+younger instructions did not commit
+mepc identifies the faulting/interrupted instruction
+\end{lstlisting}
+
+\subsection{15.3 Implementation in \texttt{cpu\_pipe\_trap.v}}
+
+\texttt{cpu\_pipe\_trap.v} commits traps in the EX stage. When the instruction in EX traps:
+
+\begin{itemize}
+\item the trapping instruction is squashed so it does not write registers or memory;
+\item younger instructions in IF and ID are flushed;
+\item \texttt{mepc} receives the EX-stage instruction PC;
+\item \texttt{mcause} receives the trap cause;
+\item PC redirects to \texttt{mtvec}.
+\end{itemize}
+\texttt{mret} redirects back to \texttt{mepc}. CSR instructions commit only if the instruction is valid and not trapping.
+
+\subsection{Why EX-stage trap commit is a reasonable teaching choice}
+
+EX is where branch decisions, ALU exceptions/illegal decisions, CSR operations, and many control decisions are already centralized. Committing traps there keeps the design easier to reason about. More advanced CPUs may detect exceptions in multiple stages and carry exception metadata until commit/retirement.
+
+\bigskip

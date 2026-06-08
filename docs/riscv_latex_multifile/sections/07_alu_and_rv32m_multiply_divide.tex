@@ -1,0 +1,108 @@
+\section{ALU and RV32M Multiply/Divide}
+
+\subsection{Why the ALU exists}
+
+The ALU is the CPU’s arithmetic and logic engine. It performs integer operations and address calculations. Even memory instructions use the ALU: a load or store address is computed as \texttt{rs1 + immediate}.
+
+\texttt{rtl/alu.v} is combinational. It receives two operands, \texttt{a} and \texttt{b}, plus a 5-bit \texttt{alu\_op}, and produces \texttt{result} plus a \texttt{zero} flag.
+
+\subsection{Base RV32I ALU operations}
+
+The base operations implemented include:
+
+\begin{longtable}{|>{\RaggedRight\arraybackslash}p{0.28\textwidth}|>{\RaggedRight\arraybackslash}p{0.32\textwidth}|>{\RaggedRight\arraybackslash}p{0.30\textwidth}|}
+\hline
+\textbf{Operation} & \textbf{Meaning} & \textbf{Used by} \\
+\hline
+\endfirsthead
+\hline
+\textbf{Operation} & \textbf{Meaning} & \textbf{Used by} \\
+\hline
+\endhead
+ADD & \texttt{a + b} & \texttt{add}, \texttt{addi}, load/store address, \texttt{auipc} \\
+\hline
+SUB & \texttt{a - b} & \texttt{sub}, branch comparison support \\
+\hline
+AND & bitwise and & \texttt{and}, \texttt{andi} \\
+\hline
+OR & bitwise or & \texttt{or}, \texttt{ori} \\
+\hline
+XOR & bitwise xor & \texttt{xor}, \texttt{xori} \\
+\hline
+SLL & logical left shift & \texttt{sll}, \texttt{slli} \\
+\hline
+SRL & logical right shift & \texttt{srl}, \texttt{srli} \\
+\hline
+SRA & arithmetic right shift & \texttt{sra}, \texttt{srai} \\
+\hline
+SLT & signed less-than & \texttt{slt}, \texttt{slti} \\
+\hline
+SLTU & unsigned less-than & \texttt{sltu}, \texttt{sltiu} \\
+\hline
+\end{longtable}
+
+For shifts, only \texttt{b[4:0]} is used. A 32-bit value only needs shift amounts 0 through 31.
+
+\subsection{Signed vs unsigned behavior}
+
+The same 32-bit bit pattern can be interpreted as signed or unsigned. For example, \texttt{0xFFFF\_FFFF} is:
+
+\begin{itemize}
+\item unsigned: 4,294,967,295
+\item signed two’s-complement: -1
+\end{itemize}
+That is why the ALU has both \texttt{SLT} and \texttt{SLTU}, and both signed and unsigned division/remainder in RV32M. The Verilog uses \texttt{\$signed(...)} where signed interpretation is required.
+
+\subsection{RV32M multiplication}
+
+RV32M adds multiply instructions. A 32-bit by 32-bit multiply naturally produces a 64-bit result. RISC-V exposes different parts of that result:
+
+\begin{longtable}{|>{\RaggedRight\arraybackslash}p{0.38\textwidth}|>{\RaggedRight\arraybackslash}p{0.52\textwidth}|}
+\hline
+\textbf{Instruction} & \textbf{Meaning} \\
+\hline
+\endfirsthead
+\hline
+\textbf{Instruction} & \textbf{Meaning} \\
+\hline
+\endhead
+\texttt{mul} & Low 32 bits of signed × signed product. \\
+\hline
+\texttt{mulh} & High 32 bits of signed × signed product. \\
+\hline
+\texttt{mulhsu} & High 32 bits of signed × unsigned product. \\
+\hline
+\texttt{mulhu} & High 32 bits of unsigned × unsigned product. \\
+\hline
+\end{longtable}
+
+\texttt{rtl/alu.v} creates 64-bit signed and unsigned products (\texttt{p\_ss}, \texttt{p\_su}, \texttt{p\_uu}) and selects either the low or high half.
+
+\subsection{RV32M division and remainder}
+
+Division has architectural corner cases. The implementation handles the important RV32M-defined cases:
+
+\begin{longtable}{|>{\RaggedRight\arraybackslash}p{0.28\textwidth}|>{\RaggedRight\arraybackslash}p{0.32\textwidth}|>{\RaggedRight\arraybackslash}p{0.30\textwidth}|}
+\hline
+\textbf{Case} & \textbf{\texttt{div} result} & \textbf{\texttt{rem} result} \\
+\hline
+\endfirsthead
+\hline
+\textbf{Case} & \textbf{\texttt{div} result} & \textbf{\texttt{rem} result} \\
+\hline
+\endhead
+Divide by zero & \texttt{0xFFFF\_FFFF} & dividend \texttt{a} \\
+\hline
+Signed overflow: \texttt{INT\_MIN / -1} & \texttt{0x8000\_0000} & \texttt{0} \\
+\hline
+\end{longtable}
+
+Unsigned division by zero also returns all ones for quotient and the dividend for remainder.
+
+\subsection{Hardware cost}
+
+The current ALU uses Verilog \texttt{*}, \texttt{/}, and \texttt{\%} for clarity. Multiplication usually maps well to FPGA DSP resources. Division, however, can be large if implemented as a purely combinational block. A production CPU commonly makes division multi-cycle, using an iterative divider and stall/ready logic.
+
+So the design is excellent for learning and simulation, but the divider is an obvious target for refinement in a frequency/area-optimized FPGA version.
+
+\bigskip

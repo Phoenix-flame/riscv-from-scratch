@@ -1,0 +1,85 @@
+\section{Branch Prediction}
+
+\subsection{Why prediction exists}
+
+In the basic pipeline, every taken branch costs a flush because the CPU guessed the next PC would be \texttt{PC+4}. Loops often branch backward many times, so “predict not taken” performs badly on common code.
+
+Branch prediction tries to guess the next PC early, in the fetch stage, before decode and execute know the truth.
+
+\subsection{What must be predicted}
+
+A predictor needs two answers:
+
+\begin{enumerate}
+\item \textbf{Direction}: will the branch/jump be taken?
+\item \textbf{Target}: if taken, where should fetch go next?
+\end{enumerate}
+
+The CPU only has the current PC during fetch, so the predictor stores past behavior indexed by PC.
+
+\subsection{BHT: branch history table}
+
+\texttt{rtl/branch\_predictor.v} contains a BHT with 2-bit saturating counters:
+
+\begin{lstlisting}[language={}]
+00 strong not-taken
+01 weak not-taken
+10 weak taken
+11 strong taken
+\end{lstlisting}
+
+The top bit is the prediction. A two-bit counter avoids changing opinion after one unusual branch outcome. This is especially useful for loops: a loop branch may be taken many times and not taken once when the loop exits.
+
+\subsection{BTB: branch target buffer}
+
+The BHT predicts direction, but the CPU also needs a target address. The BTB stores:
+
+\begin{lstlisting}[language={}]
+valid bit
+tag
+target address
+\end{lstlisting}
+
+The predictor only predicts taken when the BTB hits and the BHT counter says taken. If there is no BTB target, fetch cannot safely redirect.
+
+\subsection{Training the predictor}
+
+Prediction happens combinationally in IF using \texttt{pc\_if}. Update happens synchronously when a control instruction resolves in EX:
+
+\begin{itemize}
+\item taken branches increment the counter toward strongly taken;
+\item not-taken branches decrement toward strongly not-taken;
+\item jumps are forced to strongly taken;
+\item taken control transfers allocate/update the BTB target.
+\end{itemize}
+\subsection{16.6 Integration in \texttt{cpu\_pipe\_bp.v}}
+
+\texttt{cpu\_pipe\_bp.v} carries prediction metadata through the pipeline:
+
+\begin{lstlisting}[language={}]
+ifid_pred_taken / ifid_pred_target
+idex_pred_taken / idex_pred_target
+\end{lstlisting}
+
+When the instruction reaches EX, the CPU compares predicted behavior against actual behavior:
+
+\begin{lstlisting}[language={}]
+direction wrong? actual_taken != predicted_taken
+target wrong? actual_taken && predicted_taken && actual_target != predicted_target
+\end{lstlisting}
+
+If either is wrong, the pipeline flushes younger instructions and redirects to the correct PC.
+
+\subsection{Performance counters}
+
+The branch-predicting core exposes counters such as:
+
+\begin{itemize}
+\item total cycles;
+\item number of control transfers;
+\item number of taken control transfers;
+\item number of mispredictions.
+\end{itemize}
+These make it possible to compare a predict-not-taken pipeline against the BTB/BHT predictor on the same program.
+
+\bigskip

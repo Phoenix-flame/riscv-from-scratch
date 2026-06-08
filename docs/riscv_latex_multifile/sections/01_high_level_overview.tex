@@ -1,0 +1,83 @@
+\section{High-Level Overview}
+
+\subsection{What this CPU is}
+
+A CPU core is the hardware block that repeatedly performs this loop:
+
+\begin{lstlisting}[language={}]
+fetch instruction -> decode instruction -> read operands -> execute -> access memory if needed -> write result -> choose next PC
+\end{lstlisting}
+
+For a RISC-V CPU, the instructions have a standardized binary encoding. The CPU must interpret those 32-bit instruction words and update architectural state exactly as the RISC-V ISA defines. The two most important pieces of architectural state are:
+
+\begin{itemize}
+\item the \textbf{program counter}, or PC, which says where the current instruction comes from;
+\item the \textbf{integer register file}, \texttt{x0} through \texttt{x31}, which holds software-visible values.
+\end{itemize}
+This project implements that loop in multiple ways. Some versions complete one instruction per clock. Some sequence an instruction over multiple states. Some overlap several instructions in a pipeline.
+
+\subsection{Why there are multiple CPU files}
+
+This is not one monolithic CPU design. The repository is organized like a learning path:
+
+\begin{longtable}{|>{\RaggedRight\arraybackslash}p{0.28\textwidth}|>{\RaggedRight\arraybackslash}p{0.32\textwidth}|>{\RaggedRight\arraybackslash}p{0.30\textwidth}|}
+\hline
+\textbf{Design level} & \textbf{Main files} & \textbf{Meaning} \\
+\hline
+\endfirsthead
+\hline
+\textbf{Design level} & \textbf{Main files} & \textbf{Meaning} \\
+\hline
+\endhead
+Single-cycle educational CPU & \texttt{rtl/cpu.v} & Easiest to understand: one instruction completes per clock. \\
+\hline
+SoC-oriented single-cycle-style CPU & \texttt{rtl/cpu\_core.v}, \texttt{rtl/soc.v} & Data memory is moved outside the CPU so peripherals can be memory-mapped. \\
+\hline
+Multi-cycle CPU & \texttt{rtl/cpu\_mc.v} & More synthesis-friendly for block RAM because memory reads take registered cycles. \\
+\hline
+Pipelined CPU & \texttt{rtl/cpu\_pipe.v} & Higher throughput by overlapping IF/ID/EX/MEM/WB stages. \\
+\hline
+Pipelined CPU with traps & \texttt{rtl/cpu\_pipe\_trap.v} & Adds precise exceptions/interrupts to the pipeline. \\
+\hline
+Pipelined CPU with branch prediction & \texttt{rtl/cpu\_pipe\_bp.v}, \texttt{rtl/branch\_predictor.v} & Reduces taken-branch penalty using prediction. \\
+\hline
+MMU variants & \texttt{rtl/mmu.v}, \texttt{rtl/cpu\_core\_mmu.v}, \texttt{rtl/cpu\_mc\_mmu.v}, \texttt{rtl/soc\_mmu.v} & Adds virtual-to-physical data address translation experiments. \\
+\hline
+FPGA/RTOS/debug variants & \texttt{rtl/fpga\_top*.v}, \texttt{rtl/soc\_rtos*.v}, \texttt{rtl/debug\_module.v} & Integration wrappers for real boards, UART, timers, and RTOS experiments. \\
+\hline
+\end{longtable}
+
+The result is useful for documentation because the same architectural idea appears in several forms. For example, the ALU is mostly the same concept in single-cycle, multi-cycle, and pipelined designs, but the timing around it changes.
+
+\subsection{Supported ISA subset, at a glance}
+
+The source code indicates support for these features in different variants:
+
+\begin{longtable}{|>{\RaggedRight\arraybackslash}p{0.28\textwidth}|>{\RaggedRight\arraybackslash}p{0.32\textwidth}|>{\RaggedRight\arraybackslash}p{0.30\textwidth}|}
+\hline
+\textbf{Feature} & \textbf{Meaning} & \textbf{Where it appears} \\
+\hline
+\endfirsthead
+\hline
+\textbf{Feature} & \textbf{Meaning} & \textbf{Where it appears} \\
+\hline
+\endhead
+RV32I & Base 32-bit integer ISA & Core datapath, \texttt{control.v}, \texttt{alu.v}, \texttt{immgen.v}, \texttt{regfile.v} \\
+\hline
+RV32M & Multiply/divide extension & \texttt{alu.v}, decoded by \texttt{control.v} when \texttt{funct7 == 0000001} \\
+\hline
+Zicsr & CSR read/write instructions & \texttt{csr.v}, \texttt{cpu\_core.v}, \texttt{cpu\_mc.v}, \texttt{cpu\_pipe\_trap.v}, MMU variants \\
+\hline
+Machine-mode traps/interrupts & Exceptions, \texttt{ecall}, \texttt{ebreak}, timer/external interrupts, \texttt{mret} & \texttt{csr.v}, trap-capable CPU variants \\
+\hline
+RV32A-style atomics & LR/SC and AMO read-modify-write operations & \texttt{cpu\_core.v} atomic datapath and decode support in \texttt{control.v} \\
+\hline
+Sv32 virtual memory & 32-bit paged virtual memory & \texttt{mmu.v}, \texttt{cpu\_core\_mmu.v}, \texttt{cpu\_mc\_mmu.v} \\
+\hline
+Branch prediction & BTB + 2-bit BHT & \texttt{branch\_predictor.v}, \texttt{cpu\_pipe\_bp.v} \\
+\hline
+\end{longtable}
+
+A safe way to describe the project is: \textbf{the base core is RV32I/RV32IM-oriented, with selected privileged, atomic, MMU, and prediction features added in specific variants.}
+
+\bigskip

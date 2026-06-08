@@ -1,0 +1,20 @@
+\section{Suggested Future Improvements}
+
+Possible next engineering steps:
+
+\begin{enumerate}
+\item Replace combinational division with a multi-cycle divider.
+\item Add a formal instruction decoder table and explicit illegal-instruction trap for all variants.
+\item Add instruction-side MMU translation.
+\item Add a small TLB for MMU variants.
+\item Add A/D bit management for page tables.
+\item Integrate atomics into pipelined and MMU variants.
+\item Add cache or simple instruction/data buffers.
+\item Add a standard bus protocol such as Wishbone, AXI-Lite, or AHB-Lite.
+\item Expand CSR/privilege support toward a more complete privileged architecture subset.
+\item Add formal verification for ALU, register file, decoder, and pipeline hazards.
+\item Add a machine-readable ISA support matrix per CPU variant.
+\item Improve debug support toward standard RISC-V debug behavior.
+\end{enumerate}
+
+\bigskip

@@ -1,0 +1,108 @@
+\section{Instruction Encoding and Decode}
+
+\subsection{Why decode exists}
+
+Hardware does not see assembly text like \texttt{add x3, x1, x2}. It sees a 32-bit instruction word. Decode is the process of slicing that word into fields and turning those fields into control signals.
+
+RISC-V keeps register fields in fixed positions across most instruction formats:
+
+\begin{lstlisting}[language={}]
+rd     = instr[11:7]
+funct3 = instr[14:12]
+rs1    = instr[19:15]
+rs2    = instr[24:20]
+funct7 = instr[31:25]
+opcode = instr[6:0]
+\end{lstlisting}
+
+The opcode identifies the broad instruction class: R-type ALU, I-type ALU, load, store, branch, jump, system, and so on. \texttt{funct3} and \texttt{funct7} refine that class.
+
+\subsection{How decode is implemented here}
+
+The main decoder/control unit is \texttt{rtl/control.v}. It receives:
+
+\begin{lstlisting}[language={}]
+opcode
+funct3
+funct7
+\end{lstlisting}
+
+and produces control signals such as:
+
+\begin{longtable}{|>{\RaggedRight\arraybackslash}p{0.38\textwidth}|>{\RaggedRight\arraybackslash}p{0.52\textwidth}|}
+\hline
+\textbf{Control signal} & \textbf{Meaning} \\
+\hline
+\endfirsthead
+\hline
+\textbf{Control signal} & \textbf{Meaning} \\
+\hline
+\endhead
+\texttt{reg\_write} & Write a value to \texttt{rd} at the end of the instruction. \\
+\hline
+\texttt{alu\_src\_a} & Select ALU operand A: register value or PC. \\
+\hline
+\texttt{alu\_src\_b} & Select ALU operand B: register value or immediate. \\
+\hline
+\texttt{mem\_read} & The instruction reads from data memory. \\
+\hline
+\texttt{mem\_write} & The instruction writes to data memory. \\
+\hline
+\texttt{branch} & The instruction is a conditional branch. \\
+\hline
+\texttt{jump} & The instruction is \texttt{jal} or \texttt{jalr}. \\
+\hline
+\texttt{jalr} & The jump target is computed from \texttt{rs1 + imm} and bit 0 is cleared. \\
+\hline
+\texttt{wb\_sel} & Selects write-back source: ALU, memory, PC+4, or immediate. \\
+\hline
+\texttt{imm\_type} & Selects I/S/B/U/J immediate layout. \\
+\hline
+\texttt{alu\_op} & Selects the ALU operation. \\
+\hline
+\end{longtable}
+
+The decoder uses the common hardware style “defaults first, then override”. Unknown instructions default to doing nothing in the simple decoder; trap-capable CPU variants add illegal-instruction detection around this.
+
+\subsection{Instruction families}
+
+\subsubsection{R-type integer operations}
+
+R-type instructions use two registers as operands and write one register:
+
+\begin{lstlisting}[language={}]
+add/sub/and/or/xor/sll/srl/sra/slt/sltu
+mul/div/rem variants when RV32M is enabled
+\end{lstlisting}
+
+In \texttt{control.v}, opcode \texttt{0110011} selects R-type behavior. If \texttt{funct7 == 0000001}, the instruction is treated as an RV32M multiply/divide operation. Otherwise, \texttt{funct3} and \texttt{funct7[5]} select the base integer ALU operation.
+
+\subsubsection{I-type ALU operations}
+
+I-type ALU instructions use one register and one immediate:
+
+\begin{lstlisting}[language={}]
+addi/slti/sltiu/xori/ori/andi/slli/srli/srai
+\end{lstlisting}
+
+The decoder sets \texttt{alu\_src\_b = 1} so the ALU receives the immediate instead of \texttt{rs2}.
+
+\subsubsection{Loads and stores}
+
+Loads and stores use the ALU as an address adder:
+
+\begin{lstlisting}[language={}]
+effective_address = rs1 + sign_extended_immediate
+\end{lstlisting}
+
+Loads write memory data back to \texttt{rd}. Stores write \texttt{rs2} into memory and do not write a register.
+
+\subsubsection{Branches and jumps}
+
+Branches compare two register values and may redirect the PC to \texttt{PC + branch\_offset}. Jumps always redirect the PC and write \texttt{PC + 4} to \texttt{rd} as a return address.
+
+\subsubsection{System instructions}
+
+Trap-capable variants look for opcode \texttt{1110011} and distinguish CSR instructions from \texttt{ecall}, \texttt{ebreak}, and \texttt{mret}. This logic appears in CPU wrappers such as \texttt{cpu\_core.v}, \texttt{cpu\_mc.v}, \texttt{cpu\_pipe\_trap.v}, and MMU variants, while the CSR state lives in \texttt{rtl/csr.v}.
+
+\bigskip

@@ -1,0 +1,80 @@
+\section{CPU Architecture Overview}
+
+\subsection{The basic CPU loop}
+
+Before looking at individual modules, it helps to understand the life of a typical instruction.
+
+For example:
+
+\begin{lstlisting}[language={}]
+add x3, x1, x2
+\end{lstlisting}
+
+Conceptually, the CPU does this:
+
+\begin{lstlisting}[language={}]
+1. Use PC to fetch a 32-bit instruction word.
+2. Decode that word and discover it is an R-type ADD.
+3. Read source registers x1 and x2.
+4. Send both values to the ALU.
+5. ALU computes rs1 + rs2.
+6. Write the result into destination register x3.
+7. Advance PC to PC + 4.
+\end{lstlisting}
+
+A load instruction adds a memory read. A store adds a memory write. A branch changes the next PC depending on a comparison. A trap redirects the PC to a trap handler.
+
+\subsection{Main conceptual block diagram}
+
+\begin{lstlisting}[language={},caption={Mermaid diagram source}]
+flowchart LR
+    PC[Program Counter] --> IF[Instruction Fetch]
+    IF --> DEC[Instruction Decoder]
+    DEC --> REG[Register File]
+    DEC --> IMM[Immediate Generator]
+    REG --> ALU[ALU]
+    IMM --> ALU
+    ALU --> BR[Branch / Jump Decision]
+    ALU --> LSU[Load / Store Address]
+    LSU --> MEM[Data Memory / Bus / MMU]
+    MEM --> WB[Write Back]
+    ALU --> WB
+    WB --> REG
+    BR --> PC
+    DEC --> CTRL[Control Signals]
+    CTRL --> ALU
+    CTRL --> LSU
+    CTRL --> WB
+\end{lstlisting}
+
+\subsection{Single-cycle vs multi-cycle vs pipelined}
+
+The repository contains all three styles.
+
+\subsubsection{Single-cycle}
+
+In a single-cycle CPU, one instruction completes in one clock period. The clock period must be long enough for the worst instruction path: instruction memory, decode, register read, ALU, memory, write-back mux, and setup to the register file.
+
+This is easy to understand but inefficient for FPGA block RAM and high clock frequency. In this project, \texttt{rtl/cpu.v} is the cleanest self-contained single-cycle CPU, while \texttt{rtl/cpu\_core.v} exposes the data-memory side as an external bus for SoC use.
+
+\subsubsection{Multi-cycle}
+
+In a multi-cycle CPU, the same instruction is split across several clock cycles. The CPU uses a small finite-state machine: fetch the instruction, execute it, optionally access memory, then return to fetch. This is slower in instructions per clock but easier to map to registered memories.
+
+\texttt{rtl/cpu\_mc.v} is this version. The comments describe states such as \texttt{FETCH}, \texttt{EXEC}, and \texttt{MEM}: ALU/branch/store instructions take fewer states than loads, because loads need an extra memory-data cycle.
+
+\subsubsection{Pipelined}
+
+In a pipelined CPU, multiple instructions are in flight at once. A classic five-stage pipeline uses:
+
+\begin{lstlisting}[language={}]
+IF  -> instruction fetch
+ID  -> decode and register read
+EX  -> execute / branch decision / address calculation
+MEM -> data memory access
+WB  -> register write-back
+\end{lstlisting}
+
+\texttt{rtl/cpu\_pipe.v} implements this style. It improves throughput, but introduces hazards: one instruction may need a value that an older instruction has not written back yet, or the CPU may fetch down the wrong path after a branch.
+
+\bigskip

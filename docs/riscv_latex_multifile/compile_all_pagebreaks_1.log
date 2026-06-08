@@ -1,0 +1,177 @@
+This is pdfTeX, Version 3.141592653-2.6-1.40.26 (TeX Live 2025/dev/Debian) (preloaded format=pdflatex)
+ restricted \write18 enabled.
+entering extended mode
+(./main.tex
+LaTeX2e <2024-11-01> patch level 2
+L3 programming layer <2025-01-18>
+(/usr/share/texlive/texmf-dist/tex/latex/base/article.cls
+Document Class: article 2024/06/29 v1.4n Standard LaTeX document class
+(/usr/share/texlive/texmf-dist/tex/latex/base/size12.clo))
+(/usr/share/texlive/texmf-dist/tex/latex/geometry/geometry.sty
+(/usr/share/texlive/texmf-dist/tex/latex/graphics/keyval.sty)
+(/usr/share/texlive/texmf-dist/tex/generic/iftex/ifvtex.sty
+(/usr/share/texlive/texmf-dist/tex/generic/iftex/iftex.sty)))
+(/usr/share/texlive/texmf-dist/tex/latex/base/fontenc.sty)
+(/usr/share/texlive/texmf-dist/tex/latex/base/inputenc.sty)
+(/usr/share/texmf/tex/latex/lm/lmodern.sty)
+(/usr/share/texlive/texmf-dist/tex/latex/microtype/microtype.sty
+(/usr/share/texlive/texmf-dist/tex/latex/etoolbox/etoolbox.sty)
+(/usr/share/texlive/texmf-dist/tex/latex/microtype/microtype-pdftex.def)
+(/usr/share/texlive/texmf-dist/tex/latex/microtype/microtype.cfg))
+(/usr/share/texlive/texmf-dist/tex/latex/hyperref/hyperref.sty
+(/usr/share/texlive/texmf-dist/tex/latex/kvsetkeys/kvsetkeys.sty)
+(/usr/share/texlive/texmf-dist/tex/generic/kvdefinekeys/kvdefinekeys.sty)
+(/usr/share/texlive/texmf-dist/tex/generic/pdfescape/pdfescape.sty
+(/usr/share/texlive/texmf-dist/tex/generic/ltxcmds/ltxcmds.sty)
+(/usr/share/texlive/texmf-dist/tex/generic/pdftexcmds/pdftexcmds.sty
+(/usr/share/texlive/texmf-dist/tex/generic/infwarerr/infwarerr.sty)))
+(/usr/share/texlive/texmf-dist/tex/latex/hycolor/hycolor.sty)
+(/usr/share/texlive/texmf-dist/tex/latex/hyperref/nameref.sty
+(/usr/share/texlive/texmf-dist/tex/latex/refcount/refcount.sty)
+(/usr/share/texlive/texmf-dist/tex/generic/gettitlestring/gettitlestring.sty
+(/usr/share/texlive/texmf-dist/tex/latex/kvoptions/kvoptions.sty)))
+(/usr/share/texlive/texmf-dist/tex/generic/stringenc/stringenc.sty)
+(/usr/share/texlive/texmf-dist/tex/latex/hyperref/pd1enc.def)
+(/usr/share/texlive/texmf-dist/tex/generic/intcalc/intcalc.sty)
+(/usr/share/texlive/texmf-dist/tex/latex/hyperref/puenc.def)
+(/usr/share/texlive/texmf-dist/tex/latex/url/url.sty)
+(/usr/share/texlive/texmf-dist/tex/generic/bitset/bitset.sty
+(/usr/share/texlive/texmf-dist/tex/generic/bigintcalc/bigintcalc.sty))
+(/usr/share/texlive/texmf-dist/tex/latex/base/atbegshi-ltx.sty))
+(/usr/share/texlive/texmf-dist/tex/latex/hyperref/hpdftex.def
+(/usr/share/texlive/texmf-dist/tex/latex/base/atveryend-ltx.sty)
+(/usr/share/texlive/texmf-dist/tex/latex/rerunfilecheck/rerunfilecheck.sty
+(/usr/share/texlive/texmf-dist/tex/generic/uniquecounter/uniquecounter.sty)))
+(/usr/share/texlive/texmf-dist/tex/latex/xcolor/xcolor.sty
+(/usr/share/texlive/texmf-dist/tex/latex/graphics-cfg/color.cfg)
+(/usr/share/texlive/texmf-dist/tex/latex/graphics-def/pdftex.def)
+(/usr/share/texlive/texmf-dist/tex/latex/graphics/mathcolor.ltx))
+(/usr/share/texlive/texmf-dist/tex/latex/tools/longtable.sty)
+(/usr/share/texlive/texmf-dist/tex/latex/tools/array.sty)
+(/usr/share/texlive/texmf-dist/tex/latex/ragged2e/ragged2e.sty)
+(/usr/share/texlive/texmf-dist/tex/latex/booktabs/booktabs.sty)
+(/usr/share/texlive/texmf-dist/tex/latex/listings/listings.sty
+(/usr/share/texlive/texmf-dist/tex/latex/listings/lstpatch.sty)
+(/usr/share/texlive/texmf-dist/tex/latex/listings/lstmisc.sty)
+(/usr/share/texlive/texmf-dist/tex/latex/listings/listings.cfg))
+(/usr/share/texlive/texmf-dist/tex/latex/caption/caption.sty
+(/usr/share/texlive/texmf-dist/tex/latex/caption/caption3.sty)
+(/usr/share/texlive/texmf-dist/tex/latex/caption/ltcaption.sty))
+(/usr/share/texlive/texmf-dist/tex/latex/enumitem/enumitem.sty)
+(/usr/share/texlive/texmf-dist/tex/latex/float/float.sty)
+(/usr/share/texlive/texmf-dist/tex/latex/placeins/placeins.sty)
+(/usr/share/texlive/texmf-dist/tex/latex/pdflscape/pdflscape.sty
+(/usr/share/texlive/texmf-dist/tex/latex/pdflscape/pdflscape-nometadata.sty
+(/usr/share/texlive/texmf-dist/tex/latex/graphics/lscape.sty
+(/usr/share/texlive/texmf-dist/tex/latex/graphics/graphics.sty
+(/usr/share/texlive/texmf-dist/tex/latex/graphics/trig.sty)
+(/usr/share/texlive/texmf-dist/tex/latex/graphics-cfg/graphics.cfg)))))
+(/usr/share/texmf/tex/latex/lm/t1lmr.fd)
+(/usr/share/texlive/texmf-dist/tex/latex/l3backend/l3backend-pdftex.def)
+(./main.aux)
+*geometry* driver: auto-detecting
+*geometry* detected driver: pdftex
+(/usr/share/texlive/texmf-dist/tex/latex/microtype/mt-cmr.cfg) (./main.out)
+(./main.out) (/usr/share/texlive/texmf-dist/tex/context/base/mkii/supp-pdf.mkii
+
+[Loading MPS to PDF converter (version 2006.09.02).]
+) (/usr/share/texlive/texmf-dist/tex/latex/epstopdf-pkg/epstopdf-base.sty
+(/usr/share/texlive/texmf-dist/tex/latex/latexconfig/epstopdf-sys.cfg))
+(/usr/share/texmf/tex/latex/lm/ot1lmr.fd)
+(/usr/share/texmf/tex/latex/lm/omllmm.fd)
+(/usr/share/texmf/tex/latex/lm/omslmsy.fd)
+(/usr/share/texmf/tex/latex/lm/omxlmex.fd) (./main.toc
+[1{/var/lib/texmf/fonts/map/pdftex/updmap/pdftex.map}{/usr/share/texmf/fonts/en
+c/dvips/lm/lm-ec.enc}] (/usr/share/texmf/tex/latex/lm/t1lmtt.fd)
+[2]
+[3])
+[4] (./sections/00_preface.tex)
+[5] (./sections/01_high_level_overview.tex
+(/usr/share/texmf/tex/latex/lm/ts1lmr.fd)
+Underfull \hbox (badness 1412) in paragraph at lines 34--34
+[]|\T1/lmtt/m/n/12 rtl/cpu_core.v\T1/lmr/m/n/12 (+20) , 
+
+Underfull \hbox (badness 1189) in paragraph at lines 38--39
+[]|\T1/lmr/m/n/12 (+20) Higher through- 
+
+Underfull \hbox (badness 5189) in paragraph at lines 44--44
+[]|\T1/lmtt/m/n/12 rtl/mmu.v\T1/lmr/m/n/12 (+20) , 
+[6{/usr/share/texmf/fonts/enc/dvips/lm/lm-ts1.enc}]
+Underfull \hbox (badness 1527) in paragraph at lines 65--66
+[]|\T1/lmr/m/n/12 (+20) Core dat-a-p-ath, 
+
+Underfull \hbox (badness 4686) in paragraph at lines 69--70
+\T1/lmtt/m/n/12 cpu_mc.v\T1/lmr/m/n/12 (+20) , 
+)
+[7] (./sections/02_repository_file_structure.tex
+Overfull \hbox (9.01962pt too wide) in paragraph at lines 36--36
+[]|\T1/lmtt/m/n/12 rtl/branch_predictor.v|  
+
+Underfull \hbox (badness 4543) in paragraph at lines 38--39
+[]|\T1/lmr/m/n/12 (+20) Integrates 
+
+Overfull \hbox (16.07986pt too wide) in paragraph at lines 52--53
+[]|\T1/lmr/m/n/12 (-20) Transmit/receive/configurable 
+[8] [9]
+[10])
+[11] (./sections/03_cpu_architecture_overview.tex
+[12])
+[13] (./sections/04_instruction_encoding_and_decode.tex
+[14])
+[15] (./sections/05_immediate_generator.tex
+Underfull \hbox (badness 1147) in paragraph at lines 28--29
+\T1/lmr/m/n/12 (+20) im-me-di-ate from 
+
+[16])
+[17] (./sections/06_register_file.tex)
+[18] (./sections/07_alu_and_rv32m_multiply_divide.tex
+[19])
+[20] (./sections/08_program_counter_branches_and_jumps.tex
+[21]
+Overfull \hbox (19.06863pt too wide) in paragraph at lines 77--78
+[]\T1/lmr/m/n/12 (-20) This is why \T1/lmtt/m/n/12 cpu_pipe.v \T1/lmr/m/n/12 (-
+20) flushes be-hind taken branches and jumps, and why \T1/lmtt/m/n/12 cpu_pipe_
+bp.v
+)
+[22] (./sections/09_load_store_unit_and_memory_access.tex
+[23])
+[24] (./sections/10_csr_privilege_exceptions_and_traps.tex [25]
+[26])
+[27] (./sections/11_timer_and_clint.tex)
+[28] (./sections/12_atomic_operations.tex)
+[29] (./sections/13_mmu_and_virtual_memory.tex
+[30]
+[31]
+[32]
+[33])
+[34] (./sections/14_pipeline_hazards_forwarding_and_stalls.tex
+[35])
+[36] (./sections/15_precise_traps_in_the_pipeline.tex)
+[37] (./sections/16_branch_prediction.tex
+[38])
+[39] (./sections/17_soc_integration_and_memory_map_concept.tex
+Underfull \hbox (badness 4556) in paragraph at lines 43--43
+[]|\T1/lmtt/m/n/12 rtl/soc_fpga.v\T1/lmr/m/n/12 (+20) , 
+
+Underfull \hbox (badness 1152) in paragraph at lines 43--43
+\T1/lmtt/m/n/12 rtl/soc_uart_fpga.v\T1/lmr/m/n/12 (+20) , 
+
+Underfull \hbox (badness 4556) in paragraph at lines 45--45
+[]|\T1/lmtt/m/n/12 rtl/soc_rtos.v\T1/lmr/m/n/12 (+20) , 
+)
+[40] (./sections/18_uart_debug_and_system_control.tex)
+[41] (./sections/19_fpga_and_synthesis_notes.tex)
+[42] (./sections/20_software_and_verification.tex
+[43])
+[44] (./sections/21_how_to_read_the_codebase.tex)
+[45] (./sections/22_design_philosophy_and_limitations.tex)
+[46] (./sections/23_suggested_future_improvements.tex)
+[47] (./sections/24_summary.tex)
+[48] (./main.aux) )
+(see the transcript file for additional information)</usr/share/texmf/fonts/typ
+e1/public/lm/lmbx12.pfb></usr/share/texmf/fonts/type1/public/lm/lmr12.pfb></usr
+/share/texmf/fonts/type1/public/lm/lmr17.pfb></usr/share/texmf/fonts/type1/publ
+ic/lm/lmtk10.pfb></usr/share/texmf/fonts/type1/public/lm/lmtt10.pfb></usr/share
+/texmf/fonts/type1/public/lm/lmtt12.pfb>
+Output written on main.pdf (48 pages, 294348 bytes).
+Transcript written on main.log.

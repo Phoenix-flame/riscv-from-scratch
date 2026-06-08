@@ -1,0 +1,30 @@
+\section{UART, Debug, and System Control}
+
+\subsection{Why UART is useful}
+
+A UART gives the CPU a simple way to print text, receive commands, and show program progress without a full display or operating system. Bare-metal programs often use UART as their first debug interface.
+
+The repository contains several UART-related modules:
+
+\begin{lstlisting}[language={}]
+uart.v
+uart_hw.v
+uart_full.v
+uart_rx.v
+uart_tx.v
+uart_tx_cfg.v
+\end{lstlisting}
+
+These are used by FPGA/SoC wrappers to provide serial I/O.
+
+\subsection{Debug support}
+
+\texttt{debug\_module.v}, \texttt{cpu\_core\_dbg.v}, and \texttt{soc\_dbg.v} are debug-oriented blocks/wrappers. The idea of a debug module is to let an external controller observe or influence CPU execution, for example halting, inspecting state, or stepping through code.
+
+This appears experimental/educational rather than a full RISC-V Debug Specification implementation.
+
+\subsection{System control}
+
+\texttt{syscon.v} provides system-level control. In some SoC variants, a halt signal can freeze the CPU. This is useful in simulations, tests, or simple host-controlled systems.
+
+\bigskip

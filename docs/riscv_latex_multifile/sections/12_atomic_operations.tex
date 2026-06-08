@@ -1,0 +1,54 @@
+\section{Atomic Operations}
+
+\subsection{Why atomics exist}
+
+Consider this code running with interrupts or multiple execution contexts:
+
+\begin{lstlisting}[language={}]
+counter = counter + 1;
+\end{lstlisting}
+
+At machine level, that is usually:
+
+\begin{lstlisting}[language={}]
+lw   t0, 0(a0)
+addi t0, t0, 1
+sw   t0, 0(a0)
+\end{lstlisting}
+
+If an interrupt or another hart modifies \texttt{counter} between the load and store, an update can be lost. Atomic instructions solve this by making read-modify-write sequences indivisible at the architectural level.
+
+\subsection{RISC-V atomic concepts}
+
+RISC-V atomics include two styles:
+
+\begin{enumerate}
+\item \textbf{AMO instructions}: read old memory value, compute a new value, write it back, and return the old value.
+\item \textbf{LR/SC instructions}: load-reserved and store-conditional. \texttt{lr.w} creates a reservation. \texttt{sc.w} stores only if the reservation is still valid.
+\end{enumerate}
+
+\subsection{Implementation in this repository}
+
+\texttt{cpu\_core.v} contains atomic datapath logic for opcode \texttt{0101111}:
+
+\begin{itemize}
+\item \texttt{funct7[6:2]} is used as the AMO function field;
+\item \texttt{lr.w} records a reservation address;
+\item \texttt{sc.w} succeeds only if the reservation is valid and matches the address;
+\item AMO read-modify-write instructions compute \texttt{amo\_alu} from memory data and \texttt{rs2};
+\item atomics are word-sized in this design (\texttt{dmem\_funct3 = 3'b010}).
+\end{itemize}
+The reservation state is held in:
+
+\begin{lstlisting}[language={}]
+resv_valid
+resv_addr
+\end{lstlisting}
+
+The design clears the reservation after store-conditional and AMO behavior, and also clears it on traps in the relevant logic. That matters because a task switch between \texttt{lr.w} and \texttt{sc.w} should normally cause the later \texttt{sc.w} to fail.
+
+\subsection{Important limitation}
+
+The atomic path is present in the SoC-style core logic, not uniformly integrated into every pipeline and MMU variant. A pipelined implementation would need to ensure the read-modify-write sequence is not split incorrectly across stages or interrupted by hazards.
+
+\bigskip

@@ -1,0 +1,51 @@
+\section{SoC Integration and Memory Map Concept}
+
+\subsection{Why a CPU core needs a SoC wrapper}
+
+A CPU alone only executes instructions. A usable system needs memory and peripherals. The SoC wrapper connects the CPU to:
+
+\begin{itemize}
+\item instruction memory;
+\item data RAM;
+\item UART;
+\item timer/CLINT;
+\item syscon/control registers;
+\item debug blocks;
+\item FPGA top-level pins.
+\end{itemize}
+\subsection{Memory-mapped peripherals}
+
+The CPU uses normal load/store instructions. The SoC address decoder decides what hardware block responds.
+
+\begin{lstlisting}[language={}]
+CPU address -> address decoder -> RAM or UART or timer or syscon
+\end{lstlisting}
+
+This means software can write a UART transmit register with a normal store instruction.
+
+\subsection{Important wrappers}
+
+\begin{longtable}{|>{\RaggedRight\arraybackslash}p{0.38\textwidth}|>{\RaggedRight\arraybackslash}p{0.52\textwidth}|}
+\hline
+\textbf{File} & \textbf{Role} \\
+\hline
+\endfirsthead
+\hline
+\textbf{File} & \textbf{Role} \\
+\hline
+\endhead
+\texttt{rtl/soc.v} & Basic simulation SoC around \texttt{cpu\_core.v}. \\
+\hline
+\texttt{rtl/soc\_pipe.v} & SoC wrapper for pipelined CPU experiments. \\
+\hline
+\texttt{rtl/soc\_mmu.v} & SoC wrapper for MMU experiments. \\
+\hline
+\texttt{rtl/soc\_fpga.v}, \texttt{rtl/soc\_uart\_fpga.v}, \texttt{rtl/soc\_fpga\_mmu.v} & FPGA-oriented system wrappers. \\
+\hline
+\texttt{rtl/soc\_rtos.v}, \texttt{rtl/soc\_rtos\_fpga.v} & RTOS-oriented systems with timer/UART integration. \\
+\hline
+\texttt{rtl/fpga\_top*.v} & Board-level top modules. \\
+\hline
+\end{longtable}
+
+\bigskip

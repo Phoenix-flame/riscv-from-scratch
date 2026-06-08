@@ -387,3 +387,17 @@ sw/uart_irq.hex: sw/uart_irq_demo.c sw/crt0.s sw/link.ld sw/bin2hex.py
 
 uart-irq: sw/uart_irq.hex ## interrupt-driven receive-to-idle: collect a whole message via IRQs, echo it
 	$(IV) -o $(B)/uart_irq_tb.vvp $(RTL_UART_SOC) tb/uart_irq_tb.v && $(VVP) $(B)/uart_irq_tb.vvp
+
+# ---- PLIC: multiplex several IRQ lines into one MEIP (Step 33) -------
+RTL_PLIC = rtl/control.v rtl/alu.v rtl/regfile.v rtl/immgen.v rtl/csr.v rtl/cpu_mc.v \
+           rtl/bram_rom.v rtl/bram_ram.v rtl/uart_rx.v rtl/uart_tx_cfg.v \
+           rtl/uart_full.v rtl/plic.v rtl/soc_plic.v
+
+sw/plic_demo.hex: sw/plic_demo.c sw/crt0.s sw/link.ld sw/bin2hex.py
+	riscv64-unknown-elf-gcc -march=rv32im_zicsr -mabi=ilp32 -nostdlib -nostartfiles -ffreestanding \
+	  -O1 -I sw -T sw/link.ld sw/crt0.s sw/plic_demo.c -o $(B)/plic.elf -lgcc
+	riscv64-unknown-elf-objcopy -O binary $(B)/plic.elf $(B)/plic.bin
+	python3 sw/bin2hex.py $(B)/plic.bin > sw/plic_demo.hex
+
+plic: sw/plic_demo.hex ## PLIC: per-source priority / enable / threshold / claim-complete into one MEIP
+	$(IV) -o $(B)/plic_tb.vvp $(RTL_PLIC) tb/plic_tb.v && $(VVP) $(B)/plic_tb.vvp

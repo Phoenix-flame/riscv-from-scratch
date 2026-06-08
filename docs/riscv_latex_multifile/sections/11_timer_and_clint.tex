@@ -1,0 +1,32 @@
+\section{Timer and CLINT}
+
+\subsection{Why a timer matters}
+
+A timer interrupt lets software regain control periodically. This is essential for:
+
+\begin{itemize}
+\item preemptive multitasking;
+\item RTOS tick interrupts;
+\item timeouts;
+\item scheduling;
+\item basic OS services.
+\end{itemize}
+Without a timer, one program can run forever unless it voluntarily yields.
+
+\subsection{Machine timer interrupt flow}
+
+The timer peripheral asserts a timer interrupt level. The CSR unit checks:
+
+\begin{lstlisting}[language={}]
+mstatus.MIE && mie.MTIE && timer_irq
+\end{lstlisting}
+
+If true, \texttt{irq\_pending} becomes active and the CPU takes a machine timer interrupt. The CSR unit reports cause \texttt{0x8000\_0007} for timer interrupt. External interrupts, such as UART-style interrupts in later variants, use cause \texttt{0x8000\_000B} and have priority in \texttt{csr.v}.
+
+\subsection{CLINT-style block}
+
+\texttt{rtl/clint.v} is the CLINT-style timer block used by RTOS-oriented SoC variants. In RISC-V systems, CLINT normally contains \texttt{mtime} and \texttt{mtimecmp}. When \texttt{mtime >= mtimecmp}, a timer interrupt becomes pending.
+
+The important concept is that software programs a compare value in memory-mapped registers, then the hardware raises an interrupt when time reaches that value.
+
+\bigskip

@@ -32,6 +32,7 @@ module cpu_mc #(
     // data bus: word address + byte-write mask; read is 1-cycle (registered)
     output wire [31:0] dmem_addr,            // byte address
     output wire [3:0]  dmem_we,
+    output wire        dmem_re,              // data read strobe (genuine load only)
     output wire [31:0] dmem_wdata,
     input  wire [31:0] dmem_rdata,
     output wire [31:0] pc_out
@@ -150,6 +151,11 @@ module cpu_mc #(
                                             4'b1111;                         // SW
     // write only during EXEC of a store that isn't being trapped
     assign dmem_we = (in_exec & mem_write & ~take_trap) ? wmask : 4'b0000;
+    // read strobe: high only when actually performing a load (address valid in
+    // EXEC and MEM). Peripherals with read side-effects (e.g. a PLIC claim) must
+    // qualify on this, because dmem_addr=alu_result is driven on every
+    // instruction -- an ALU op can coincidentally equal a peripheral address.
+    assign dmem_re = mem_read & (in_exec | in_mem);
 
     // ---- load extraction from the registered word (valid in MEM) ----
     wire [31:0] dw = dmem_rdata;

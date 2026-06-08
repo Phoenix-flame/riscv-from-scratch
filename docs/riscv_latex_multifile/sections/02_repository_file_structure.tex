@@ -1,0 +1,120 @@
+\section{Repository / File Structure}
+
+The important HDL files are below.
+
+\begin{longtable}{|>{\RaggedRight\arraybackslash}p{0.28\textwidth}|>{\RaggedRight\arraybackslash}p{0.32\textwidth}|>{\RaggedRight\arraybackslash}p{0.30\textwidth}|}
+\hline
+\textbf{File / Module} & \textbf{Purpose} & \textbf{Important Notes} \\
+\hline
+\endfirsthead
+\hline
+\textbf{File / Module} & \textbf{Purpose} & \textbf{Important Notes} \\
+\hline
+\endhead
+\texttt{rtl/alu.v} & ALU & Combinational arithmetic/logic unit for RV32I/RV32M-style operations. \\
+\hline
+\texttt{rtl/control.v} & Decoder / control & Decodes opcode, funct3, funct7 into datapath control and ALU operation selection. \\
+\hline
+\texttt{rtl/immgen.v} & Immediate generator & Reconstructs I/S/B/U/J immediates from instruction bits and sign-extends them. \\
+\hline
+\texttt{rtl/regfile.v} & Integer register file & 32 x 32-bit GPRs, two combinational read ports, one synchronous write port, hardwired x0. \\
+\hline
+\texttt{rtl/imem.v} & Instruction memory & Simple instruction ROM/RAM style model for simulation-oriented cores. \\
+\hline
+\texttt{rtl/dmem.v} & Data memory & Byte/halfword/word load-store memory model for simple cores. \\
+\hline
+\texttt{rtl/cpu.v} & Single-cycle CPU top & Self-contained CPU with internal instruction and data memories. \\
+\hline
+\texttt{rtl/cpu\_core.v} & SoC CPU core & Single-cycle-style core with external data bus, CSR/trap logic, atomics, and timer interrupt input. \\
+\hline
+\texttt{rtl/cpu\_mc.v} & Multi-cycle CPU & BRAM-ready CPU using FETCH/EXEC/MEM-style sequencing. \\
+\hline
+\texttt{rtl/cpu\_pipe.v} & Pipelined CPU & 5-stage pipeline with forwarding, load-use stall, and predict-not-taken flushing. \\
+\hline
+\texttt{rtl/cpu\_pipe\_trap.v} & Pipelined CPU with traps & Adds precise CSR/trap behavior to the pipeline. \\
+\hline
+\texttt{rtl/branch\_predictor.v} & Branch predictor & BTB plus 2-bit saturating counter BHT. \\
+\hline
+\texttt{rtl/cpu\_pipe\_bp.v} & Pipelined CPU with prediction & Integrates \texttt{branch\_predictor.v} and performance counters. \\
+\hline
+\texttt{rtl/csr.v} & CSR/trap unit & Minimal machine-mode CSR bank, trap entry, \texttt{mret}, timer/external interrupt pending logic, \texttt{satp}. \\
+\hline
+\texttt{rtl/mmu.v} & Combinational MMU & Educational Sv32 data-side translator using dedicated page-table read ports. \\
+\hline
+\texttt{rtl/cpu\_core\_mmu.v} & CPU + combinational MMU & Single-cycle/SoC-oriented CPU variant with data-side translation. \\
+\hline
+\texttt{rtl/cpu\_mc\_mmu.v} & Multi-cycle CPU + MMU & Synthesizable page-table walker using registered memory/data bus sequencing. \\
+\hline
+\texttt{rtl/clint.v} & Timer/CLINT & Machine timer support for interrupt-driven software/RTOS experiments. \\
+\hline
+\texttt{rtl/timer.v} & Simple timer & Earlier/smaller timer peripheral. \\
+\hline
+\texttt{rtl/uart*.v} & UART peripherals & Transmit/receive/configurable UART blocks for FPGA/SoC integration. \\
+\hline
+\texttt{rtl/syscon.v} & System control & System-control peripheral, including halt-style control in some SoC variants. \\
+\hline
+\texttt{rtl/debug\_module.v}, \texttt{rtl/cpu\_core\_dbg.v}, \texttt{rtl/soc\_dbg.v} & Debug support & Experimental/debug-oriented CPU and SoC wrappers. \\
+\hline
+\texttt{rtl/soc*.v} & SoC tops & Memory/peripheral integration around CPU variants. \\
+\hline
+\texttt{rtl/fpga\_top*.v} & FPGA tops & Board-oriented wrappers for synthesis/deployment. \\
+\hline
+\texttt{constraints/*.xdc} & FPGA constraints & Zynq-related pin/clock constraints. \\
+\hline
+\texttt{sw/*} & Software examples & Bare-metal/RTOS/demo code and generated hex files. \\
+\hline
+\texttt{tb/*} & Testbenches & Simulation checks for CPU blocks and full systems. \\
+\hline
+\texttt{docs/*} & Tutorial notes & Step-by-step design documentation already present in the repo. \\
+\hline
+\end{longtable}
+
+Full RTL file list found under \texttt{rtl/}:
+
+\begin{lstlisting}[language={}]
+alu.v
+bram_ram.v
+bram_rom.v
+branch_predictor.v
+clint.v
+control.v
+cpu.v
+cpu_core.v
+cpu_core_dbg.v
+cpu_core_mmu.v
+cpu_mc.v
+cpu_mc_mmu.v
+cpu_pipe.v
+cpu_pipe_bp.v
+cpu_pipe_trap.v
+csr.v
+debug_module.v
+dmem.v
+fpga_top.v
+fpga_top_full.v
+fpga_top_rtos.v
+fpga_top_uart.v
+imem.v
+immgen.v
+mmu.v
+regfile.v
+soc.v
+soc_dbg.v
+soc_fpga.v
+soc_fpga_mmu.v
+soc_mmu.v
+soc_pipe.v
+soc_rtos.v
+soc_rtos_fpga.v
+soc_uart_fpga.v
+syscon.v
+timer.v
+uart.v
+uart_full.v
+uart_hw.v
+uart_rx.v
+uart_tx.v
+uart_tx_cfg.v
+\end{lstlisting}
+
+\bigskip

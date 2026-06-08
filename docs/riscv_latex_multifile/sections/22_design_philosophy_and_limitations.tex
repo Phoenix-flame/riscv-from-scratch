@@ -1,0 +1,33 @@
+\section{Design Philosophy and Limitations}
+
+\subsection{Design philosophy}
+
+The design favors clarity and incremental learning. Each advanced feature is introduced in a separate variant rather than hidden inside one large, configurable CPU.
+
+This is a good approach for documentation because it lets readers compare:
+
+\begin{itemize}
+\item single-cycle vs multi-cycle timing;
+\item non-pipelined vs pipelined hazards;
+\item predict-not-taken vs dynamic branch prediction;
+\item physical addressing vs MMU translation;
+\item simple trap handling vs precise pipelined traps.
+\end{itemize}
+\subsection{Known simplifications}
+
+Important simplifications include:
+
+\begin{itemize}
+\item combinational divider in \texttt{alu.v};
+\item educational combinational MMU in \texttt{mmu.v};
+\item no TLB;
+\item limited privilege model;
+\item incomplete production-grade CSR set;
+\item atomics not uniformly integrated into every variant;
+\item instruction-side MMU behavior is not as complete as a production Linux-capable core;
+\item branch predictor is small and direct-mapped by PC index;
+\item no cache hierarchy.
+\end{itemize}
+These are reasonable for a from-scratch learning CPU. They also clearly identify future improvement points.
+
+\bigskip

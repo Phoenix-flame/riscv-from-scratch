@@ -1,0 +1,34 @@
+\section{Register File}
+
+\subsection{What the register file is}
+
+The register file is the CPU’s small, fast architectural storage. RISC-V RV32 has 32 integer registers:
+
+\begin{lstlisting}[language={}]
+x0, x1, x2, ..., x31
+\end{lstlisting}
+
+Each is 32 bits wide in RV32. Most instructions read one or two registers and write one destination register.
+
+\subsection{The special rule for x0}
+
+RISC-V register \texttt{x0} is hardwired to zero. Reading \texttt{x0} always returns zero. Writing \texttt{x0} has no effect. This simplifies many instructions. For example:
+
+\begin{lstlisting}[language={}]
+addi x5, x0, 123   # load small constant 123 into x5
+add  x6, x7, x0    # copy x7 into x6
+\end{lstlisting}
+
+\texttt{rtl/regfile.v} implements this rule by returning zero when a read address is zero and ignoring writes to \texttt{rd\_addr == 0}.
+
+\subsection{Read and write timing}
+
+The register file has:
+
+\begin{itemize}
+\item two combinational read ports: \texttt{rs1\_data} and \texttt{rs2\_data} update when addresses change;
+\item one synchronous write port: writes occur on the rising clock edge.
+\end{itemize}
+This is convenient for the single-cycle CPU because operands can be read, executed, and scheduled for write-back within one clock period. In the pipelined CPU, register-file timing interacts with hazards, forwarding, and write-back bypassing.
+
+\bigskip

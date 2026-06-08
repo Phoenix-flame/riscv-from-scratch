@@ -1,0 +1,245 @@
+\section{MMU and Virtual Memory}
+
+\subsection{The problem: software should not always use physical addresses}
+
+Without an MMU, every address produced by software is a physical address. If code executes:
+
+\begin{lstlisting}[language={}]
+sw x5, 0(x10)
+\end{lstlisting}
+
+and \texttt{x10} contains \texttt{0x10000000}, then the CPU writes physical address \texttt{0x10000000} directly. That address might be RAM, a UART register, a timer register, another program’s memory, or an invalid area.
+
+This is simple, but it has problems:
+
+\begin{itemize}
+\item programs can corrupt each other;
+\item user software can access device registers directly;
+\item each program must know where it is physically loaded;
+\item operating systems cannot easily isolate processes;
+\item memory can be fragmented and still needs to appear contiguous to software.
+\end{itemize}
+\subsection{Virtual address vs physical address}
+
+Virtual memory introduces a translation step:
+
+\begin{lstlisting}[language={}]
+software address  ->  MMU translation  ->  physical memory/bus address
+virtual address       page table walk      physical address
+\end{lstlisting}
+
+The program produces a \textbf{virtual address}. The memory system needs a \textbf{physical address}. The MMU translates between them.
+
+This lets the operating system give each program its own address space. Two programs can both think they use address \texttt{0x00001000}, but the MMU can translate those virtual addresses to different physical pages.
+
+\subsection{What a page is}
+
+A page is a fixed-size block of virtual memory. In RISC-V Sv32, the normal page size is 4 KiB. This means the lower 12 bits of an address are the offset within the page:
+
+\begin{lstlisting}[language={}]
+4 KiB = 4096 bytes = 2^12 bytes
+\end{lstlisting}
+
+So address bits \texttt{[11:0]} are not translated. They are copied into the physical address. The upper bits select which page is being accessed.
+
+\subsection{What a page table is}
+
+A page table is a data structure in memory that tells the MMU how to translate virtual pages into physical pages. Each entry is called a PTE: Page Table Entry.
+
+A PTE contains:
+
+\begin{itemize}
+\item a physical page number;
+\item valid/read/write/execute/user permission bits;
+\item other status bits.
+\end{itemize}
+The MMU reads PTEs from memory during a page-table walk.
+
+\subsection{Why multi-level page tables exist}
+
+A flat page table for a 32-bit address space could be large. Multi-level page tables solve this by splitting the virtual page number into pieces. The first piece indexes a root table. That entry either points to a second-level table or directly maps a large page. The second piece indexes the second-level table.
+
+This saves memory because page tables only need to exist for regions that are actually mapped.
+
+\subsection{Now Sv32: the RISC-V 32-bit virtual memory scheme}
+
+Only after understanding pages and page tables does Sv32 make sense.
+
+Sv32 is the RISC-V virtual memory scheme for 32-bit virtual addresses. It divides the address like this:
+
+\begin{lstlisting}[language={}]
+31          22 21          12 11           0
++-------------+--------------+--------------+
+|   VPN[1]    |    VPN[0]    | page offset  |
+|   10 bits   |    10 bits   |   12 bits    |
++-------------+--------------+--------------+
+\end{lstlisting}
+
+\begin{itemize}
+\item \texttt{VPN[1]} indexes the level-1/root page table.
+\item \texttt{VPN[0]} indexes the level-0 page table.
+\item \texttt{page offset} is copied to the physical address.
+\end{itemize}
+\subsection{13.7 \texttt{satp}: where translation begins}
+
+The CPU needs to know where the root page table is. RISC-V stores that information in the \texttt{satp} CSR.
+
+For RV32 Sv32, the useful layout is:
+
+\begin{lstlisting}[language={}]
+31      30          22 21                         0
++--------+-------------+---------------------------+
+| MODE   |    ASID     |          root PPN         |
+| 1 bit  |   9 bits    |          22 bits          |
++--------+-------------+---------------------------+
+\end{lstlisting}
+
+In this implementation:
+
+\begin{itemize}
+\item \texttt{satp[31] = 1} enables Sv32 translation;
+\item \texttt{satp[21:0]} is used as the root page table physical page number;
+\item ASID is structurally present in the format but not used for a TLB because this educational MMU has no TLB.
+\end{itemize}
+\subsection{PTE format and permissions}
+
+\texttt{rtl/mmu.v} uses these PTE bits:
+
+\begin{longtable}{|>{\RaggedRight\arraybackslash}p{0.28\textwidth}|>{\RaggedRight\arraybackslash}p{0.32\textwidth}|>{\RaggedRight\arraybackslash}p{0.30\textwidth}|}
+\hline
+\textbf{Bit} & \textbf{Name} & \textbf{Meaning} \\
+\hline
+\endfirsthead
+\hline
+\textbf{Bit} & \textbf{Name} & \textbf{Meaning} \\
+\hline
+\endhead
+0 & V & Valid \\
+\hline
+1 & R & Readable \\
+\hline
+2 & W & Writable \\
+\hline
+3 & X & Executable \\
+\hline
+4 & U & User-accessible \\
+\hline
+5 & G & Global, noted but not central here \\
+\hline
+6 & A & Accessed, noted but not updated here \\
+\hline
+7 & D & Dirty, noted but not updated here \\
+\hline
+31:10 & PPN & Physical page number \\
+\hline
+\end{longtable}
+
+The implementation treats a PTE as invalid if \texttt{V=0} or if \texttt{R=0} and \texttt{W=1}, which is an invalid combination.
+
+\subsection{Page-table walk}
+
+For a data access in user mode when Sv32 is enabled, the MMU performs:
+
+\begin{lstlisting}[language={}]
+pte1_addr = satp.root_ppn * 4096 + VPN[1] * 4
+pte1 = memory[pte1_addr]
+
+if pte1 is a leaf:
+    map as a 4 MiB superpage
+else:
+    pte0_addr = pte1.ppn * 4096 + VPN[0] * 4
+    pte0 = memory[pte0_addr]
+    pte0 must be a leaf mapping a 4 KiB page
+\end{lstlisting}
+
+A leaf is detected when \texttt{R} or \texttt{X} is set. A level-1 leaf maps a superpage. A level-0 leaf maps a normal 4 KiB page.
+
+\subsection{How physical addresses are formed}
+
+For a 4 KiB page:
+
+\begin{lstlisting}[language={}]
+physical_address = pte0.PPN || virtual_address[11:0]
+\end{lstlisting}
+
+For a 4 MiB superpage:
+
+\begin{lstlisting}[language={}]
+physical_address = pte1.PPN[1] || virtual_address[21:0]
+\end{lstlisting}
+
+\texttt{rtl/mmu.v} implements these as \texttt{pa\_4k} and \texttt{pa\_super}.
+
+\subsection{When translation is active}
+
+In \texttt{rtl/mmu.v}, translation is active only when:
+
+\begin{lstlisting}[language={}]
+priv == user mode AND satp[31] == 1
+\end{lstlisting}
+
+Machine mode bypasses translation and uses addresses directly. This keeps machine-mode trap handlers and boot code simple.
+
+\subsection{Page faults}
+
+The MMU reports a page fault when:
+
+\begin{itemize}
+\item a PTE is invalid;
+\item a required second-level leaf is missing;
+\item user mode accesses a page without \texttt{U=1};
+\item a load is attempted without read permission;
+\item a store is attempted without write permission.
+\end{itemize}
+The CPU converts this into RISC-V trap causes:
+
+\begin{longtable}{|>{\RaggedRight\arraybackslash}p{0.38\textwidth}|>{\RaggedRight\arraybackslash}p{0.52\textwidth}|}
+\hline
+\textbf{Cause} & \textbf{Meaning} \\
+\hline
+\endfirsthead
+\hline
+\textbf{Cause} & \textbf{Meaning} \\
+\hline
+\endhead
+13 & Load page fault \\
+\hline
+15 & Store/AMO page fault \\
+\hline
+\end{longtable}
+
+\subsection{Two MMU implementations in this project}
+
+There are two MMU styles:
+
+\subsubsection{\texttt{rtl/mmu.v} — combinational educational MMU}
+
+This module has dedicated page-table read ports:
+
+\begin{lstlisting}[language={}]
+walk_addr1 / walk_data1
+walk_addr2 / walk_data2
+\end{lstlisting}
+
+That lets the page walk complete combinationally in one cycle. This is easy to understand and useful for simulation, but unrealistic for a single-port block RAM system.
+
+\subsubsection{\texttt{rtl/cpu\_mc\_mmu.v} — synthesizable multi-cycle walker}
+
+This version sequences the walk through states such as:
+
+\begin{lstlisting}[language={}]
+PTW1  -> drive level-1 PTE address
+PTW1D -> receive/check level-1 PTE
+PTW0D -> receive/check level-0 PTE
+ACC   -> perform translated memory access
+ACCD  -> receive load data
+PF    -> raise page-fault trap
+\end{lstlisting}
+
+This is closer to real hardware because the page-table walker shares the memory/data port and waits for registered memory data.
+
+\subsection{What is simplified}
+
+This MMU is educational. It does not implement a TLB, does not update Accessed/Dirty bits, and focuses on data-side translation. A production MMU would add instruction-side translation, TLBs, permission details such as SUM/MXR, page-fault priority details, and more complete privilege behavior.
+
+\bigskip

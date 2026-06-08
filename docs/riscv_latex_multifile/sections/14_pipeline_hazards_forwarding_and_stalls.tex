@@ -1,0 +1,74 @@
+\section{Pipeline, Hazards, Forwarding, and Stalls}
+
+\subsection{Why pipelining exists}
+
+A single-cycle CPU waits for every part of an instruction to finish before starting the next instruction. Pipelining improves throughput by overlapping stages from different instructions.
+
+An ideal five-stage pipeline completes one instruction per cycle after filling:
+
+\begin{lstlisting}[language={}]
+Cycle 1: I1 IF
+Cycle 2: I1 ID   I2 IF
+Cycle 3: I1 EX   I2 ID   I3 IF
+Cycle 4: I1 MEM  I2 EX   I3 ID   I4 IF
+Cycle 5: I1 WB   I2 MEM  I3 EX   I4 ID   I5 IF
+\end{lstlisting}
+
+\subsection{Pipeline registers}
+
+Between stages, the CPU stores values in pipeline registers. \texttt{cpu\_pipe.v} has registers with names like:
+
+\begin{lstlisting}[language={}]
+IF/ID:  ifid_pc, ifid_instr
+ID/EX:  idex_pc, idex_imm, idex_rs1d, idex_rs2d, control bits
+EX/MEM: exmem_addr, exmem_store, exmem_result, control bits
+MEM/WB: memwb_data, memwb_rd, memwb_reg_write
+\end{lstlisting}
+
+These registers preserve each instruction’s state as it moves through the pipeline.
+
+\subsection{Data hazards}
+
+A data hazard occurs when a younger instruction needs a result from an older instruction that has not yet reached write-back.
+
+Example:
+
+\begin{lstlisting}[language={}]
+add x5, x1, x2
+sub x6, x5, x3
+\end{lstlisting}
+
+The \texttt{sub} needs \texttt{x5} before the \texttt{add} writes it back.
+
+\subsection{Forwarding}
+
+Forwarding solves many hazards by taking a value from a later pipeline stage and feeding it directly into EX, without waiting for the register file.
+
+\texttt{cpu\_pipe.v} forwards from:
+
+\begin{itemize}
+\item EX/MEM to EX;
+\item MEM/WB to EX.
+\end{itemize}
+The forwarding checks compare destination registers against current source registers and ignore register zero.
+
+\subsection{Load-use stall}
+
+A load result is not available until the memory stage. If the very next instruction needs that loaded value, forwarding cannot provide it soon enough.
+
+Example:
+
+\begin{lstlisting}[language={}]
+lw  x5, 0(x1)
+add x6, x5, x2
+\end{lstlisting}
+
+The pipeline inserts a one-cycle stall. In \texttt{cpu\_pipe.v}, this is detected by checking whether the instruction in EX is a load and its destination matches \texttt{rs1} or \texttt{rs2} of the instruction in ID.
+
+\subsection{Control hazards and flushing}
+
+Branches and jumps decide the next PC. In \texttt{cpu\_pipe.v}, they resolve in EX. If a branch or jump is taken, instructions currently in IF and ID are on the wrong path. The CPU flushes them and redirects the PC to the correct target.
+
+This is called a predict-not-taken pipeline because the fetch unit keeps fetching \texttt{PC+4} until EX proves otherwise.
+
+\bigskip

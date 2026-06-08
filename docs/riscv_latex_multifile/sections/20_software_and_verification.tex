@@ -1,0 +1,58 @@
+\section{Software and Verification}
+
+\subsection{Why testbenches matter}
+
+A CPU can appear to run simple code while still having subtle bugs in branch offsets, sign extension, load alignment, forwarding, or trap priority. Testbenches catch these by running known programs and checking architectural results.
+
+The repository includes step-by-step docs and testbenches that validate individual blocks and integrated cores.
+
+\subsection{What to test per block}
+
+\begin{longtable}{|>{\RaggedRight\arraybackslash}p{0.38\textwidth}|>{\RaggedRight\arraybackslash}p{0.52\textwidth}|}
+\hline
+\textbf{Block} & \textbf{Important tests} \\
+\hline
+\endfirsthead
+\hline
+\textbf{Block} & \textbf{Important tests} \\
+\hline
+\endhead
+ALU & Signed/unsigned comparisons, shifts, multiply high variants, division edge cases. \\
+\hline
+Immediate generator & Negative immediates, B/J offsets, U immediates. \\
+\hline
+Register file & x0 hardwired zero, simultaneous reads, write enable. \\
+\hline
+Control/decode & Every opcode family, RV32M funct7 detection, load/store/branch controls. \\
+\hline
+Branch logic & Signed and unsigned branch conditions, negative branch offsets. \\
+\hline
+Load/store & Byte/halfword/word, sign/zero extension, unaligned behavior if defined. \\
+\hline
+CSR/trap & \texttt{ecall}, \texttt{ebreak}, illegal instruction, timer interrupt, \texttt{mret}. \\
+\hline
+Pipeline & Forwarding, load-use stall, branch flush, write-back hazards. \\
+\hline
+Branch predictor & Correctness with mispredictions, performance counters, BTB aliasing behavior. \\
+\hline
+MMU & Valid translations, invalid PTEs, permission faults, superpages, user/M-mode bypass. \\
+\hline
+Atomics & AMO old/new values, LR/SC success/failure, reservation clearing. \\
+\hline
+\end{longtable}
+
+\subsection{Software demos}
+
+The \texttt{sw/} directory contains generated hex files and software experiments. A typical flow is:
+
+\begin{lstlisting}[language={}]
+compile/link bare-metal C or assembly
+convert ELF/program to hex
+load hex into instruction memory
+run simulation or FPGA system
+observe memory/UART/testbench outputs
+\end{lstlisting}
+
+This makes the CPU verifiable at the architectural level, not only as isolated HDL blocks.
+
+\bigskip

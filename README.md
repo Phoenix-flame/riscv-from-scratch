@@ -58,6 +58,7 @@ sequence) and we will watch the registers change in the waveform viewer.
 | 30 | `docs/30-configurable-uart.md` | Bonus: configurable UART with RX path (runtime baud/data/parity/stop) on Zynq-7010 | **done & tested (sim)** |
 | 31 | `docs/31-uart-interrupts.md` | Bonus: UART interrupts + receive-to-idle (machine external interrupt, IDLE-line detection) on Zynq-7010 | **done & tested (sim)** |
 | 32 | `docs/32-branch-predictor.md` | Bonus: branch predictor (BTB + 2-bit saturating counters) on the pipelined core, with measured misprediction rate | **done & tested (sim)** |
+| 33 | `docs/33-plic.md` | Bonus: PLIC interrupt controller — per-source priority / enable / threshold / claim-complete multiplexing several lines into one `MEIP` | **done & tested (sim)** |
 
 ## Directory layout
 
@@ -136,7 +137,7 @@ A menu of where this project can go next, grouped by goal. Rough difficulty:
 
 ### Peripherals & interrupts
 - ✅ **UART interrupts + receive-to-idle** — machine external interrupt (cause 11) wired to a configurable UART, with STM32-style IDLE-line detection to receive whole variable-length messages (Step 31).
-- 🟢 **Interrupt controller (PLIC)** — multiplex several peripheral lines into `MEIP` with per-source priority/claim, instead of one ORed line.
+- ✅ **Interrupt controller (PLIC)** — per-source priority / enable / threshold / claim-complete multiplexing several lines into one `MEIP` (Step 33). Surfaced and fixed a read-side-effect bus bug via a new `dmem_re` read strobe.
 - 🟡 **Richer peripherals** — SPI/I2C masters, GPIO with edge interrupts, a PWM/timer-capture block — each behind the same MMIO + IRQ pattern.
 
 ### For fun / applications

@@ -1,0 +1,14 @@
+\section*{Preface}
+
+This document explains the CPU core as an engineering design, not only as a list of modules. Each major part follows the same pattern:
+
+\begin{enumerate}
+\item \textbf{Why the block exists} — the CPU concept.
+\item \textbf{What RISC-V requires} — the architectural meaning.
+\item \textbf{How this repository implements it} — the actual HDL modules and signals.
+\item \textbf{Design limits and trade-offs} — what is simplified, educational, or synthesis-oriented.
+\end{enumerate}
+
+The repository is best understood as a \textbf{family of progressively extended RV32 cores}. It starts with a simple single-cycle RV32I/RV32IM educational core and grows into SoC, multi-cycle, pipelined, trap-capable, MMU-capable, branch-predicting, UART/FPGA, and RTOS-oriented variants.
+
+\bigskip

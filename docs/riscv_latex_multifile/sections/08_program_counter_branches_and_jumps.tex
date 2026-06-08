@@ -1,0 +1,79 @@
+\section{Program Counter, Branches, and Jumps}
+
+\subsection{What the PC does}
+
+The program counter is the address of the current instruction. For ordinary instructions, the next PC is:
+
+\begin{lstlisting}[language={}]
+next_pc = pc + 4
+\end{lstlisting}
+
+because base RV32 instructions are 4 bytes long.
+
+\subsection{Conditional branches}
+
+A branch instruction compares two registers. If the condition is true, the CPU jumps to \texttt{PC + immediate}. Otherwise, it falls through to \texttt{PC + 4}.
+
+The branch conditions implemented in the CPU variants include:
+
+\begin{longtable}{|>{\RaggedRight\arraybackslash}p{0.28\textwidth}|>{\RaggedRight\arraybackslash}p{0.32\textwidth}|>{\RaggedRight\arraybackslash}p{0.30\textwidth}|}
+\hline
+\textbf{\texttt{funct3}} & \textbf{Branch} & \textbf{Meaning} \\
+\hline
+\endfirsthead
+\hline
+\textbf{\texttt{funct3}} & \textbf{Branch} & \textbf{Meaning} \\
+\hline
+\endhead
+\texttt{000} & \texttt{beq} & branch if equal \\
+\hline
+\texttt{001} & \texttt{bne} & branch if not equal \\
+\hline
+\texttt{100} & \texttt{blt} & signed less-than \\
+\hline
+\texttt{101} & \texttt{bge} & signed greater/equal \\
+\hline
+\texttt{110} & \texttt{bltu} & unsigned less-than \\
+\hline
+\texttt{111} & \texttt{bgeu} & unsigned greater/equal \\
+\hline
+\end{longtable}
+
+The branch comparison is implemented in the CPU wrapper logic, not as a separate source file. In the pipelined CPU, branch comparison uses forwarded operands so a branch can depend on recently computed values.
+
+\subsection{8.3 \texttt{jal}}
+
+\texttt{jal} is an unconditional PC-relative jump. It also writes a return address:
+
+\begin{lstlisting}[language={}]
+rd = PC + 4
+PC = PC + J-immediate
+\end{lstlisting}
+
+This supports function calls. Typically \texttt{rd} is \texttt{x1} (\texttt{ra}).
+
+\subsection{8.4 \texttt{jalr}}
+
+\texttt{jalr} jumps to an address computed from a register plus an immediate:
+
+\begin{lstlisting}[language={}]
+target = rs1 + imm
+PC = target with bit 0 cleared
+rd = PC + 4
+\end{lstlisting}
+
+The design computes the target through the ALU and clears bit 0 with:
+
+\begin{lstlisting}[language={}]
+{alu_result[31:1], 1'b0}
+\end{lstlisting}
+
+Clearing bit 0 is required by RISC-V and helps support pointer tagging and alignment behavior.
+
+\subsection{Control hazard in a pipeline}
+
+In a single-cycle CPU, the branch decision is known before the clock edge updates the PC. In a pipeline, the fetch stage may already have fetched one or two younger instructions before the branch reaches execute. If the branch is taken, those younger instructions are wrong-path instructions and must be flushed.
+
+This is why \texttt{cpu\_pipe.v} flushes behind taken branches and jumps, and why \texttt{cpu\_pipe\_bp.v} later adds prediction to avoid paying that cost every time.
+
+\bigskip

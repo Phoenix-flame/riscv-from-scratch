@@ -1,0 +1,18 @@
+\section{Summary}
+
+This repository implements a compact but broad RISC-V CPU learning platform. The core starts from the essential RV32 datapath — PC, instruction fetch, decode, immediate generation, register file, ALU, memory access, and write-back — and then adds increasingly realistic CPU features:
+
+\begin{itemize}
+\item RV32M multiply/divide;
+\item CSR and trap handling;
+\item timer interrupts;
+\item atomics;
+\item multi-cycle BRAM-friendly execution;
+\item five-stage pipelining;
+\item forwarding/stall/flush logic;
+\item precise pipelined traps;
+\item branch prediction;
+\item Sv32-style data MMU translation;
+\item SoC/FPGA/RTOS integration.
+\end{itemize}
+The most important thing to understand is that each module exists to solve a specific architectural problem. \texttt{alu.v} computes values. \texttt{control.v} turns instruction bits into datapath decisions. \texttt{immgen.v} reconstructs constants. \texttt{regfile.v} holds architectural registers. \texttt{csr.v} gives software controlled privileged state. \texttt{mmu.v} translates virtual addresses. \texttt{branch\_predictor.v} guesses future control flow. The CPU variants show how these same ideas change as the timing model evolves from single-cycle to multi-cycle to pipelined execution.

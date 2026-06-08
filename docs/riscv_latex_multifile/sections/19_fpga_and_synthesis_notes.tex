@@ -1,0 +1,35 @@
+\section{FPGA and Synthesis Notes}
+
+\subsection{Why simulation code and FPGA code differ}
+
+A simulation memory can return data combinationally. FPGA block RAM usually returns data one clock after the address is registered. That difference strongly affects CPU architecture.
+
+This is why the repository has both single-cycle and multi-cycle versions. The single-cycle core is easy to teach. The multi-cycle core is more realistic for FPGA memories.
+
+\subsection{FPGA top modules}
+
+The FPGA top-level files connect the SoC to board pins and clock/reset resources:
+
+\begin{lstlisting}[language={}]
+fpga_top.v
+fpga_top_full.v
+fpga_top_rtos.v
+fpga_top_uart.v
+\end{lstlisting}
+
+The constraints directory contains Zynq-related \texttt{.xdc} files.
+
+\subsection{Practical synthesis concerns}
+
+The biggest synthesis concerns are:
+
+\begin{itemize}
+\item combinational divider cost in \texttt{alu.v};
+\item combinational MMU walk in \texttt{mmu.v} if mapped directly;
+\item memory timing assumptions in single-cycle designs;
+\item timing closure in pipelined variants with forwarding and branch logic;
+\item UART clock divisor correctness for the actual FPGA clock.
+\end{itemize}
+The multi-cycle MMU and multi-cycle CPU variants are better starting points for FPGA-friendly memory behavior.
+
+\bigskip

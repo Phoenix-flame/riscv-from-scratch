@@ -1,0 +1,21 @@
+\section{How to Read the Codebase}
+
+A good reading order is:
+
+\begin{enumerate}
+\item \texttt{rtl/alu.v} — understand basic operations.
+\item \texttt{rtl/regfile.v} — understand architectural registers.
+\item \texttt{rtl/immgen.v} — understand immediate reconstruction.
+\item \texttt{rtl/control.v} — understand instruction classes and control signals.
+\item \texttt{rtl/cpu.v} — see the complete single-cycle datapath.
+\item \texttt{rtl/cpu\_core.v} and \texttt{rtl/soc.v} — see the CPU become part of a system.
+\item \texttt{rtl/csr.v} — understand traps, interrupts, and privilege.
+\item \texttt{rtl/cpu\_mc.v} — understand state-machine sequencing and BRAM-friendly timing.
+\item \texttt{rtl/cpu\_pipe.v} — understand pipeline registers, forwarding, stalls, and flushes.
+\item \texttt{rtl/cpu\_pipe\_trap.v} — understand precise traps in a pipeline.
+\item \texttt{rtl/branch\_predictor.v} and \texttt{rtl/cpu\_pipe\_bp.v} — understand speculation.
+\item \texttt{rtl/mmu.v}, \texttt{rtl/cpu\_core\_mmu.v}, and \texttt{rtl/cpu\_mc\_mmu.v} — understand virtual memory.
+\item \texttt{rtl/soc\_*} and \texttt{rtl/fpga\_top*} — understand integration and deployment.
+\end{enumerate}
+
+\bigskip

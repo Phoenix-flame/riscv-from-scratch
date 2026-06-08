@@ -1,0 +1,196 @@
+\relax 
+\providecommand\hyper@newdestlabel[2]{}
+\providecommand\HyField@AuxAddToFields[1]{}
+\providecommand\HyField@AuxAddToCoFields[2]{}
+\gdef \LT@i {\LT@entry 
+    {1}{139.63043pt}\LT@entry 
+    {1}{157.35303pt}\LT@entry 
+    {1}{148.29173pt}}
+\@writefile{toc}{\contentsline {section}{\numberline {1}High-Level Overview}{6}{section.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {1.1}What this CPU is}{6}{subsection.1.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {1.2}Why there are multiple CPU files}{6}{subsection.1.2}\protected@file@percent }
+\gdef \LT@ii {\LT@entry 
+    {1}{139.63043pt}\LT@entry 
+    {1}{157.35303pt}\LT@entry 
+    {1}{148.29173pt}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {1.3}Supported ISA subset, at a glance}{7}{subsection.1.3}\protected@file@percent }
+\gdef \LT@iii {\LT@entry 
+    {1}{139.63043pt}\LT@entry 
+    {1}{157.35303pt}\LT@entry 
+    {1}{148.29173pt}}
+\@writefile{toc}{\contentsline {section}{\numberline {2}Repository / File Structure}{8}{section.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {3}CPU Architecture Overview}{12}{section.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.1}The basic CPU loop}{12}{subsection.3.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.2}Main conceptual block diagram}{12}{subsection.3.2}\protected@file@percent }
+\@writefile{lol}{\contentsline {lstlisting}{\numberline {1}{\ignorespaces Mermaid diagram source}}{12}{lstlisting.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.3}Single-cycle vs multi-cycle vs pipelined}{12}{subsection.3.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {3.3.1}Single-cycle}{13}{subsubsection.3.3.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {3.3.2}Multi-cycle}{13}{subsubsection.3.3.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {3.3.3}Pipelined}{13}{subsubsection.3.3.3}\protected@file@percent }
+\gdef \LT@iv {\LT@entry 
+    {1}{184.93pt}\LT@entry 
+    {1}{247.94522pt}}
+\@writefile{toc}{\contentsline {section}{\numberline {4}Instruction Encoding and Decode}{14}{section.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.1}Why decode exists}{14}{subsection.4.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.2}How decode is implemented here}{14}{subsection.4.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.3}Instruction families}{15}{subsection.4.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.3.1}R-type integer operations}{15}{subsubsection.4.3.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.3.2}I-type ALU operations}{15}{subsubsection.4.3.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.3.3}Loads and stores}{15}{subsubsection.4.3.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.3.4}Branches and jumps}{15}{subsubsection.4.3.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.3.5}System instructions}{15}{subsubsection.4.3.5}\protected@file@percent }
+\gdef \LT@v {\LT@entry 
+    {1}{139.63043pt}\LT@entry 
+    {1}{157.35303pt}\LT@entry 
+    {1}{148.29173pt}}
+\@writefile{toc}{\contentsline {section}{\numberline {5}Immediate Generator}{16}{section.5}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.1}Why immediates look strange in RISC-V}{16}{subsection.5.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.2}Immediate formats}{16}{subsection.5.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.3}Why B and J immediates end in zero}{16}{subsection.5.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.4}Implementation role}{16}{subsection.5.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {6}Register File}{18}{section.6}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.1}What the register file is}{18}{subsection.6.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.2}The special rule for x0}{18}{subsection.6.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.3}Read and write timing}{18}{subsection.6.3}\protected@file@percent }
+\gdef \LT@vi {\LT@entry 
+    {1}{139.63043pt}\LT@entry 
+    {1}{157.35303pt}\LT@entry 
+    {1}{148.29173pt}}
+\@writefile{toc}{\contentsline {section}{\numberline {7}ALU and RV32M Multiply/Divide}{19}{section.7}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {7.1}Why the ALU exists}{19}{subsection.7.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {7.2}Base RV32I ALU operations}{19}{subsection.7.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {7.3}Signed vs unsigned behavior}{19}{subsection.7.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {7.4}RV32M multiplication}{19}{subsection.7.4}\protected@file@percent }
+\gdef \LT@vii {\LT@entry 
+    {1}{184.93pt}\LT@entry 
+    {1}{247.94522pt}}
+\gdef \LT@viii {\LT@entry 
+    {1}{139.63043pt}\LT@entry 
+    {1}{157.35303pt}\LT@entry 
+    {1}{148.29173pt}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {7.5}RV32M division and remainder}{20}{subsection.7.5}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {7.6}Hardware cost}{20}{subsection.7.6}\protected@file@percent }
+\gdef \LT@ix {\LT@entry 
+    {1}{139.63043pt}\LT@entry 
+    {1}{157.35303pt}\LT@entry 
+    {1}{148.29173pt}}
+\@writefile{toc}{\contentsline {section}{\numberline {8}Program Counter, Branches, and Jumps}{21}{section.8}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {8.1}What the PC does}{21}{subsection.8.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {8.2}Conditional branches}{21}{subsection.8.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {8.3}8.3 \texttt  {jal}}{21}{subsection.8.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {8.4}8.4 \texttt  {jalr}}{21}{subsection.8.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {8.5}Control hazard in a pipeline}{22}{subsection.8.5}\protected@file@percent }
+\gdef \LT@x {\LT@entry 
+    {1}{139.63043pt}\LT@entry 
+    {1}{157.35303pt}\LT@entry 
+    {1}{148.29173pt}}
+\gdef \LT@xi {\LT@entry 
+    {1}{184.93pt}\LT@entry 
+    {1}{247.94522pt}}
+\@writefile{toc}{\contentsline {section}{\numberline {9}Load/Store Unit and Memory Access}{23}{section.9}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {9.1}Why RISC-V is load/store}{23}{subsection.9.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {9.2}Effective address calculation}{23}{subsection.9.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {9.3}Load sizes and sign extension}{23}{subsection.9.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {9.4}Store sizes and byte masks}{23}{subsection.9.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {9.5}Memory-mapped I/O}{24}{subsection.9.5}\protected@file@percent }
+\gdef \LT@xii {\LT@entry 
+    {1}{139.63043pt}\LT@entry 
+    {1}{157.35303pt}\LT@entry 
+    {1}{148.29173pt}}
+\gdef \LT@xiii {\LT@entry 
+    {1}{139.63043pt}\LT@entry 
+    {1}{157.35303pt}\LT@entry 
+    {1}{148.29173pt}}
+\@writefile{toc}{\contentsline {section}{\numberline {10}CSR, Privilege, Exceptions, and Traps}{25}{section.10}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {10.1}Why CSRs exist}{25}{subsection.10.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {10.2}What a trap is}{25}{subsection.10.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {10.3}Privilege model in this design}{25}{subsection.10.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {10.4}Supported CSRs}{25}{subsection.10.4}\protected@file@percent }
+\gdef \LT@xiv {\LT@entry 
+    {1}{184.93pt}\LT@entry 
+    {1}{247.94522pt}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {10.5}CSR instructions}{26}{subsection.10.5}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {10.6}10.6 Trap entry and \texttt  {mret}}{26}{subsection.10.6}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {10.7}Illegal instruction detection}{27}{subsection.10.7}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {11}Timer and CLINT}{28}{section.11}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {11.1}Why a timer matters}{28}{subsection.11.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {11.2}Machine timer interrupt flow}{28}{subsection.11.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {11.3}CLINT-style block}{28}{subsection.11.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {12}Atomic Operations}{29}{section.12}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {12.1}Why atomics exist}{29}{subsection.12.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {12.2}RISC-V atomic concepts}{29}{subsection.12.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {12.3}Implementation in this repository}{29}{subsection.12.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {12.4}Important limitation}{29}{subsection.12.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {13}MMU and Virtual Memory}{30}{section.13}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {13.1}The problem: software should not always use physical addresses}{30}{subsection.13.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {13.2}Virtual address vs physical address}{30}{subsection.13.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {13.3}What a page is}{30}{subsection.13.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {13.4}What a page table is}{30}{subsection.13.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {13.5}Why multi-level page tables exist}{31}{subsection.13.5}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {13.6}Now Sv32: the RISC-V 32-bit virtual memory scheme}{31}{subsection.13.6}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {13.7}13.7 \texttt  {satp}: where translation begins}{31}{subsection.13.7}\protected@file@percent }
+\gdef \LT@xv {\LT@entry 
+    {1}{139.63043pt}\LT@entry 
+    {1}{157.35303pt}\LT@entry 
+    {1}{148.29173pt}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {13.8}PTE format and permissions}{32}{subsection.13.8}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {13.9}Page-table walk}{32}{subsection.13.9}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {13.10}How physical addresses are formed}{32}{subsection.13.10}\protected@file@percent }
+\gdef \LT@xvi {\LT@entry 
+    {1}{184.93pt}\LT@entry 
+    {1}{247.94522pt}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {13.11}When translation is active}{33}{subsection.13.11}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {13.12}Page faults}{33}{subsection.13.12}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {13.13}Two MMU implementations in this project}{33}{subsection.13.13}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {13.13.1}\texttt  {rtl/mmu.v} — combinational educational MMU}{33}{subsubsection.13.13.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {13.13.2}\texttt  {rtl/cpu\_mc\_mmu.v} — synthesizable multi-cycle walker}{33}{subsubsection.13.13.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {13.14}What is simplified}{34}{subsection.13.14}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {14}Pipeline, Hazards, Forwarding, and Stalls}{35}{section.14}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {14.1}Why pipelining exists}{35}{subsection.14.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {14.2}Pipeline registers}{35}{subsection.14.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {14.3}Data hazards}{35}{subsection.14.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {14.4}Forwarding}{35}{subsection.14.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {14.5}Load-use stall}{36}{subsection.14.5}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {14.6}Control hazards and flushing}{36}{subsection.14.6}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {15}Precise Traps in the Pipeline}{37}{section.15}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {15.1}Why traps are harder in a pipeline}{37}{subsection.15.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {15.2}What precise means}{37}{subsection.15.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {15.3}15.3 Implementation in \texttt  {cpu\_pipe\_trap.v}}{37}{subsection.15.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {15.4}Why EX-stage trap commit is a reasonable teaching choice}{37}{subsection.15.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {16}Branch Prediction}{38}{section.16}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {16.1}Why prediction exists}{38}{subsection.16.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {16.2}What must be predicted}{38}{subsection.16.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {16.3}BHT: branch history table}{38}{subsection.16.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {16.4}BTB: branch target buffer}{38}{subsection.16.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {16.5}Training the predictor}{38}{subsection.16.5}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {16.6}16.6 Integration in \texttt  {cpu\_pipe\_bp.v}}{39}{subsection.16.6}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {16.7}Performance counters}{39}{subsection.16.7}\protected@file@percent }
+\gdef \LT@xvii {\LT@entry 
+    {1}{184.93pt}\LT@entry 
+    {1}{247.94522pt}}
+\@writefile{toc}{\contentsline {section}{\numberline {17}SoC Integration and Memory Map Concept}{40}{section.17}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {17.1}Why a CPU core needs a SoC wrapper}{40}{subsection.17.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {17.2}Memory-mapped peripherals}{40}{subsection.17.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {17.3}Important wrappers}{40}{subsection.17.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {18}UART, Debug, and System Control}{41}{section.18}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {18.1}Why UART is useful}{41}{subsection.18.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {18.2}Debug support}{41}{subsection.18.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {18.3}System control}{41}{subsection.18.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {19}FPGA and Synthesis Notes}{42}{section.19}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {19.1}Why simulation code and FPGA code differ}{42}{subsection.19.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {19.2}FPGA top modules}{42}{subsection.19.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {19.3}Practical synthesis concerns}{42}{subsection.19.3}\protected@file@percent }
+\gdef \LT@xviii {\LT@entry 
+    {1}{184.93pt}\LT@entry 
+    {1}{247.94522pt}}
+\@writefile{toc}{\contentsline {section}{\numberline {20}Software and Verification}{43}{section.20}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {20.1}Why testbenches matter}{43}{subsection.20.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {20.2}What to test per block}{43}{subsection.20.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {20.3}Software demos}{43}{subsection.20.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {21}How to Read the Codebase}{45}{section.21}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {22}Design Philosophy and Limitations}{46}{section.22}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {22.1}Design philosophy}{46}{subsection.22.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {22.2}Known simplifications}{46}{subsection.22.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {23}Suggested Future Improvements}{47}{section.23}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {24}Summary}{48}{section.24}\protected@file@percent }
+\gdef \@abspage@last{48}

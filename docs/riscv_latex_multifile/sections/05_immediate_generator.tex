@@ -1,0 +1,56 @@
+\section{Immediate Generator}
+
+\subsection{Why immediates look strange in RISC-V}
+
+Many RISC-V instructions contain a constant value, called an immediate. For example:
+
+\begin{lstlisting}[language={}]
+addi x1, x0, -1
+lw   x5, 12(x1)
+beq  x1, x2, label
+\end{lstlisting}
+
+A beginner might expect every immediate to occupy one contiguous field in the instruction word. RISC-V does not do that. Instead, it keeps important fields such as \texttt{rd}, \texttt{rs1}, \texttt{rs2}, and the sign bit in stable positions. This simplifies register decode and sign extension, but it means the immediate generator must reassemble scattered bits.
+
+\subsection{Immediate formats}
+
+\texttt{rtl/immgen.v} implements five immediate types:
+
+\begin{longtable}{|>{\RaggedRight\arraybackslash}p{0.28\textwidth}|>{\RaggedRight\arraybackslash}p{0.32\textwidth}|>{\RaggedRight\arraybackslash}p{0.30\textwidth}|}
+\hline
+\textbf{Type} & \textbf{Used by} & \textbf{Meaning} \\
+\hline
+\endfirsthead
+\hline
+\textbf{Type} & \textbf{Used by} & \textbf{Meaning} \\
+\hline
+\endhead
+I & ALU-immediate, loads, \texttt{jalr}, CSR immediate-style decode support & 12-bit sign-extended immediate from \texttt{instr[31:20]}. \\
+\hline
+S & Stores & Immediate split between \texttt{instr[31:25]} and \texttt{instr[11:7]}. \\
+\hline
+B & Conditional branches & Branch offset, includes an implicit low zero bit. \\
+\hline
+U & \texttt{lui}, \texttt{auipc} & Upper 20 bits, lower 12 bits zero. \\
+\hline
+J & \texttt{jal} & Jump offset, includes an implicit low zero bit. \\
+\hline
+\end{longtable}
+
+\subsection{Why B and J immediates end in zero}
+
+Branch and jump targets are instruction addresses. In this design, instructions are 32-bit aligned for the normal RV32I path, so the target is at least even. RISC-V encodes branch and jump offsets with an implicit low zero bit, which gives a larger address range without storing a bit that is normally zero.
+
+For a branch, the reconstructed immediate is:
+
+\begin{lstlisting}[language={}]
+{{19{instr[31]}}, instr[31], instr[7], instr[30:25], instr[11:8], 1'b0}
+\end{lstlisting}
+
+This looks unusual, but it simply means: collect the scattered branch offset bits, put a zero in bit 0, and sign-extend from the sign bit.
+
+\subsection{Implementation role}
+
+The immediate generator does not know whether an instruction is valid. It only receives an \texttt{imm\_type} from the control unit and produces a 32-bit value. The CPU then decides how to use that value: as an ALU operand, branch offset, jump offset, store offset, or upper immediate.
+
+\bigskip
