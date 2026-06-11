@@ -6,7 +6,7 @@ be wrong, and the waveform is where you find out why. This step turns GTKWave
 from a wall of wiggles into a diagnostic instrument.
 
 Files:
-- `build/sum_tb.gtkw` — a ready-made GTKWave session with the useful signals
+- `tb/sum_tb.gtkw` — a ready-made GTKWave session with the useful signals
   pre-loaded and grouped.
 
 ## Launching with a saved view
@@ -21,7 +21,7 @@ gtkwave build/sum_tb.vcd
 that ships with this step:
 
 ```bash
-make wave-sum          # == gtkwave build/sum_tb.vcd build/sum_tb.gtkw
+make wave-sum          # == gtkwave build/sum_tb.vcd tb/sum_tb.gtkw
 ```
 
 A `.gtkw` file records which signals are shown, their order, grouping, and

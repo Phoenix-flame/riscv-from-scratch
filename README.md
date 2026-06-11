@@ -59,6 +59,7 @@ sequence) and we will watch the registers change in the waveform viewer.
 | 31 | `docs/31-uart-interrupts.md` | Bonus: UART interrupts + receive-to-idle (machine external interrupt, IDLE-line detection) on Zynq-7010 | **done & tested (sim)** |
 | 32 | `docs/32-branch-predictor.md` | Bonus: branch predictor (BTB + 2-bit saturating counters) on the pipelined core, with measured misprediction rate | **done & tested (sim)** |
 | 33 | `docs/33-plic.md` | Bonus: PLIC interrupt controller — per-source priority / enable / threshold / claim-complete multiplexing several lines into one `MEIP` | **done & tested (sim)** |
+| 34 | `docs/34-compressed.md` | Bonus: the C extension — 16-bit instructions, halfword-aligned PCs, word-straddling fetch; ~29% smaller code, verified against the rv32im build | **done & tested (sim)** |
 
 ## Directory layout
 
@@ -116,7 +117,7 @@ A menu of where this project can go next, grouped by goal. Rough difficulty:
 - 🔴 **Superscalar / out-of-order** — Tomasulo, register renaming, reorder buffer.
 
 ### Broaden the ISA
-- 🟢 **C (compressed)** — 16-bit instructions; variable-length, unaligned fetch.
+- ✅ **C (compressed)** — RV32IMC core (`cpu_mc_c` + `rvc_expand`, Step 34): 1:1 expansion to base instructions, halfword PCs, straddling fetches resolved in one extra cycle. Same program, 424 → 302 code bytes. A fetch buffer is the natural follow-up.
 - 🟡 **F/D (floating point)** — an FPU, the float regfile, `fcsr`.
 - 🟡 **Zb (bit-manip)** — small, high-value. **V (vector)** — deep and modern.
 - 🔴 **RV64** — widen to 64-bit; required for Linux.
