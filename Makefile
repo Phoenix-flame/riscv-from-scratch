@@ -218,7 +218,7 @@ wave-cpu:
 	gtkwave $(B)/cpu_tb.vcd &
 
 wave-sum:
-	gtkwave $(B)/sum_tb.vcd $(B)/sum_tb.gtkw &
+	gtkwave $(B)/sum_tb.vcd tb/sum_tb.gtkw &
 
 clean:
 	rm -f $(B)/*.vvp $(B)/*.vcd
@@ -401,3 +401,48 @@ sw/plic_demo.hex: sw/plic_demo.c sw/crt0.s sw/link.ld sw/bin2hex.py
 
 plic: sw/plic_demo.hex ## PLIC: per-source priority / enable / threshold / claim-complete into one MEIP
 	$(IV) -o $(B)/plic_tb.vvp $(RTL_PLIC) tb/plic_tb.v && $(VVP) $(B)/plic_tb.vvp
+
+# ---- C extension: 16-bit instructions, unaligned fetch (Step 34) -----
+RTL_RVC = rtl/control.v rtl/alu.v rtl/regfile.v rtl/immgen.v rtl/csr.v \
+          rtl/cpu_mc.v rtl/cpu_mc_c.v rtl/rvc_expand.v rtl/bram_rom.v rtl/bram_ram.v \
+          rtl/uart_hw.v rtl/uart_tx.v rtl/timer.v rtl/soc_fpga.v rtl/soc_c.v
+
+sw/rvc_demo.hex: sw/rvc_demo.c sw/crt0.s sw/link.ld sw/bin2hex.py
+	riscv64-unknown-elf-gcc -march=rv32imc_zicsr -mabi=ilp32 -nostdlib -nostartfiles -ffreestanding \
+	  -O1 -T sw/link.ld sw/crt0.s sw/rvc_demo.c -o $(B)/rvc.elf -lgcc
+	riscv64-unknown-elf-objcopy -O binary $(B)/rvc.elf $(B)/rvc.bin
+	python3 sw/bin2hex.py $(B)/rvc.bin > sw/rvc_demo.hex
+
+sw/rvc_demo_im.hex: sw/rvc_demo.c sw/crt0.s sw/link.ld sw/bin2hex.py
+	riscv64-unknown-elf-gcc -march=rv32im_zicsr -mabi=ilp32 -nostdlib -nostartfiles -ffreestanding \
+	  -O1 -T sw/link.ld sw/crt0.s sw/rvc_demo.c -o $(B)/rvc_im.elf -lgcc
+	riscv64-unknown-elf-objcopy -O binary $(B)/rvc_im.elf $(B)/rvc_im.bin
+	python3 sw/bin2hex.py $(B)/rvc_im.bin > sw/rvc_demo_im.hex
+
+rvc: sw/rvc_demo.hex sw/rvc_demo_im.hex ## C extension: same program as rv32im vs rv32imc, compare results + code size
+	$(IV) -o $(B)/rvc_tb.vvp $(RTL_RVC) tb/rvc_tb.v && $(VVP) $(B)/rvc_tb.vvp
+	@echo "---- code size: same program, two encodings ----"
+	@riscv64-unknown-elf-size $(B)/rvc_im.elf $(B)/rvc.elf 2>/dev/null || echo "(rebuild hex files to see ELF sizes: rm sw/rvc_demo*.hex && make rvc)"
+
+# ---- F extension: single-precision FPU, float regfile, fcsr (Step 35) -----
+RTL_FP = rtl/control.v rtl/alu.v rtl/regfile.v rtl/immgen.v rtl/csr.v \
+         rtl/fregfile.v rtl/fpu_f.v rtl/cpu_mc_f.v \
+         rtl/bram_rom.v rtl/bram_ram.v rtl/soc_f.v
+
+# Standalone FPU datapath check against host-float32 golden vectors. The
+# vectors are committed under tb/; regenerate them with:
+#   python3 sw/gen_fpu_vectors.py
+fpu-unit: ## F: FPU datapath vs host-float32 golden vectors (arith + specials)
+	$(IV) -o $(B)/fpu_tb.vvp rtl/fpu_f.v tb/fpu_tb.v
+	@$(VVP) $(B)/fpu_tb.vvp
+	@$(VVP) $(B)/fpu_tb.vvp +VEC=tb/fpu_vectors2.hex
+
+sw/fp_demo.hex: sw/fp_demo.c sw/crt0.s sw/link.ld sw/bin2hex.py
+	riscv64-unknown-elf-gcc -march=rv32imf -mabi=ilp32f -nostdlib -nostartfiles \
+	  -ffreestanding -O1 -T sw/link.ld sw/crt0.s sw/fp_demo.c -o $(B)/fp.elf -lgcc
+	riscv64-unknown-elf-objcopy -O binary $(B)/fp.elf $(B)/fp.bin
+	python3 sw/bin2hex.py $(B)/fp.bin > sw/fp_demo.hex
+
+fp: sw/fp_demo.hex ## F: run compiled rv32imf float program on soc_f, check results
+	$(IV) -o $(B)/fp_tb.vvp $(RTL_FP) tb/fp_tb.v && $(VVP) $(B)/fp_tb.vvp
+	@riscv64-unknown-elf-size $(B)/fp.elf 2>/dev/null || echo "(rebuild: rm sw/fp_demo.hex && make fp)"

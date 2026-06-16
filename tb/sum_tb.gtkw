@@ -1,0 +1,47 @@
+[*] GTKWave save file for the RISC-V CPU (sum_tb)
+[*] Load with:  gtkwave build/sum_tb.vcd build/sum_tb.gtkw
+[dumpfile] "build/sum_tb.vcd"
+[savefile] "build/sum_tb.gtkw"
+[timestart] 0
+[sst_width] 220
+[signals_width] 220
+[pane_to_eo] 1
+[pane_clear] 0
+@28
+sum_tb.clk
+sum_tb.rst
+@200
+-- Fetch --
+@22
+sum_tb.dut.pc[31:0]
+sum_tb.dut.instr[31:0]
+sum_tb.dut.next_pc[31:0]
+@200
+-- Decode / control --
+@22
+sum_tb.dut.opcode[6:0]
+sum_tb.dut.funct3[2:0]
+sum_tb.dut.imm[31:0]
+@28
+sum_tb.dut.reg_write
+sum_tb.dut.alu_src_b
+sum_tb.dut.mem_write
+sum_tb.dut.branch
+sum_tb.dut.jump
+@22
+sum_tb.dut.wb_sel[1:0]
+@200
+-- Registers read / ALU --
+@22
+sum_tb.dut.rs1_data[31:0]
+sum_tb.dut.rs2_data[31:0]
+sum_tb.dut.alu_result[31:0]
+@28
+sum_tb.dut.branch_taken
+@200
+-- Write back --
+@22
+sum_tb.dut.rd_addr[4:0]
+sum_tb.dut.wb_data[31:0]
+[pattern_trace] 1
+[pattern_trace] 0
