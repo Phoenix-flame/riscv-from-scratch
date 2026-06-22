@@ -64,6 +64,7 @@ sequence) and we will watch the registers change in the waveform viewer.
 | 36 | `docs/36-axi-master.md` | Bonus: an AXI4-Lite master to the Zynq PS — a stall-capable bus (`dmem_ready`), a 5-channel bus-to-AXI adapter, and a wait-state PS/DDR slave model; the core stalls on variable-latency accesses and reaches PS DDR + peripherals | **done & tested (sim)** |
 | 37 | `docs/37-real-libc.md` | Bonus: a real C library (picolibc) — full `printf` + `malloc`/`free` via a tiny retarget (UART `putc`, heap symbols, `_exit`); byte-exact demo, and the FreeRTOS build swapped off the shims onto picolibc | **done & tested (sim)** |
 | 38 | `docs/38-isolated-processes.md` | Bonus: memory-isolated processes — merge the Sv32 MMU (22/24) with the preemptive scheduler (25): a page table per task, `satp` reloaded on each context switch; two tasks share VA `0x1000` but land in different physical pages | **done & tested (sim)** |
+| 39 | `docs/39-supervisor-delegation.md` | Bonus: supervisor mode + trap delegation — add S-mode (`cpu_mc_s`, `csr_s`) with `medeleg`/`mideleg`; a user `ecall`, an illegal instruction, and a software interrupt are delivered straight to an S-mode kernel, while an `ecall` from S still reaches M | **done & tested (sim)** |
 
 ## Directory layout
 
@@ -110,7 +111,7 @@ A menu of where this project can go next, grouped by goal. Rough difficulty:
 
 ### Deeper OS
 - ✅ **Memory-isolated processes** — per-task page tables with `satp` reloaded on every context switch (Step 38). Two preempted user tasks share the same virtual addresses (private page at VA `0x1000`, stack at `0x2000`) yet map to different physical pages, so neither can touch the other's memory; the MMU enforces it, the kernel just hands each task its own address space. Built on the unmodified synthesizable MMU SoC. A TLB (and the `sfence.vma` it would require) is the natural next step.
-- 🟡 **Supervisor mode + `medeleg`/`mideleg`** — delegate faults/interrupts to an S-mode kernel.
+- ✅ **Supervisor mode + `medeleg`/`mideleg`** — a third privilege level (S) with per-cause trap delegation (Step 39). Two bit-masks route traps taken below machine mode: a delegated cause vectors straight to the S-mode handler at `stvec`, updates the supervisor trap CSRs, and enters S — machine mode never runs. The demo delegates a user `ecall`, an illegal instruction, and a supervisor software interrupt to an S-mode kernel, while a non-delegated `ecall` from S still reaches M. `sstatus`/`sie`/`sip` are masked views of the machine registers; built on a fresh `cpu_mc_s`/`csr_s` so the rest of the regression is untouched. Delivering the MMU core's page faults to S the same way is the next step.
 - 🟡 **Instruction-fetch translation + TLB** — translate fetch (today only data is), cache translations.
 - 🔴 **Port xv6-riscv, then Linux** — xv6 is the realistic next OS; Linux needs S-mode, full MMU+TLB, atomics, device tree.
 

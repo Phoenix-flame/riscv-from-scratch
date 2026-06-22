@@ -497,3 +497,21 @@ sw/smmu.hex: sw/sched_mmu.c sw/sched_mmu_asm.S sw/firmware.h sw/crt0.s sw/link.l
 
 sched-mmu: sw/smmu.hex ## isolated processes: per-task page tables, satp switched on context switch
 	$(IV) -o $(B)/sched_mmu_tb.vvp $(RTL_FPGA_MMU) tb/sched_mmu_tb.v && $(VVP) $(B)/sched_mmu_tb.vvp
+
+# ----- Step 39: supervisor mode + trap delegation (medeleg/mideleg) -----
+# A new core (cpu_mc_s) and CSR block (csr_s) add S-mode and per-cause trap
+# delegation. medeleg/mideleg route an ecall, an illegal instruction, and a
+# software interrupt from U straight to an S-mode kernel, bypassing M.
+RTL_SMODE = rtl/alu.v rtl/regfile.v rtl/immgen.v rtl/control.v rtl/csr_s.v \
+            rtl/timer.v rtl/uart_tx.v rtl/uart_hw.v rtl/bram_rom.v \
+            rtl/bram_ram.v rtl/cpu_mc_s.v rtl/soc_s.v
+
+sw/smode.hex: sw/smode_demo.c sw/smode_asm.S sw/crt0.s sw/link.ld sw/bin2hex.py
+	riscv64-unknown-elf-gcc -march=rv32i_zicsr -mabi=ilp32 -nostdlib -nostartfiles \
+	  -ffreestanding -O1 -I sw -T sw/link.ld sw/crt0.s sw/smode_asm.S sw/smode_demo.c \
+	  -o $(B)/smode.elf -lgcc
+	riscv64-unknown-elf-objcopy -O binary $(B)/smode.elf $(B)/smode.bin
+	python3 sw/bin2hex.py $(B)/smode.bin > sw/smode.hex
+
+smode: sw/smode.hex ## supervisor mode: medeleg/mideleg delegate U/S traps to an S-mode kernel
+	$(IV) -o $(B)/smode_tb.vvp $(RTL_SMODE) tb/smode_tb.v && $(VVP) $(B)/smode_tb.vvp
