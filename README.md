@@ -61,6 +61,9 @@ sequence) and we will watch the registers change in the waveform viewer.
 | 33 | `docs/33-plic.md` | Bonus: PLIC interrupt controller — per-source priority / enable / threshold / claim-complete multiplexing several lines into one `MEIP` | **done & tested (sim)** |
 | 34 | `docs/34-compressed.md` | Bonus: the C extension — 16-bit instructions, halfword-aligned PCs, word-straddling fetch; ~29% smaller code, verified against the rv32im build | **done & tested (sim)** |
 | 35 | `docs/35-floating-point.md` | Bonus: the F extension — single-precision FPU (IEEE-754 round/guard/sticky, 5 rounding modes), the `f0`–`f31` float register file, `fcsr`; runs real `-march=rv32imf` gcc output, bit-exact vs host float32 (subnormals flushed) | **done & tested (sim)** |
+| 36 | `docs/36-axi-master.md` | Bonus: an AXI4-Lite master to the Zynq PS — a stall-capable bus (`dmem_ready`), a 5-channel bus-to-AXI adapter, and a wait-state PS/DDR slave model; the core stalls on variable-latency accesses and reaches PS DDR + peripherals | **done & tested (sim)** |
+| 37 | `docs/37-real-libc.md` | Bonus: a real C library (picolibc) — full `printf` + `malloc`/`free` via a tiny retarget (UART `putc`, heap symbols, `_exit`); byte-exact demo, and the FreeRTOS build swapped off the shims onto picolibc | **done & tested (sim)** |
+| 38 | `docs/38-isolated-processes.md` | Bonus: memory-isolated processes — merge the Sv32 MMU (22/24) with the preemptive scheduler (25): a page table per task, `satp` reloaded on each context switch; two tasks share VA `0x1000` but land in different physical pages | **done & tested (sim)** |
 
 ## Directory layout
 
@@ -102,11 +105,11 @@ A menu of where this project can go next, grouped by goal. Rough difficulty:
 
 ### Onto real silicon
 - ✅ **Run FreeRTOS on the Zynq-7010** — synthesizable BRAM SoC (`soc_rtos_fpga` + `fpga_top_rtos`), real UART, verified in sim (Step 28). Vivado bitstream is the remaining manual step.
-- 🟡 **AXI4-Lite / AXI-HP master to the PS** — bus-to-AXI adapter + stall-capable memory to reach the Zynq DDR and PS peripherals.
+- ✅ **AXI4-Lite master to the PS** — a stall-capable core (`cpu_mc_stall` waits on `dmem_ready`), a 5-channel bus-to-AXI4-Lite adapter, and a `soc_axi` that windows `0x4000_0000` out to the PS (Step 36). Verified against a wait-state AXI slave modelling PS DDR + a peripheral; reads/writes round-trip correctly through the stalls. Full AXI4 bursts (AXI-HP for DDR bandwidth) wait on a cache or DMA engine to generate them.
 - 🔴 **Tape-out flow** — push RTL through OpenLane + SkyWater sky130 to a GDSII layout.
 
 ### Deeper OS
-- 🟡 **Memory-isolated processes** — merge the MMU (22/24) with the scheduler (25): per-task page tables, switch `satp` on context switch.
+- ✅ **Memory-isolated processes** — per-task page tables with `satp` reloaded on every context switch (Step 38). Two preempted user tasks share the same virtual addresses (private page at VA `0x1000`, stack at `0x2000`) yet map to different physical pages, so neither can touch the other's memory; the MMU enforces it, the kernel just hands each task its own address space. Built on the unmodified synthesizable MMU SoC. A TLB (and the `sfence.vma` it would require) is the natural next step.
 - 🟡 **Supervisor mode + `medeleg`/`mideleg`** — delegate faults/interrupts to an S-mode kernel.
 - 🟡 **Instruction-fetch translation + TLB** — translate fetch (today only data is), cache translations.
 - 🔴 **Port xv6-riscv, then Linux** — xv6 is the realistic next OS; Linux needs S-mode, full MMU+TLB, atomics, device tree.
@@ -134,7 +137,7 @@ A menu of where this project can go next, grouped by goal. Rough difficulty:
 
 ### Tooling & ecosystem
 - ✅ **Debug stub** — hardware debug module (halt/step/4 HW breakpoints/reg+mem access) + gdb RSP server (Step 29); transport bridge to live gdb is the remaining glue.
-- 🟢 **Real libc** — swap the shims for newlib/picolibc (full `printf`, `malloc`).
+- ✅ **Real libc** — picolibc with full `printf` and `malloc`/`free` (Step 37). The platform contract is three hooks: a UART `putc` for `stdout`, `__heap_start`/`__heap_end` for the allocator, and `_exit`. A byte-exact demo (`make libc`) checks formatting + heap + `string.h`, and the FreeRTOS build now links picolibc with the header shims and the `firmware.c` mini-printf retired (verified running through real `printf`).
 - 🟡 **Bootloader + device tree** — load/run arbitrary programs; Linux prerequisite.
 
 ### Peripherals & interrupts

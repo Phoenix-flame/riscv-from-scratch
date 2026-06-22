@@ -18,4 +18,11 @@ SECTIONS
     . = ALIGN(4);
     __bss_end = .;
     _end = .;
+
+    /* picolibc heap (malloc/sbrk); FreeRTOS itself uses heap_4, but real libc
+     * needs these bounds defined. Heap grows up from _end; stack lives at the
+     * top of RAM, well above __heap_end. */
+    . = ALIGN(16);
+    PROVIDE(__heap_start = .);
+    PROVIDE(__heap_end   = 0x0001C000);
 }

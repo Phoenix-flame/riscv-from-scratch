@@ -305,9 +305,11 @@ rtos-smoke: sw/rs.hex
 # Point FREERTOS_KERNEL at a clone of github.com/FreeRTOS/FreeRTOS-Kernel
 FREERTOS_KERNEL ?= $(HOME)/FreeRTOS-Kernel
 FR_PORT  = $(FREERTOS_KERNEL)/portable/GCC/RISC-V
-FR_INC   = -I sw/freertos/shim -I sw/freertos -I sw -I $(FREERTOS_KERNEL)/include -I $(FR_PORT) \
+PICOLIBC_INC = /usr/lib/picolibc/riscv64-unknown-elf/include
+PICOLIBC_LIB = /usr/lib/picolibc/riscv64-unknown-elf/lib/rv32im/ilp32
+FR_INC   = -isystem $(PICOLIBC_INC) -I sw/freertos -I sw -I $(FREERTOS_KERNEL)/include -I $(FR_PORT) \
            -I $(FR_PORT)/chip_specific_extensions/RV32I_CLINT_no_extensions
-FR_SRC   = sw/freertos/start.S sw/freertos/main.c sw/firmware.c \
+FR_SRC   = sw/freertos/start.S sw/freertos/main.c sw/picolibc_retarget.c \
            $(FREERTOS_KERNEL)/tasks.c $(FREERTOS_KERNEL)/list.c $(FREERTOS_KERNEL)/queue.c \
            $(FR_PORT)/port.c $(FR_PORT)/portASM.S \
            $(FREERTOS_KERNEL)/portable/MemMang/heap_4.c
@@ -315,7 +317,7 @@ FRCFLAGS = -march=rv32ima_zicsr -mabi=ilp32 -nostdlib -nostartfiles -ffreestandi
 
 freertos:
 	@test -d "$(FREERTOS_KERNEL)" || { echo ">> Set FREERTOS_KERNEL=/path/to/FreeRTOS-Kernel"; echo ">> git clone https://github.com/FreeRTOS/FreeRTOS-Kernel"; exit 1; }
-	riscv64-unknown-elf-gcc $(FRCFLAGS) $(FR_INC) -T sw/freertos/freertos.ld $(FR_SRC) -o $(B)/fr.elf -lgcc
+	riscv64-unknown-elf-gcc $(FRCFLAGS) $(FR_INC) -T sw/freertos/freertos.ld $(FR_SRC) -L $(PICOLIBC_LIB) -lc -o $(B)/fr.elf -lgcc
 	riscv64-unknown-elf-size $(B)/fr.elf
 	riscv64-unknown-elf-objcopy -O binary $(B)/fr.elf $(B)/fr.bin
 	python3 sw/bin2hex.py $(B)/fr.bin > sw/freertos/fr.hex
@@ -446,3 +448,52 @@ sw/fp_demo.hex: sw/fp_demo.c sw/crt0.s sw/link.ld sw/bin2hex.py
 fp: sw/fp_demo.hex ## F: run compiled rv32imf float program on soc_f, check results
 	$(IV) -o $(B)/fp_tb.vvp $(RTL_FP) tb/fp_tb.v && $(VVP) $(B)/fp_tb.vvp
 	@riscv64-unknown-elf-size $(B)/fp.elf 2>/dev/null || echo "(rebuild: rm sw/fp_demo.hex && make fp)"
+
+# ---- AXI4-Lite master to the PS: stall-capable bus (Step 36) ---------
+RTL_AXI = rtl/control.v rtl/alu.v rtl/regfile.v rtl/immgen.v rtl/csr.v \
+          rtl/cpu_mc_stall.v rtl/axi_lite_master.v rtl/bram_rom.v rtl/bram_ram.v \
+          rtl/soc_axi.v
+
+axi-lite: ## AXI: directed test of the bus->AXI4-Lite master vs a wait-state slave
+	$(IV) -o $(B)/axi_lite_tb.vvp rtl/axi_lite_master.v tb/axi_lite_slave_mem.v tb/axi_lite_tb.v
+	$(VVP) $(B)/axi_lite_tb.vvp
+
+sw/axi_demo.hex: sw/axi_demo.c sw/crt0.s sw/link.ld sw/bin2hex.py
+	riscv64-unknown-elf-gcc -march=rv32im -mabi=ilp32 -nostdlib -nostartfiles \
+	  -ffreestanding -O1 -T sw/link.ld sw/crt0.s sw/axi_demo.c -o $(B)/axi_demo.elf -lgcc
+	riscv64-unknown-elf-objcopy -O binary $(B)/axi_demo.elf $(B)/axi_demo.bin
+	python3 sw/bin2hex.py $(B)/axi_demo.bin > sw/axi_demo.hex
+
+axi: sw/axi_demo.hex ## AXI: run a program that reaches the PS (DDR + peripheral) over AXI4-Lite
+	$(IV) -o $(B)/axi_tb.vvp $(RTL_AXI) tb/axi_lite_slave_mem.v tb/axi_tb.v && $(VVP) $(B)/axi_tb.vvp
+
+# ---- Real libc (picolibc): full printf + malloc (Step 37) -----------
+# Replaces the hand-rolled mini-printf (firmware.c) and the FreeRTOS header
+# shims with genuine picolibc. PICOLIBC_INC/PICOLIBC_LIB are defined in the
+# FreeRTOS section above.
+RTL_LIBC = rtl/control.v rtl/alu.v rtl/regfile.v rtl/immgen.v rtl/csr.v \
+           rtl/cpu_mc.v rtl/bram_rom.v rtl/bram_ram.v rtl/uart.v rtl/soc_libc.v
+
+sw/libc_demo.hex: sw/libc_demo.c sw/picolibc_crt0.S sw/picolibc_retarget.c sw/picolibc.ld sw/bin2hex.py
+	riscv64-unknown-elf-gcc -march=rv32im -mabi=ilp32 -nostdlib -nostartfiles -ffreestanding -O1 \
+	  -isystem $(PICOLIBC_INC) -T sw/picolibc.ld \
+	  sw/picolibc_crt0.S sw/picolibc_retarget.c sw/libc_demo.c \
+	  -L $(PICOLIBC_LIB) -lc -lgcc -o $(B)/libc.elf
+	riscv64-unknown-elf-objcopy -O binary $(B)/libc.elf $(B)/libc.bin
+	python3 sw/bin2hex.py $(B)/libc.bin > sw/libc_demo.hex
+
+libc: sw/libc_demo.hex ## real libc: picolibc printf + malloc on soc_libc, checked vs expected UART bytes
+	$(IV) -o $(B)/libc_tb.vvp $(RTL_LIBC) tb/libc_tb.v && $(VVP) $(B)/libc_tb.vvp
+
+# ---- Memory-isolated processes: scheduler + MMU (per-task satp) (Step 38) --
+# Reuses the synthesizable MMU SoC (cpu_mc_mmu + timer); the merge is entirely
+# in software -- a page table per task, and a satp reload in the context switch.
+sw/smmu.hex: sw/sched_mmu.c sw/sched_mmu_asm.S sw/firmware.h sw/crt0.s sw/link.ld sw/bin2hex.py
+	riscv64-unknown-elf-gcc -march=rv32im_zicsr -mabi=ilp32 -nostdlib -nostartfiles \
+	  -ffreestanding -O1 -I sw -T sw/link.ld sw/crt0.s sw/sched_mmu_asm.S sw/sched_mmu.c \
+	  -o $(B)/smmu.elf -lgcc
+	riscv64-unknown-elf-objcopy -O binary $(B)/smmu.elf $(B)/smmu.bin
+	python3 sw/bin2hex.py $(B)/smmu.bin > sw/smmu.hex
+
+sched-mmu: sw/smmu.hex ## isolated processes: per-task page tables, satp switched on context switch
+	$(IV) -o $(B)/sched_mmu_tb.vvp $(RTL_FPGA_MMU) tb/sched_mmu_tb.v && $(VVP) $(B)/sched_mmu_tb.vvp

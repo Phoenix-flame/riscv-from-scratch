@@ -4,7 +4,8 @@
 #include "FreeRTOS.h"
 #include "task.h"
 #include "queue.h"
-#include "firmware.h"     /* kprintf / UART, halt() */
+#include <stdio.h>      /* real picolibc printf */
+#include <stdlib.h>     /* exit() */
 
 static QueueHandle_t xQueue;
 
@@ -23,14 +24,14 @@ static void vConsumer( void *pv ){
     unsigned v;
     for( ;; ){
         if( xQueueReceive( xQueue, &v, portMAX_DELAY ) == pdPASS ){
-            kprintf( "consumer got %d\n", v );
-            if( v >= 9 ){ kprintf( "FreeRTOS demo done\n" ); halt( 0 ); }
+            printf( "consumer got %d\n", v );
+            if( v >= 9 ){ printf( "FreeRTOS demo done\n" ); exit( 0 ); }
         }
     }
 }
 
 int main( void ){
-    kprintf( "FreeRTOS starting on RV32IMA core...\n" );
+    printf( "FreeRTOS starting on RV32IMA core...\n" );
     xQueue = xQueueCreate( 4, sizeof( unsigned ) );
     configASSERT( xQueue != NULL );
     xTaskCreate( vProducer, "prod", configMINIMAL_STACK_SIZE, NULL, 2, NULL );
@@ -40,4 +41,4 @@ int main( void ){
 }
 
 /* Minimal hooks the kernel may reference depending on config. */
-void vApplicationMallocFailedHook( void ){ kprintf("malloc failed\n"); halt(1); }
+void vApplicationMallocFailedHook( void ){ printf("malloc failed\n"); exit(1); }
