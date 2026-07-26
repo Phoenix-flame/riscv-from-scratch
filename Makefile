@@ -13,8 +13,24 @@ $(shell mkdir -p $(B))            # ensure the build dir exists (works from a cl
 RTL_CORE = rtl/alu.v rtl/regfile.v rtl/imem.v rtl/dmem.v \
            rtl/immgen.v rtl/control.v rtl/cpu.v
 
-.PHONY: all clean
+.PHONY: all clean run sim
 all: alu regfile imem dmem immgen control cpu
+
+# ---- rvsim: run any .bin/.hex/.elf and print CPU registers + state --
+# Usage:  make run BIN=path/to/prog.bin            (single-cycle core)
+#         make run BIN=sw/socdemo.hex CORE=soc DATA=sw/socdemo_data.hex
+#         make run BIN=prog.elf ARGS="--trace --cycles 200 --mem 0:16"
+# Or call the driver directly:  tools/rvsim <file> [options]   (see --help)
+run:
+	@test -n "$(BIN)" || { echo "usage: make run BIN=<file.bin|.hex|.elf> [CORE=cpu|soc] [DATA=img.hex] [ARGS=...]"; exit 1; }
+	python3 tools/rvsim "$(BIN)" --core $(or $(CORE),cpu) $(if $(DATA),--data "$(DATA)") $(ARGS)
+
+# ---- rvsim -i: interactive stepping debugger (step / break / regs / ...) --
+# Usage:  make sim                                 (empty shell, then `load`)
+#         make sim BIN=sw/sum.hex                  (load a program to step)
+#         make sim BIN=sw/socdemo.hex CORE=soc DATA=sw/socdemo_data.hex
+sim:
+	python3 tools/rvsim -i $(if $(BIN),"$(BIN)") --core $(or $(CORE),cpu) $(if $(DATA),--data "$(DATA)") $(ARGS)
 
 alu:
 	$(IV) -o $(B)/alu_tb.vvp rtl/alu.v tb/alu_tb.v && $(VVP) $(B)/alu_tb.vvp

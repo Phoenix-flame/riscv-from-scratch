@@ -1,0 +1,1123 @@
+#!/usr/bin/env python3
+# =====================================================================
+# rvsim  -  run a RISC-V program on the tutorial CPU and show its state
+# ---------------------------------------------------------------------
+# Accepts a .bin (raw little-endian machine code), a .hex ($readmemh
+# word image), or an .elf, builds an Icarus Verilog simulation of the
+# core once, runs the program, and prints the final register file, PC
+# and (optionally) a data-memory window.
+#
+# Two ways to use it:
+#
+#   Batch (one-shot, script-friendly):
+#     tools/rvsim prog.bin                 # run on the single-cycle core
+#     tools/rvsim prog.elf --core soc      # run on the SoC (UART + halt)
+#     tools/rvsim prog.bin --trace --cycles 200
+#     tools/rvsim prog.elf --mem 0:16      # + dump 16 words of RAM at 0
+#
+#   Interactive (a stepping debugger REPL -- run with no program, or -i):
+#     tools/rvsim                          # drop into the shell
+#     tools/rvsim -i prog.elf              # load a program and start stepping
+#     rvsim ❯ step 5      # advance 5 cycles, show what changed
+#     rvsim ❯ break 0x18  # stop when PC hits 0x18
+#     rvsim ❯ continue    # run to the next breakpoint / halt
+#     rvsim ❯ regs        # full register file    (/help for everything)
+#
+# Requires: iverilog, vvp  (and riscv64-unknown-elf-objcopy for .elf,
+# riscv64-unknown-elf-objdump for inline disassembly -- both optional).
+# =====================================================================
+import argparse
+import os
+import re
+import shlex
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+REPO = Path(__file__).resolve().parent.parent
+BUILD = REPO / "build"
+
+# RTL source lists (mirror the Makefile) + the matching rvsim harness.
+CORES = {
+    "cpu": {
+        "desc": "single-cycle core (rtl/cpu.v)",
+        "rtl": ["alu", "regfile", "imem", "dmem", "immgen", "control", "cpu"],
+        "tb": "tb/rvsim_cpu.v",
+        "vvp": "build/rvsim_cpu.vvp",
+        "imem_words": 1024,
+    },
+    "soc": {
+        "desc": "SoC: core + RAM + UART + timer + syscon (rtl/soc.v)",
+        "rtl": ["alu", "regfile", "imem", "dmem", "immgen", "control",
+                "csr", "uart", "timer", "syscon", "cpu_core", "soc"],
+        "tb": "tb/rvsim_soc.v",
+        "vvp": "build/rvsim_soc.vvp",
+        "imem_words": 1024,
+    },
+}
+
+ABI = ["zero", "ra", "sp", "gp", "tp", "t0", "t1", "t2",
+       "s0", "s1", "a0", "a1", "a2", "a3", "a4", "a5",
+       "a6", "a7", "s2", "s3", "s4", "s5", "s6", "s7",
+       "s8", "s9", "s10", "s11", "t3", "t4", "t5", "t6"]
+
+OBJCOPY = "riscv64-unknown-elf-objcopy"
+OBJDUMPS = ["riscv64-unknown-elf-objdump", "riscv32-unknown-elf-objdump"]
+
+
+class RvsimError(Exception):
+    """A recoverable front-end error.
+
+    In batch mode this is caught at the top level and turned into a
+    'rvsim: <msg>' exit(1); in the interactive shell it is caught per
+    command so a bad build/argument never kills the session."""
+
+
+def die(msg):
+    raise RvsimError(msg)
+
+
+def have(tool):
+    return shutil.which(tool) is not None
+
+
+# ---- input preparation ------------------------------------------------
+def bin_to_hex(bin_path: Path, hex_path: Path):
+    """Raw little-endian binary -> one 32-bit word per line (imem image)."""
+    data = bin_path.read_bytes()
+    if len(data) % 4:
+        data += b"\x00" * (4 - len(data) % 4)
+    with hex_path.open("w") as f:
+        for i in range(0, len(data), 4):
+            f.write("%08x\n" % int.from_bytes(data[i:i + 4], "little"))
+
+
+def elf_to_bin(elf_path: Path, bin_path: Path):
+    if not have(OBJCOPY):
+        die(f"{OBJCOPY} not found; needed to read .elf files")
+    subprocess.run([OBJCOPY, "-O", "binary", str(elf_path), str(bin_path)],
+                   check=True)
+
+
+def elf_data_image(elf_path: Path, out_path: Path):
+    """Extract initialized data (.rodata/.data/.sdata) as a byte $readmemh
+    image with @address records -- the format dmem/soc RAM expects."""
+    r = subprocess.run(
+        [OBJCOPY, "-O", "verilog", "--verilog-data-width=1",
+         "--only-section=.rodata", "--only-section=.data",
+         "--only-section=.sdata", str(elf_path), "/dev/stdout"],
+        capture_output=True, text=True)
+    text = r.stdout.replace("\r", "").strip()
+    if text:
+        out_path.write_text(text + "\n")
+        return out_path
+    return None
+
+
+def prepare_program(src: Path, core):
+    """Return (prog_hex_path, auto_data_hex_or_None)."""
+    ext = src.suffix.lower()
+    stem = src.stem
+    BUILD.mkdir(exist_ok=True)
+    if ext == ".hex":
+        return src, None
+    if ext == ".bin":
+        out = BUILD / f"{stem}.rvsim.hex"
+        bin_to_hex(src, out)
+        return out, None
+    if ext in (".elf", ".o", ".out") or ext == "":
+        rawbin = BUILD / f"{stem}.rvsim.bin"
+        elf_to_bin(src, rawbin)
+        out = BUILD / f"{stem}.rvsim.hex"
+        bin_to_hex(rawbin, out)
+        data = elf_data_image(src, BUILD / f"{stem}.rvsim.data.hex")
+        return out, data
+    die(f"unrecognized input '{src.name}' (want .bin, .hex or .elf)")
+
+
+def hex_to_bin(hex_path: Path, bin_path: Path):
+    """Word-hex imem image -> raw little-endian bytes (for disassembly)."""
+    words = []
+    for line in Path(hex_path).read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith("@") or line.startswith("//"):
+            continue
+        try:
+            words.append(int(line.split()[0], 16))
+        except ValueError:
+            continue
+    data = b"".join(w.to_bytes(4, "little") for w in words)
+    bin_path.write_bytes(data)
+
+
+# ---- build ------------------------------------------------------------
+def sources_for(core):
+    c = CORES[core]
+    files = [REPO / "rtl" / f"{m}.v" for m in c["rtl"]]
+    files += [REPO / c["tb"], REPO / "tb" / "rvsim_dump.vh"]
+    return files
+
+
+def needs_build(core):
+    vvp = REPO / CORES[core]["vvp"]
+    if not vvp.exists():
+        return True
+    vmt = vvp.stat().st_mtime
+    return any(s.stat().st_mtime > vmt for s in sources_for(core) if s.exists())
+
+
+def build(core, verbose=False):
+    c = CORES[core]
+    if not have("iverilog"):
+        die("iverilog not found; install Icarus Verilog")
+    rtl = [f"rtl/{m}.v" for m in c["rtl"]]
+    cmd = ["iverilog", "-g2012", "-o", c["vvp"], *rtl, c["tb"]]
+    if verbose:
+        print("+", " ".join(cmd))
+    r = subprocess.run(cmd, cwd=REPO, capture_output=True, text=True)
+    # iverilog is noisy with harmless warnings; only surface output on failure.
+    if r.returncode != 0:
+        sys.stderr.write(r.stdout + r.stderr)
+        die(f"iverilog failed to build the {core} simulation")
+    return REPO / c["vvp"]
+
+
+# ---- run --------------------------------------------------------------
+def parse_mem(spec):
+    """'START:COUNT' -> (start_byte, count_words). START may be hex (0x..)."""
+    if spec is None:
+        return None
+    m = re.match(r"^\s*([0-9a-fA-Fx]+)\s*:\s*([0-9]+)\s*$", spec)
+    if not m:
+        die(f"--mem wants START:COUNT (e.g. 0:16 or 0x40:8), got '{spec}'")
+    start = int(m.group(1), 0)
+    return start & ~3, int(m.group(2))
+
+
+def run_sim(vvp, prog_hex, data_hex, cycles, trace=False, mem=None,
+            vcd=None, verbose=False):
+    """Low-level: invoke vvp once and return its combined stdout+stderr."""
+    plus = [f"+HEX={Path(prog_hex).resolve()}", f"+CYCLES={cycles}"]
+    if data_hex:
+        plus.append(f"+DATA={Path(data_hex).resolve()}")
+    if trace:
+        plus.append("+TRACE=1")
+    if mem:
+        plus += [f"+MEMSTART={mem[0]}", f"+MEMWORDS={mem[1]}"]
+    if vcd:
+        plus.append(f"+VCD={vcd}")
+    cmd = ["vvp", str(vvp), *plus]
+    if verbose:
+        print("+", " ".join(cmd))
+    r = subprocess.run(cmd, cwd=REPO, capture_output=True, text=True)
+    return r.stdout + r.stderr
+
+
+def run(vvp, prog_hex, data_hex, args):
+    """Batch-mode wrapper around run_sim (keeps the old call site intact)."""
+    vcd = None
+    if args.vcd:
+        vcd = BUILD / f"rvsim_{args.core}.vcd"
+        args._vcd_path = vcd
+    return run_sim(vvp, prog_hex, data_hex, args.cycles, args.trace,
+                   parse_mem(args.mem), vcd, args.verbose)
+
+
+# ---- output formatting ------------------------------------------------
+STATE_RE = re.compile(r"===RVSIM-STATE-BEGIN===\n(.*?)\n===RVSIM-STATE-END===",
+                      re.S)
+
+TRACE_RE = re.compile(r"^\[trace\]\s+(\d+)\s+pc=([0-9a-fA-F]+)\s+"
+                      r"instr=([0-9a-fA-F]+)")
+
+# Icarus/vvp housekeeping lines that are not program output.
+NOISE_RE = re.compile(
+    r"(\$readmemh\(.*Not enough words)|(\$finish called at)|"
+    r"(\$dumpfile|\$dumpvars)|(^\[trace\]\s)")
+
+
+def clean_console(text):
+    return "\n".join(ln for ln in text.splitlines() if not NOISE_RE.search(ln))
+
+
+def parse_trace(out):
+    """Pull the per-cycle [trace] lines into a cycle-indexed [(pc, instr)]."""
+    tr = {}
+    for line in out.splitlines():
+        m = TRACE_RE.match(line)
+        if m:
+            tr[int(m.group(1))] = (int(m.group(2), 16), int(m.group(3), 16))
+    if not tr:
+        return []
+    return [tr.get(i, (0, 0)) for i in range(max(tr) + 1)]
+
+
+def parse_state(out):
+    m = STATE_RE.search(out)
+    if not m:
+        return None, out
+    body = m.group(1)
+    console = clean_console(out[:m.start()] + out[m.end():])
+    st = {"regs": [0] * 32, "mem": []}
+    for line in body.splitlines():
+        p = line.split()
+        if not p:
+            continue
+        if p[0] == "REG":
+            st["regs"][int(p[1])] = int(p[2], 16)
+        elif p[0] == "DMEM":
+            st["mem"].append((int(p[1], 16), int(p[2], 16)))
+        elif p[0] in ("PC", "INSTR"):
+            st[p[0].lower()] = int(p[1], 16)
+        elif p[0] == "CYCLES":
+            st["cycles"] = int(p[1])
+        elif p[0] == "HALT":
+            st["halt"] = line[5:].strip()
+    return st, console
+
+
+class C:
+    def __init__(self, on):
+        self.dim = "\033[2m" if on else ""
+        self.bold = "\033[1m" if on else ""
+        self.cyan = "\033[36m" if on else ""
+        self.yellow = "\033[33m" if on else ""
+        self.green = "\033[32m" if on else ""
+        self.magenta = "\033[35m" if on else ""
+        self.red = "\033[31m" if on else ""
+        self.blue = "\033[34m" if on else ""
+        self.reset = "\033[0m" if on else ""
+
+
+def render(st, args, src, core, color):
+    c = C(color)
+    w = 62
+    print(c.cyan + "─" * w + c.reset)
+    print(f"{c.bold}RISC-V CPU state{c.reset}   "
+          f"{c.dim}({core}: {CORES[core]['desc']}){c.reset}")
+    print(c.cyan + "─" * w + c.reset)
+    print(f"  program : {src.name}")
+    print(f"  cycles  : {st.get('cycles', '?')}"
+          f"     halt: {c.yellow}{st.get('halt', '?')}{c.reset}")
+    print(f"  pc      : 0x{st.get('pc', 0):08x}"
+          f"     instr: 0x{st.get('instr', 0):08x}")
+    print()
+    # 4 columns x 8 rows, in numeric register order down each column.
+    regs = st["regs"]
+    for row in range(8):
+        cells = []
+        for col in range(4):
+            n = row + col * 8
+            v = regs[n]
+            label = f"x{n:<2d} {ABI[n]:>4}"
+            hexv = f"0x{v:08x}"
+            if v and color:
+                hexv = c.green + hexv + c.reset
+            elif not v:
+                hexv = c.dim + hexv + c.reset
+            cells.append(f"{label} {hexv}")
+        print("  " + "   ".join(cells))
+    if args.dec:
+        print()
+        print(f"  {c.dim}signed decimal:{c.reset}")
+        for row in range(8):
+            cells = []
+            for col in range(4):
+                n = row + col * 8
+                s = regs[n] - (1 << 32) if regs[n] >> 31 else regs[n]
+                cells.append(f"{ABI[n]:>4} {s:>11d}")
+            print("  " + "  ".join(cells))
+    if st["mem"]:
+        print()
+        print(f"  {c.dim}data memory:{c.reset}")
+        row = []
+        base = None
+        for addr, word in st["mem"]:
+            if base is None:
+                base = addr
+            row.append(word)
+            if len(row) == 4:
+                asc = _ascii(row)
+                print("  0x%08x: %s  |%s|" %
+                      (base, " ".join("%08x" % x for x in row), asc))
+                row, base = [], None
+        if row:
+            asc = _ascii(row)
+            print("  0x%08x: %-35s  |%s|" %
+                  (base, " ".join("%08x" % x for x in row), asc))
+    print(c.cyan + "─" * w + c.reset)
+    if getattr(args, "_vcd_path", None):
+        print(f"  waveform: {os.path.relpath(args._vcd_path, REPO)}  "
+              f"(open with: gtkwave {os.path.relpath(args._vcd_path, REPO)})")
+
+
+def _ascii(words):
+    out = []
+    for word in words:
+        for b in word.to_bytes(4, "little"):
+            out.append(chr(b) if 32 <= b < 127 else ".")
+    return "".join(out)
+
+
+# ---- disassembly (best-effort, for the interactive shell) -------------
+def disassemble(prog_hex):
+    """{byte_addr: 'mnemonic operands'} for the loaded image, via objdump.
+
+    Reconstructs a raw binary from the imem word-hex and disassembles it
+    as rv32.  Returns {} if no riscv objdump is on PATH -- callers fall
+    back to showing the raw instruction word."""
+    objdump = next((t for t in OBJDUMPS if have(t)), None)
+    if not objdump:
+        return {}
+    binf = BUILD / "rvsim.disasm.bin"
+    try:
+        hex_to_bin(prog_hex, binf)
+        r = subprocess.run(
+            [objdump, "-D", "-b", "binary", "-m", "riscv:rv32", str(binf)],
+            capture_output=True, text=True)
+    except Exception:
+        return {}
+    dis = {}
+    line_re = re.compile(r"^\s*([0-9a-f]+):\s+[0-9a-f]{4,8}\s+(.+)$")
+    for line in r.stdout.splitlines():
+        m = line_re.match(line)
+        if m:
+            text = re.sub(r"\s+", " ", m.group(2).replace("\t", " ")).strip()
+            # drop objdump's trailing '# 0x..' comments for compactness
+            text = re.sub(r"\s+#.*$", "", text)
+            dis[int(m.group(1), 16)] = text
+    return dis
+
+
+# =====================================================================
+# Interactive stepping debugger
+# =====================================================================
+def sdec(v):
+    return v - (1 << 32) if v >> 31 else v
+
+
+class Session:
+    """Holds one interactive debugging session over a single program.
+
+    The simulation is deterministic and dumps full architectural state at
+    whatever +CYCLES=N limit it is given, so 'stepping' is just re-running
+    to a cycle cursor.  A one-shot traced run at load time captures the
+    whole PC/instr trace (for breakpoints + the trace view) and the final
+    halt state; per-cursor register/memory snapshots are run on demand and
+    cached."""
+
+    def __init__(self, core="cpu", color=True, max_cycles=200000,
+                 verbose=False):
+        self.core = core
+        self.color = color
+        self.max_cycles = max_cycles
+        self.verbose = verbose
+        self.show_dec = False
+        # program-specific state (reset by load())
+        self.program = None       # Path the user gave us
+        self.prog_hex = None      # prepared imem word-hex
+        self.auto_data = None     # data image auto-derived from an .elf
+        self.data = None          # explicit --data override
+        self.disasm = {}          # addr -> mnemonic
+        self.trace = []           # cycle -> (pc, instr)
+        self.halt_cycle = 0
+        self.halt_reason = None
+        self.console = ""         # program's own stdout/UART at halt
+        self.cursor = 0           # current cycle position (0 == just reset)
+        self.mem = None           # (start_byte, words) window or None
+        self.breakpoints = []     # list of PC ints
+        self.cache = {}           # cycle -> parsed state dict
+
+    # -- helpers --------------------------------------------------------
+    @property
+    def c(self):
+        return C(self.color)
+
+    def data_file(self):
+        return self.data or self.auto_data
+
+    def vvp_path(self):
+        return REPO / CORES[self.core]["vvp"]
+
+    def ensure_build(self):
+        if needs_build(self.core):
+            print(f"{self.c.dim}building {self.core} simulation…{self.c.reset}")
+            build(self.core, self.verbose)
+
+    def invalidate(self):
+        self.cache = {}
+
+    # -- loading --------------------------------------------------------
+    def load(self, path):
+        src = Path(os.path.expanduser(str(path)))
+        if not src.exists():
+            die(f"no such file: {src}")
+        self.ensure_build()
+        prog_hex, auto_data = prepare_program(src, self.core)
+        nwords = sum(1 for _ in Path(prog_hex).open())
+        limit = CORES[self.core]["imem_words"]
+        if nwords > limit:
+            print(f"{self.c.yellow}warning:{self.c.reset} program is {nwords} "
+                  f"words but the {self.core} imem holds {limit}; truncated.")
+        self.program = src
+        self.prog_hex = prog_hex
+        self.auto_data = auto_data
+        self.disasm = disassemble(prog_hex)
+        self.invalidate()
+        self.breakpoints = []
+        self.capture()
+        self.cursor = 0
+
+    def capture(self):
+        """One traced run to natural halt: fills trace + halt state/cache."""
+        out = run_sim(self.vvp_path(), self.prog_hex, self.data_file(),
+                      self.max_cycles, trace=True, mem=self.mem,
+                      verbose=self.verbose)
+        self.trace = parse_trace(out)
+        st, console = parse_state(out)
+        if st is None:
+            die("simulation produced no state block (build/run failed?)\n"
+                + out)
+        self.halt_cycle = st.get("cycles", len(self.trace))
+        self.halt_reason = st.get("halt", "?")
+        self.console = console.strip("\n")
+        self.cache[self.halt_cycle] = st
+
+    def reload(self):
+        """Re-run after a setting change (core/data/cycles/mem)."""
+        if self.program is None:
+            return
+        self.ensure_build()
+        self.prog_hex, self.auto_data = prepare_program(self.program, self.core)
+        self.disasm = disassemble(self.prog_hex)
+        self.invalidate()
+        self.capture()
+        self.cursor = min(self.cursor, self.halt_cycle)
+
+    # -- state at a cursor ---------------------------------------------
+    def state_at(self, cycle):
+        cycle = max(0, min(cycle, self.halt_cycle))
+        if cycle in self.cache:
+            return self.cache[cycle]
+        out = run_sim(self.vvp_path(), self.prog_hex, self.data_file(),
+                      cycle, trace=False, mem=self.mem, verbose=self.verbose)
+        st, _ = parse_state(out)
+        if st is None:
+            die("simulation produced no state block")
+        self.cache[cycle] = st
+        return st
+
+    def reg_changes(self, prev, cur):
+        if prev is None:
+            return []
+        return [(n, prev["regs"][n], cur["regs"][n])
+                for n in range(32) if prev["regs"][n] != cur["regs"][n]]
+
+    def pc_disasm(self, pc):
+        return self.disasm.get(pc, "")
+
+    # -- movement -------------------------------------------------------
+    def move_to(self, cycle):
+        """Move the cursor, returning (prev_state, cur_state)."""
+        prev = self.state_at(self.cursor)
+        self.cursor = max(0, min(cycle, self.halt_cycle))
+        return prev, self.state_at(self.cursor)
+
+    def next_breakpoint(self):
+        """Smallest cycle > cursor whose PC is a breakpoint, else halt."""
+        if not self.breakpoints:
+            return self.halt_cycle
+        bp = set(self.breakpoints)
+        for c in range(self.cursor + 1, min(self.halt_cycle, len(self.trace))):
+            if self.trace[c][0] in bp:
+                return c
+        return self.halt_cycle
+
+
+# ---- interactive rendering -------------------------------------------
+def render_rule(c, width=64):
+    print(c.cyan + "─" * width + c.reset)
+
+
+def render_summary(s, st):
+    c = s.c
+    at_halt = s.cursor >= s.halt_cycle
+    pc = st.get("pc", 0)
+    dis = s.pc_disasm(pc)
+    dis_s = f"   {c.blue}{dis}{c.reset}" if dis else ""
+    prog = s.program.name if s.program else "(none)"
+    print(f" {c.bold}{prog}{c.reset} {c.dim}·{c.reset} {s.core} "
+          f"{c.dim}·{c.reset} cycle {c.bold}{s.cursor}{c.reset}"
+          f"{c.dim}/{s.halt_cycle}{c.reset} "
+          f"{c.dim}·{c.reset} pc {c.cyan}0x{pc:08x}{c.reset}{dis_s}")
+    if at_halt:
+        print(f" {c.dim}halt:{c.reset} {c.yellow}{s.halt_reason}{c.reset}")
+
+
+def render_changes(s, changes, cur):
+    c = s.c
+    if not changes:
+        print(f"  {c.dim}(no register changes){c.reset}")
+        return
+    for n, old, new in changes:
+        print(f"  {c.magenta}Δ{c.reset} x{n:<2d} {ABI[n]:>4}  "
+              f"{c.dim}0x{old:08x}{c.reset} {c.dim}→{c.reset} "
+              f"{c.bold}{c.magenta}0x{new:08x}{c.reset}"
+              f"  {c.dim}({sdec(new)}){c.reset}")
+
+
+def render_regs(s, cur, prev=None):
+    """Full 4x8 register grid, highlighting anything changed vs prev."""
+    c = s.c
+    regs = cur["regs"]
+    changed = {n for n, _, _ in s.reg_changes(prev, cur)} if prev else set()
+    for row in range(8):
+        cells = []
+        for col in range(4):
+            n = row + col * 8
+            v = regs[n]
+            label = f"x{n:<2d} {ABI[n]:>4}"
+            hexv = f"0x{v:08x}"
+            if n in changed:
+                hexv = c.bold + c.magenta + hexv + c.reset
+            elif v:
+                hexv = c.green + hexv + c.reset
+            else:
+                hexv = c.dim + hexv + c.reset
+            cells.append(f"{label} {hexv}")
+        print("  " + "   ".join(cells))
+    if s.show_dec:
+        print(f"\n  {c.dim}signed decimal:{c.reset}")
+        for row in range(8):
+            cells = []
+            for col in range(4):
+                n = row + col * 8
+                cells.append(f"{ABI[n]:>4} {sdec(regs[n]):>11d}")
+            print("  " + "  ".join(cells))
+
+
+def render_mem(s, cur):
+    c = s.c
+    if not cur.get("mem"):
+        print(f"  {c.dim}(no memory window; use: mem START:COUNT){c.reset}")
+        return
+    print(f"  {c.dim}data memory:{c.reset}")
+    row, base = [], None
+    for addr, word in cur["mem"]:
+        if base is None:
+            base = addr
+        row.append(word)
+        if len(row) == 4:
+            print("  0x%08x: %s  |%s|" %
+                  (base, " ".join("%08x" % x for x in row), _ascii(row)))
+            row, base = [], None
+    if row:
+        print("  0x%08x: %-35s  |%s|" %
+              (base, " ".join("%08x" % x for x in row), _ascii(row)))
+
+
+def show_step(s, prev, cur):
+    """Compact focused view after step/back/goto/continue."""
+    c = s.c
+    at_halt = s.cursor >= s.halt_cycle
+    pc = cur.get("pc", 0)
+    dis = s.pc_disasm(pc)
+    marker = "■" if at_halt else "●"
+    mc = c.yellow if at_halt else c.green
+    dis_s = f"  {c.blue}{dis}{c.reset}" if dis else ""
+    print(f"{mc}{marker}{c.reset} cycle {c.bold}{s.cursor}{c.reset}"
+          f"{c.dim}/{s.halt_cycle}{c.reset}  pc {c.cyan}0x{pc:08x}{c.reset}  "
+          f"{c.dim}{cur.get('instr', 0):08x}{c.reset}{dis_s}")
+    render_changes(s, s.reg_changes(prev, cur), cur)
+    if at_halt and s.halt_reason:
+        print(f"  {c.dim}halt:{c.reset} {c.yellow}{s.halt_reason}{c.reset}")
+
+
+def show_full(s, cur, prev=None):
+    """Header + full register grid (+ mem window if set)."""
+    c = s.c
+    render_rule(c)
+    render_summary(s, cur)
+    render_rule(c)
+    render_regs(s, cur, prev)
+    if cur.get("mem"):
+        print()
+        render_mem(s, cur)
+    render_rule(c)
+
+
+# ---- REPL -------------------------------------------------------------
+HELP = """\
+commands (a leading '/' is optional, e.g. /help or help):
+
+  loading & running
+    load FILE            load a .bin/.hex/.elf and reset to cycle 0
+    run                  run to the natural halt, show full state
+    continue, c          run to the next breakpoint (or halt)
+    reset                jump back to cycle 0 (just-reset state)
+
+  stepping
+    step [N], s          advance N cycles (default 1), show what changed
+    back [N], b          step backwards N cycles
+    goto CYCLE           jump the cursor to an absolute cycle
+
+  inspecting
+    regs                 full register file at the cursor
+    mem START:COUNT      set + show a data-memory window (e.g. 0:16, 0x40:8)
+    trace [N]            show the last N executed pc/instr (default 16)
+    pc                   current pc / instr / disassembly
+    status               session summary
+
+  breakpoints
+    break PC             stop 'continue' when PC is reached (e.g. break 0x18)
+    breaks               list breakpoints
+    delete [N|all]       remove breakpoint N (or all)
+
+  settings
+    core [cpu|soc]       show or switch the core (reloads the program)
+    cycles [N]           show or set the max cycle cap
+    data FILE            preload data memory from a byte-hex image
+    dec [on|off]         also show registers as signed decimals
+    vcd                  write a GTKWave waveform of the current program
+    rebuild              force a rebuild of the simulation
+
+    clear                clear the screen
+    help, ?              this message
+    quit, exit, q        leave the shell\
+"""
+
+CMDS = ["load", "run", "continue", "reset", "step", "back", "goto", "regs",
+        "mem", "trace", "pc", "status", "break", "breaks", "delete", "core",
+        "cycles", "data", "dec", "vcd", "rebuild", "clear", "help", "quit",
+        "exit"]
+
+
+def banner(s):
+    c = s.c
+    lines = [
+        f"{c.bold}{c.cyan}✳ rvsim{c.reset}  {c.dim}·{c.reset}  "
+        f"interactive RISC-V debugger",
+        "",
+        f"{c.dim}core {c.reset}{s.core}{c.dim}  ·  {c.reset}"
+        f"{c.bold}help{c.reset}{c.dim} for commands  ·  {c.reset}"
+        f"{c.bold}load FILE{c.reset}{c.dim} to begin{c.reset}",
+    ]
+
+    def vis(t):  # visible length (strip ANSI)
+        return len(re.sub(r"\033\[[0-9;]*m", "", t))
+
+    inner = max(vis(ln) for ln in lines) + 2
+    print(c.cyan + "╭" + "─" * inner + "╮" + c.reset)
+    for ln in lines:
+        pad = " " * max(0, inner - vis(ln) - 2)
+        print(f"{c.cyan}│{c.reset} {ln}{pad} {c.cyan}│{c.reset}")
+    print(c.cyan + "╰" + "─" * inner + "╯" + c.reset)
+
+
+def prompt(s):
+    c = s.c
+    if s.program is None:
+        return f"{c.cyan}rvsim{c.reset} ❯ "
+    return (f"{c.cyan}rvsim{c.reset} {c.dim}{s.cursor}/{s.halt_cycle}"
+            f"{c.reset} ❯ ")
+
+
+def setup_readline(s):
+    try:
+        import readline
+    except ImportError:
+        return
+
+    def completer(text, state):
+        buf = readline.get_line_buffer()
+        # complete a filename for load/data, otherwise a command name
+        first = buf.lstrip().split()[:1]
+        if first and first[0].lstrip("/") in ("load", "data") and buf.endswith(
+                text):
+            base = os.path.expanduser(text) or "."
+            d = os.path.dirname(base) or "."
+            frag = os.path.basename(base)
+            try:
+                names = [n for n in os.listdir(d) if n.startswith(frag)]
+            except OSError:
+                names = []
+            opts = []
+            for n in names:
+                full = os.path.join(d, n) if os.path.dirname(base) else n
+                opts.append(full + ("/" if os.path.isdir(
+                    os.path.join(d, n)) else " "))
+        else:
+            t = text.lstrip("/")
+            opts = [cmd + " " for cmd in CMDS if cmd.startswith(t)]
+        return opts[state] if state < len(opts) else None
+
+    readline.set_completer(completer)
+    readline.set_completer_delims(" \t\n")
+    readline.parse_and_bind("tab: complete")
+
+
+def need_prog(s):
+    if s.program is None:
+        print(f"{s.c.dim}no program loaded — use: load FILE{s.c.reset}")
+        return False
+    return True
+
+
+def as_int(tok):
+    try:
+        return int(tok, 0)
+    except ValueError:
+        die(f"expected a number, got '{tok}'")
+
+
+def handle(s, line):
+    parts = shlex.split(line)
+    if not parts:
+        return
+    cmd = parts[0].lstrip("/").lower()
+    rest = parts[1:]
+    c = s.c
+
+    if cmd in ("quit", "exit", "q"):
+        raise EOFError
+    if cmd in ("help", "?", "h"):
+        print(HELP)
+    elif cmd == "clear":
+        print("\033[2J\033[H", end="")
+        banner(s)
+    elif cmd in ("load", "open", "l"):
+        if not rest:
+            die("usage: load FILE")
+        s.load(rest[0])
+        print(f"{c.green}loaded{c.reset} {s.program.name} "
+              f"{c.dim}({s.core}){c.reset} — halts at cycle "
+              f"{c.bold}{s.halt_cycle}{c.reset}: {c.yellow}{s.halt_reason}"
+              f"{c.reset}")
+        show_step(s, None, s.state_at(0))
+    elif cmd in ("run",):
+        if not need_prog(s):
+            return
+        prev, cur = s.move_to(s.halt_cycle)
+        if s.console:
+            print(f"{c.dim}── program output ──{c.reset}")
+            print(s.console)
+            print(f"{c.dim}────────────────────{c.reset}")
+        show_full(s, cur, prev)
+    elif cmd in ("continue", "cont", "c"):
+        if not need_prog(s):
+            return
+        if s.cursor >= s.halt_cycle:
+            print(f"{c.dim}already at halt (cycle {s.halt_cycle}); "
+                  f"reset to run again{c.reset}")
+            return
+        prev, cur = s.move_to(s.next_breakpoint())
+        show_step(s, prev, cur)
+    elif cmd in ("step", "s", "n", "next"):
+        if not need_prog(s):
+            return
+        n = as_int(rest[0]) if rest else 1
+        if s.cursor >= s.halt_cycle:
+            print(f"{c.dim}already at halt (cycle {s.halt_cycle}); "
+                  f"reset to run again{c.reset}")
+            return
+        prev, cur = s.move_to(s.cursor + n)
+        show_step(s, prev, cur)
+    elif cmd in ("back", "b", "rev"):
+        if not need_prog(s):
+            return
+        n = as_int(rest[0]) if rest else 1
+        prev, cur = s.move_to(s.cursor - n)
+        show_step(s, prev, cur)
+    elif cmd in ("goto", "jump", "j"):
+        if not need_prog(s):
+            return
+        if not rest:
+            die("usage: goto CYCLE")
+        prev, cur = s.move_to(as_int(rest[0]))
+        show_step(s, prev, cur)
+    elif cmd == "reset":
+        if not need_prog(s):
+            return
+        prev, cur = s.move_to(0)
+        show_step(s, prev, cur)
+    elif cmd in ("regs", "reg", "r"):
+        if not need_prog(s):
+            return
+        show_full(s, s.state_at(s.cursor))
+    elif cmd in ("mem", "x"):
+        if not need_prog(s):
+            return
+        if rest:
+            new = parse_mem(rest[0])
+            if new != s.mem:
+                s.mem = new
+                s.invalidate()
+                s.capture()
+        show_summary_and_mem(s)
+    elif cmd in ("pc",):
+        if not need_prog(s):
+            return
+        cur = s.state_at(s.cursor)
+        pc = cur.get("pc", 0)
+        dis = s.pc_disasm(pc)
+        print(f"  pc {c.cyan}0x{pc:08x}{c.reset}  instr "
+              f"{c.dim}0x{cur.get('instr', 0):08x}{c.reset}"
+              f"  {c.blue}{dis}{c.reset}")
+    elif cmd == "trace":
+        if not need_prog(s):
+            return
+        show_trace(s, as_int(rest[0]) if rest else 16)
+    elif cmd in ("break", "bp"):
+        if not need_prog(s):
+            return
+        if not rest:
+            die("usage: break PC  (e.g. break 0x18)")
+        pc = as_int(rest[0]) & ~1
+        if pc not in s.breakpoints:
+            s.breakpoints.append(pc)
+            s.breakpoints.sort()
+        print(f"{c.green}breakpoint{c.reset} #{s.breakpoints.index(pc)} "
+              f"at pc 0x{pc:08x}  {c.blue}{s.pc_disasm(pc)}{c.reset}")
+    elif cmd in ("breaks", "bl"):
+        show_breaks(s)
+    elif cmd in ("delete", "del", "d"):
+        if not rest or rest[0] == "all":
+            s.breakpoints = []
+            print(f"{c.dim}all breakpoints cleared{c.reset}")
+        else:
+            i = as_int(rest[0])
+            if 0 <= i < len(s.breakpoints):
+                pc = s.breakpoints.pop(i)
+                print(f"{c.dim}deleted breakpoint at 0x{pc:08x}{c.reset}")
+            else:
+                die(f"no breakpoint #{i}")
+    elif cmd == "core":
+        if not rest:
+            print(f"  core: {s.core}  {c.dim}({CORES[s.core]['desc']})"
+                  f"{c.reset}")
+            return
+        if rest[0] not in CORES:
+            die(f"unknown core '{rest[0]}' (want: {', '.join(CORES)})")
+        if rest[0] != s.core:
+            s.core = rest[0]
+            print(f"{c.dim}core → {s.core}{c.reset}")
+            s.reload()
+            if s.program:
+                show_step(s, None, s.state_at(s.cursor))
+    elif cmd == "cycles":
+        if not rest:
+            print(f"  max cycles: {s.max_cycles}")
+            return
+        s.max_cycles = as_int(rest[0])
+        print(f"{c.dim}max cycles → {s.max_cycles}{c.reset}")
+        s.reload()
+    elif cmd == "data":
+        if not rest:
+            print(f"  data: {s.data or '(auto)'}")
+            return
+        p = Path(os.path.expanduser(rest[0]))
+        if not p.exists():
+            die(f"no such file: {p}")
+        s.data = p
+        print(f"{c.dim}data → {p}{c.reset}")
+        s.reload()
+    elif cmd == "dec":
+        s.show_dec = (rest[0].lower() in ("on", "1", "true", "yes")
+                      if rest else not s.show_dec)
+        print(f"{c.dim}decimal display {'on' if s.show_dec else 'off'}"
+              f"{c.reset}")
+    elif cmd == "vcd":
+        if not need_prog(s):
+            return
+        vcd = BUILD / f"rvsim_{s.core}.vcd"
+        run_sim(s.vvp_path(), s.prog_hex, s.data_file(), s.max_cycles,
+                vcd=vcd, verbose=s.verbose)
+        rel = os.path.relpath(vcd, REPO)
+        print(f"{c.green}wrote{c.reset} {rel}  "
+              f"{c.dim}(open with: gtkwave {rel}){c.reset}")
+    elif cmd == "rebuild":
+        build(s.core, s.verbose)
+        print(f"{c.green}rebuilt{c.reset} {s.core} simulation")
+        if s.program:
+            s.reload()
+    elif cmd in ("status", "info", "i"):
+        show_status(s)
+    else:
+        print(f"{c.dim}unknown command '{cmd}' — type help{c.reset}")
+
+
+def show_summary_and_mem(s):
+    c = s.c
+    cur = s.state_at(s.cursor)
+    render_rule(c)
+    render_summary(s, cur)
+    render_rule(c)
+    render_mem(s, cur)
+    render_rule(c)
+
+
+def show_trace(s, n):
+    c = s.c
+    hi = min(s.cursor, len(s.trace))
+    lo = max(0, hi - n)
+    if hi == 0:
+        print(f"  {c.dim}(no cycles executed yet){c.reset}")
+        return
+    bp = set(s.breakpoints)
+    for cyc in range(lo, hi):
+        pc, instr = s.trace[cyc]
+        here = "→" if cyc == s.cursor - 1 else " "
+        mark = f"{c.red}●{c.reset}" if pc in bp else " "
+        dis = s.pc_disasm(pc)
+        print(f"  {c.dim}{cyc:>5}{c.reset} {here}{mark} "
+              f"pc {c.cyan}0x{pc:08x}{c.reset} {c.dim}{instr:08x}{c.reset}  "
+              f"{c.blue}{dis}{c.reset}")
+
+
+def show_breaks(s):
+    c = s.c
+    if not s.breakpoints:
+        print(f"  {c.dim}(no breakpoints){c.reset}")
+        return
+    for i, pc in enumerate(s.breakpoints):
+        print(f"  #{i}  pc {c.cyan}0x{pc:08x}{c.reset}  "
+              f"{c.blue}{s.pc_disasm(pc)}{c.reset}")
+
+
+def show_status(s):
+    c = s.c
+    print(f"  program : {s.program.name if s.program else '(none)'}")
+    print(f"  core    : {s.core}  {c.dim}({CORES[s.core]['desc']}){c.reset}")
+    print(f"  cursor  : cycle {s.cursor} / {s.halt_cycle}")
+    if s.program:
+        print(f"  halt    : {c.yellow}{s.halt_reason}{c.reset}")
+    print(f"  cap     : {s.max_cycles} cycles")
+    print(f"  data    : {s.data or '(auto)'}")
+    win = f"0x{s.mem[0]:x}:{s.mem[1]}" if s.mem else "(none)"
+    print(f"  mem win : {win}")
+    print(f"  breaks  : {len(s.breakpoints)}")
+
+
+def repl(core="cpu", color=True, max_cycles=200000, verbose=False,
+         initial=None):
+    s = Session(core=core, color=color, max_cycles=max_cycles, verbose=verbose)
+    banner(s)
+    setup_readline(s)
+    if initial:
+        try:
+            handle(s, f"load {shlex.quote(str(initial))}")
+        except RvsimError as e:
+            print(f"{s.c.red}error:{s.c.reset} {e}")
+    while True:
+        try:
+            line = input(prompt(s))
+        except EOFError:
+            print()
+            break
+        except KeyboardInterrupt:
+            print("^C")
+            continue
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            handle(s, line)
+        except EOFError:
+            break
+        except RvsimError as e:
+            print(f"{s.c.red}error:{s.c.reset} {e}")
+        except subprocess.CalledProcessError as e:
+            print(f"{s.c.red}error:{s.c.reset} {e}")
+        except Exception as e:  # keep the shell alive on anything unexpected
+            print(f"{s.c.red}error:{s.c.reset} {e}")
+    print(f"{s.c.dim}bye{s.c.reset}")
+
+
+# ---- main -------------------------------------------------------------
+def run_batch(args):
+    src = Path(args.program)
+    if not src.exists():
+        die(f"no such file: {src}")
+
+    prog_hex, auto_data = prepare_program(src, args.core)
+
+    # warn if the program overflows the (fixed) instruction memory
+    nwords = sum(1 for _ in prog_hex.open())
+    if nwords > CORES[args.core]["imem_words"]:
+        sys.stderr.write(
+            f"rvsim: warning: program is {nwords} words but the {args.core} "
+            f"imem holds {CORES[args.core]['imem_words']}; it will be "
+            f"truncated.\n")
+
+    data_hex = args.data or (auto_data if args.core == "soc" else None)
+
+    if args.build or needs_build(args.core):
+        build(args.core, args.verbose)
+    vvp = REPO / CORES[args.core]["vvp"]
+
+    out = run(vvp, prog_hex, data_hex, args)
+    st, console = parse_state(out)
+    console = console.strip("\n")
+    if console:
+        print(console)
+    if st is None:
+        die("simulation produced no state block (build/run failed?)\n" + out)
+    color = sys.stdout.isatty() and not args.no_color
+    render(st, args, src, args.core, color)
+
+
+def main():
+    ap = argparse.ArgumentParser(
+        prog="rvsim",
+        description="Run a RISC-V program on the tutorial CPU and show "
+                    "its registers and state. Run with no program (or -i) "
+                    "for an interactive stepping debugger.")
+    ap.add_argument("program", nargs="?",
+                    help="program to run: .bin, .hex or .elf")
+    ap.add_argument("-i", "--interactive", action="store_true",
+                    help="start the interactive stepping debugger")
+    ap.add_argument("--core", choices=list(CORES), default="cpu",
+                    help="which core to run on (default: cpu)")
+    ap.add_argument("--cycles", type=int, default=200000,
+                    help="max cycles before stopping (default: 200000)")
+    ap.add_argument("--trace", action="store_true",
+                    help="print pc/instr for every retired cycle")
+    ap.add_argument("--mem", metavar="START:COUNT",
+                    help="dump COUNT data words starting at byte START "
+                         "(e.g. 0:16 or 0x40:8)")
+    ap.add_argument("--data", metavar="FILE",
+                    help="preload data memory from a byte-hex image "
+                         "(auto-derived for .elf inputs)")
+    ap.add_argument("--dec", action="store_true",
+                    help="also show registers as signed decimals")
+    ap.add_argument("--vcd", action="store_true",
+                    help="also write a VCD waveform under build/")
+    ap.add_argument("--build", action="store_true",
+                    help="force a rebuild of the simulation")
+    ap.add_argument("--no-color", action="store_true", help="disable color")
+    ap.add_argument("-v", "--verbose", action="store_true",
+                    help="show the iverilog/vvp commands")
+    args = ap.parse_args()
+
+    color = sys.stdout.isatty() and not args.no_color
+
+    # Interactive shell: explicit -i, or a bare invocation with no program.
+    if args.interactive or not args.program:
+        try:
+            repl(core=args.core, color=color, max_cycles=args.cycles,
+                 verbose=args.verbose, initial=args.program)
+        except RvsimError as e:
+            sys.stderr.write(f"rvsim: {e}\n")
+            sys.exit(1)
+        return
+
+    try:
+        run_batch(args)
+    except RvsimError as e:
+        sys.stderr.write(f"rvsim: {e}\n")
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

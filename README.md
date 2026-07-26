@@ -75,6 +75,7 @@ riscv-cpu-tutorial/
 ├── rtl/               <- synthesizable hardware (the CPU itself)
 ├── tb/                <- testbenches (simulation-only checking code)
 ├── sw/                <- assembly programs the CPU will run
+├── tools/             <- helper tools (rvsim: run a program & dump state)
 └── build/             <- compiled simulations + .vcd waveforms (generated)
 ```
 
@@ -90,6 +91,102 @@ gtkwave build/alu_tb.vcd
 ```
 
 Start with `docs/00-overview.md`.
+
+## Run a program & inspect the CPU (`rvsim`)
+
+`tools/rvsim` is a small command-line front-end that loads a program onto
+the CPU, runs it, and prints the final register file, PC and memory —
+without hand-writing a testbench. It accepts a raw **`.bin`**, a
+**`.hex`** (`$readmemh` word image), or an **`.elf`** (converted for you).
+
+```bash
+# Run a raw binary on the single-cycle core and show the registers
+tools/rvsim path/to/prog.bin
+
+# Run the peripheral demo on the SoC (real UART output + self-halt)
+tools/rvsim sw/socdemo.hex --core soc --data sw/socdemo_data.hex
+
+# Compiled ELF, trace each cycle, and dump 16 data words from address 0
+tools/rvsim prog.elf --trace --cycles 200 --mem 0:16
+
+# Same thing through make
+make run BIN=path/to/prog.bin
+make run BIN=sw/socdemo.hex CORE=soc DATA=sw/socdemo_data.hex
+```
+
+Sample output:
+
+```
+──────────────────────────────────────────────────────────────
+RISC-V CPU state   (cpu: single-cycle core (rtl/cpu.v))
+──────────────────────────────────────────────────────────────
+  program : prog.bin
+  cycles  : 13     halt: PC stalled (spin loop)
+  pc      : 0x00000024     instr: 0x0000006f
+
+  x0  zero 0x00000000   x8    s0 0x00000000   x16   a6 0x00000000   x24   s8 0x00000000
+  x1    ra 0x00000005   x9    s1 0x00000000   x17   a7 0x00000000   x25   s9 0x00000000
+  ...
+```
+
+Useful flags (`tools/rvsim --help` for all):
+
+| Flag | Meaning |
+|------|---------|
+| `--core {cpu,soc}` | single-cycle core (default) or full SoC with UART/timer/halt |
+| `--cycles N` | max cycles before stopping (default 200000) |
+| `--trace` | print `pc`/`instr` for every retired cycle |
+| `--mem START:COUNT` | hex-dump `COUNT` data words from byte `START` (e.g. `0x40:8`) |
+| `--data FILE` | preload data memory (auto-derived from an `.elf`) |
+| `--dec` | also show registers as signed decimals |
+| `--vcd` | also write a GTKWave waveform under `build/` |
+
+The run stops on its own when the program spins (`j .`), runs off the end,
+halts via the SoC's syscon device, or hits the cycle cap. Both cores have a
+4 KB (1024-instruction) instruction memory, so this is aimed at the small
+bare-metal programs in `sw/`.
+
+### Interactive mode — a stepping debugger
+
+Run `rvsim` with **no program** (or pass `-i`) and it drops into an
+interactive shell instead of a one-shot dump — a little gdb-for-the-tutorial
+where you step the CPU cycle by cycle and watch the registers change, with
+inline disassembly, breakpoints and a full trace.
+
+```bash
+tools/rvsim                    # empty shell — then: load sw/sum.hex
+tools/rvsim -i sw/sum.elf      # load a program and start stepping
+make sim BIN=sw/sum.hex        # same thing through make
+```
+
+```
+rvsim 6/49 ❯ step
+● cycle 7/49  pc 0x0000000c  00315863  bge sp,gp,0x1c
+  Δ x2 sp  0x00000002 → 0x00000003  (3)
+
+rvsim 7/49 ❯ break 0x1c        # stop when PC reaches the store
+rvsim 7/49 ❯ continue
+● cycle 44/49  pc 0x0000001c  00102023  sw ra,0(zero)
+  Δ x1 ra  0x00000003 → 0x00000037  (55)
+```
+
+It works by re-running the deterministic simulation to a cycle *cursor*, so
+`step`, `back`, `goto` and `continue` all just move that cursor — no waveform
+digging required. Type `help` for the full command list; the highlights:
+
+| Command | What it does |
+|---------|--------------|
+| `load FILE` | load a `.bin`/`.hex`/`.elf` and reset to cycle 0 |
+| `step [N]` / `back [N]` | advance / rewind N cycles, showing what changed |
+| `continue` | run to the next breakpoint (or the natural halt) |
+| `goto CYCLE` / `reset` | jump the cursor to an absolute cycle / to 0 |
+| `break PC` / `breaks` / `delete` | set / list / remove PC breakpoints |
+| `regs` / `mem START:COUNT` / `trace [N]` | inspect registers / RAM / history |
+| `core {cpu,soc}` / `cycles N` / `dec` | switch core / cap / decimal display |
+| `vcd` | write a GTKWave waveform of the current program |
+
+Inline disassembly and breakpoints need a `riscv64-unknown-elf-objdump` on
+`PATH`; without it the shell still steps and shows the raw instruction word.
 
 ## Acknowledgements
 
