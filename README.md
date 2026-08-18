@@ -65,6 +65,7 @@ sequence) and we will watch the registers change in the waveform viewer.
 | 37 | `docs/37-real-libc.md` | Bonus: a real C library (picolibc) — full `printf` + `malloc`/`free` via a tiny retarget (UART `putc`, heap symbols, `_exit`); byte-exact demo, and the FreeRTOS build swapped off the shims onto picolibc | **done & tested (sim)** |
 | 38 | `docs/38-isolated-processes.md` | Bonus: memory-isolated processes — merge the Sv32 MMU (22/24) with the preemptive scheduler (25): a page table per task, `satp` reloaded on each context switch; two tasks share VA `0x1000` but land in different physical pages | **done & tested (sim)** |
 | 39 | `docs/39-supervisor-delegation.md` | Bonus: supervisor mode + trap delegation — add S-mode (`cpu_mc_s`, `csr_s`) with `medeleg`/`mideleg`; a user `ecall`, an illegal instruction, and a software interrupt are delivered straight to an S-mode kernel, while an `ecall` from S still reaches M | **done & tested (sim)** |
+| 40 | `docs/40-riscv-tests.md` | Bonus: the official **riscv-tests** suite — the reference per-instruction tests (rv32ui/um/ua/uc/uf) run against five cores through our own target environment; 272 test programs, and the two FPU bugs they found | **done & tested (sim)** |
 
 ## Directory layout
 
@@ -188,6 +189,47 @@ digging required. Type `help` for the full command list; the highlights:
 Inline disassembly and breakpoints need a `riscv64-unknown-elf-objdump` on
 `PATH`; without it the shell still steps and shows the raw instruction word.
 
+## Run the official riscv-tests suite (`rvtests`)
+
+`tools/rvtests` runs [riscv-tests](https://github.com/riscv-software-src/riscv-tests),
+the reference per-instruction suite, against the cores. It fetches the suite
+into `third_party/` on first use (pinned commit, gitignored), builds each test
+against the target environment in `tests/riscv-tests/env/`, and runs them all on
+a compiled-once harness.
+
+```bash
+make riscv-tests                       # default core (cpu_mc)
+make riscv-tests CORE=all              # every core, plus a summary matrix
+make riscv-tests CORE=pipe ARGS="add sra"
+tools/rvtests --trace rv32ui-add       # one test, cycle by cycle
+tools/rvtests --list                   # what would run
+```
+
+```
+──────────────────────────────────────────────────────────────
+  riscv-tests   core: pipe  — 5-stage pipeline RV32IM + Zicsr
+                built: -march=rv32im_zicsr_zifencei -mabi=ilp32
+──────────────────────────────────────────────────────────────
+  rv32ui-add               pass  537 cycles
+  rv32ui-fence_i           gap   unexpected trap in sub-test 0
+  ...
+──────────────────────────────────────────────────────────────
+  rv32ui 41/41   rv32um 8/8      total 49/49   ALL PASS
+```
+
+| Core | RTL | Suites | Result |
+|---|---|---|---|
+| `sc` | `cpu_core.v` — single-cycle RV32IMA | ui, um, ua | 59/59 |
+| `mc` | `cpu_mc.v` — multi-cycle RV32IM | ui, um | 48/48 |
+| `mc_c` | `cpu_mc_c.v` — multi-cycle RV32IMC | ui, um, uc | 49/49 |
+| `mc_f` | `cpu_mc_f.v` — multi-cycle RV32IMF | ui, um, uf | 58/58 |
+| `pipe` | `cpu_pipe_trap.v` — 5-stage pipeline | ui, um | 49/49 |
+
+Tests that cannot pass on this hardware (`fence_i`, `ma_data` on the word-RAM
+cores, `fmadd`) are still run and reported as documented gaps rather than
+skipped, so a gap that closes shows up as readily as one that opens. See
+`docs/40-riscv-tests.md` for what the suite found.
+
 ## Acknowledgements
 
 This project was developed collaboratively with **Claude**, Anthropic's AI
@@ -225,7 +267,7 @@ A menu of where this project can go next, grouped by goal. Rough difficulty:
 - 🔴 **RV64** — widen to 64-bit; required for Linux.
 
 ### Rigorous correctness
-- 🟢 **riscv-tests** — official per-instruction suite against the core.
+- ✅ **riscv-tests** — the official per-instruction suite, running against five cores (Step 40). riscv-tests ships the tests but deliberately not the environment, so `tests/riscv-tests/env/` supplies ours: a Harvard link script and a `tohost` that is the SYSCON halt register, so the store reporting the result is the store that stops the machine. 272 test programs: `sc` 59/59, `mc` 48/48, `mc_c` 49/49 (whole base suite rebuilt as RVC), `mc_f` 58/58, `pipe` 49/49. It found and fixed two real FPU bugs — `fmin.s(-0.0,+0.0)` returned `+0.0`, and `fcvt.wu.s` had its invalid flag on the wrong side of the range check. Three tests are reported as documented gaps rather than skipped: `fence_i` (the instruction ROM is write-once), `ma_data` on the word-RAM cores (misaligned accesses are silently wrong), `fmadd` (no fused multiply-add). `rv32mi`/`rv32si` are the natural next step and need the machine CSR set built out first.
 - 🟡 **Differential testing vs Spike** — same program on core + reference sim, compare state each step.
 - 🟡 **Benchmark** — Dhrystone / CoreMark, report DMIPS/MHz and CoreMark/MHz.
 - 🔴 **Formal verification** — riscv-formal + SymbiYosys.

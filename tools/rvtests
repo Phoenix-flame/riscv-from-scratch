@@ -1,0 +1,543 @@
+#!/usr/bin/env python3
+# =====================================================================
+# rvtests  -  run the official riscv-tests suite against the tutorial CPUs
+# ---------------------------------------------------------------------
+# riscv-tests is the reference per-instruction test suite: for every
+# instruction in the ISA it checks the normal cases, the corner cases,
+# the source/destination aliasing cases (rd == rs1, rs1 == rs2, rd == x0)
+# and -- the part a pipeline cares about -- the same operation re-run
+# with 0, 1 and 2 nops between producer and consumer.
+#
+#   tools/rvtests                       # default core, whole suite
+#   tools/rvtests --core all            # every core, matrix summary
+#   tools/rvtests --core pipe add sra   # just these tests
+#   tools/rvtests --trace rv32ui-add    # one test, cycle-by-cycle
+#   tools/rvtests --list
+#
+# The suite itself is fetched on first use into third_party/riscv-tests
+# (gitignored). What lives in this repo is the *environment* the tests
+# run in -- tests/riscv-tests/env/ -- because riscv-tests deliberately
+# leaves that to the target; see docs/40-riscv-tests.md.
+#
+# Requires: iverilog, vvp, riscv64-unknown-elf-gcc/objcopy/objdump, git.
+# =====================================================================
+import argparse
+import concurrent.futures
+import os
+import re
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+REPO = Path(__file__).resolve().parent.parent
+BUILD = REPO / "build" / "rvtests"
+SUITE = REPO / "third_party" / "riscv-tests"
+ENV = REPO / "tests" / "riscv-tests" / "env"
+
+SUITE_URL = "https://github.com/riscv-software-src/riscv-tests"
+# Pinned so a run is reproducible. Bump deliberately, then re-run the suite.
+SUITE_COMMIT = "2ebecad997fa58cd9e5724340ba75aa4b59bd1d0"
+
+GCC = "riscv64-unknown-elf-gcc"
+OBJCOPY = "riscv64-unknown-elf-objcopy"
+OBJDUMP = "riscv64-unknown-elf-objdump"
+
+# ---------------------------------------------------------------------
+# The cores under test.
+#
+#   rtl      : source list handed to iverilog (mirrors the Makefile)
+#   tb       : harness; `define` picks which core it instantiates
+#   march    : how the tests are built for this core -- note that mc_c
+#              builds the WHOLE suite compressed, so every base-ISA test
+#              also exercises the RVC expander and the straddling fetch
+#   suites   : which riscv-tests directories this core can be asked to run
+#   ram      : "word" (bram_ram, word array) or "byte" (dmem.v, byte array)
+# ---------------------------------------------------------------------
+COMMON_RTL = ["alu", "regfile", "immgen", "control", "csr"]
+
+CORES = {
+    "mc": {
+        "desc": "multi-cycle RV32IM + Zicsr (rtl/cpu_mc.v)",
+        "rtl": COMMON_RTL + ["cpu_mc", "bram_rom", "bram_ram"],
+        "tb": "tb/rvtest_mc_tb.v",
+        "define": None,
+        "march": "rv32im_zicsr_zifencei",
+        "abi": "ilp32",
+        "suites": ["rv32ui", "rv32um"],
+        "ram": "word",
+    },
+    "mc_c": {
+        "desc": "multi-cycle RV32IMC + Zicsr (rtl/cpu_mc_c.v)",
+        "rtl": COMMON_RTL + ["rvc_expand", "cpu_mc_c", "bram_rom", "bram_ram"],
+        "tb": "tb/rvtest_mc_tb.v",
+        "define": "RVT_CORE_C",
+        "march": "rv32imc_zicsr_zifencei",
+        "abi": "ilp32",
+        "suites": ["rv32ui", "rv32um", "rv32uc"],
+        "ram": "word",
+    },
+    "mc_f": {
+        "desc": "multi-cycle RV32IMF + Zicsr (rtl/cpu_mc_f.v)",
+        "rtl": COMMON_RTL + ["fregfile", "fpu_f", "cpu_mc_f",
+                             "bram_rom", "bram_ram"],
+        "tb": "tb/rvtest_mc_tb.v",
+        "define": "RVT_CORE_F",
+        "march": "rv32imf_zicsr_zifencei",
+        "abi": "ilp32f",
+        "suites": ["rv32ui", "rv32um", "rv32uf"],
+        "ram": "word",
+    },
+    "sc": {
+        "desc": "single-cycle RV32IMA + Zicsr (rtl/cpu_core.v)",
+        "rtl": COMMON_RTL + ["imem", "dmem", "cpu_core"],
+        "tb": "tb/rvtest_sc_tb.v",
+        "define": None,
+        "march": "rv32ima_zicsr_zifencei",
+        "abi": "ilp32",
+        "suites": ["rv32ui", "rv32um", "rv32ua"],
+        "ram": "byte",
+    },
+    "pipe": {
+        "desc": "5-stage pipeline RV32IM + Zicsr (rtl/cpu_pipe_trap.v)",
+        "rtl": COMMON_RTL + ["imem", "dmem", "cpu_pipe_trap"],
+        "tb": "tb/rvtest_sc_tb.v",
+        "define": "RVT_CORE_PIPE",
+        "march": "rv32im_zicsr_zifencei",
+        "abi": "ilp32",
+        "suites": ["rv32ui", "rv32um"],
+        "ram": "byte",
+    },
+}
+
+DEFAULT_CORE = "mc"
+
+# Memory sizes -- must match the localparams in the two harnesses.
+ROM_WORDS = 8192          # 32 KB instruction ROM
+RAM_WORDS = 16384         # 64 KB data RAM, as a word array (bram_ram)
+RAM_BYTES = 65536         # 64 KB data RAM, as a byte array (dmem.v)
+
+# ---------------------------------------------------------------------
+# Tests that cannot pass on this hardware, and why. They are still run --
+# a known gap should be visible as a result, not hidden behind a skip --
+# but they are reported separately so they never look like a regression.
+# ---------------------------------------------------------------------
+KNOWN_GAPS = {
+    # test            cores it applies to (None = all)
+    "rv32ui-fence_i": (None,
+        "self-modifying code. The instruction ROM is written once, at time "
+        "zero; no store can ever become an instruction."),
+    "rv32ui-ma_data": ({"mc", "mc_c", "mc_f"},
+        "misaligned load/store. These cores select a sub-word inside one RAM "
+        "word, so any access not aligned to its own width reads or writes the "
+        "wrong bytes -- silently, with no trap. The byte-addressed dmem.v "
+        "cores (sc, pipe) index bytes and pass this test."),
+    "rv32uf-fmadd": ({"mc_f"},
+        "fused multiply-add. fmadd/fmsub/fnmadd/fnmsub are out of scope for "
+        "the Step 35 FPU (single rounding needs a wide product); they decode "
+        "as illegal instructions."),
+}
+
+
+def gap_for(core, full):
+    entry = KNOWN_GAPS.get(full)
+    if not entry:
+        return None
+    cores, why = entry
+    return why if (cores is None or core in cores) else None
+
+ANSI = sys.stdout.isatty()
+
+
+def colour(s, code):
+    return f"\033[{code}m{s}\033[0m" if ANSI else s
+
+
+GREEN = lambda s: colour(s, "32")
+RED = lambda s: colour(s, "31")
+YELLOW = lambda s: colour(s, "33")
+DIM = lambda s: colour(s, "2")
+BOLD = lambda s: colour(s, "1")
+
+
+class RvtError(Exception):
+    """A recoverable front-end error, printed as 'rvtests: <msg>'."""
+
+
+def die(msg):
+    raise RvtError(msg)
+
+
+def need(tool):
+    if shutil.which(tool) is None:
+        die(f"{tool} not found on PATH (see docs/01-environment-setup.md)")
+
+
+def run(cmd, **kw):
+    return subprocess.run(cmd, capture_output=True, text=True, **kw)
+
+
+# ---- the suite itself -------------------------------------------------
+def ensure_suite(update=False):
+    """Clone third_party/riscv-tests at the pinned commit if it is absent."""
+    if SUITE.exists() and not update:
+        return
+    need("git")
+    if not SUITE.exists():
+        print(f"[rvtests] fetching riscv-tests into {SUITE.relative_to(REPO)} ...")
+        SUITE.parent.mkdir(parents=True, exist_ok=True)
+        r = run(["git", "clone", SUITE_URL, str(SUITE)])
+        if r.returncode:
+            die("git clone failed:\n" + r.stderr.strip())
+    r = run(["git", "-C", str(SUITE), "checkout", "--quiet", SUITE_COMMIT])
+    if r.returncode:
+        run(["git", "-C", str(SUITE), "fetch", "--quiet", "origin"])
+        r = run(["git", "-C", str(SUITE), "checkout", "--quiet", SUITE_COMMIT])
+        if r.returncode:
+            die(f"cannot check out pinned commit {SUITE_COMMIT[:12]}:\n"
+                + r.stderr.strip())
+    print(f"[rvtests] riscv-tests at {SUITE_COMMIT[:12]}")
+
+
+def suite_tests(suite):
+    """The official test list for a suite, read from its upstream Makefrag.
+
+    Reading it (rather than hardcoding a list here) means a future bump of
+    SUITE_COMMIT picks up new tests automatically."""
+    frag = SUITE / "isa" / suite / "Makefrag"
+    if not frag.exists():
+        die(f"no such suite: {suite}")
+    text = frag.read_text()
+    m = re.search(rf"^{suite}_sc_tests\s*=\s*((?:.*\\\n)*.*)$", text, re.M)
+    if not m:
+        die(f"cannot parse {frag.relative_to(REPO)}")
+    return m.group(1).replace("\\", " ").split()
+
+
+# ---- building one test ------------------------------------------------
+def image_words(chunks, array_words):
+    """Word-per-line $readmemh image for a 32-bit array.
+
+    `chunks` is a list of (byte address, bytes); each becomes an @<index>
+    record. The image ends by touching the array's last element, which is
+    how Icarus is told the (much shorter) file is not a mistake."""
+    lines = []
+    for base, blob in chunks:
+        if base % 4:
+            raise RvtError(f"chunk at {base:#x} is not word aligned")
+        if len(blob) % 4:
+            blob += b"\x00" * (4 - len(blob) % 4)
+        lines.append(f"@{base // 4:08x}")
+        for i in range(0, len(blob), 4):
+            lines.append("%08x" % int.from_bytes(blob[i:i + 4], "little"))
+    lines += [f"@{array_words - 1:08x}", "00000000"]
+    return "\n".join(lines) + "\n"
+
+
+def image_bytes(chunks, array_bytes):
+    """Byte-per-line $readmemh image for an 8-bit array."""
+    lines = []
+    for base, blob in chunks:
+        lines.append(f"@{base:08x}")
+        lines += ["%02x" % b for b in blob]
+    lines += [f"@{array_bytes - 1:08x}", "00"]
+    return "\n".join(lines) + "\n"
+
+
+def section(elf, name):
+    """(vma, bytes) of one ELF section, or (0, b'') if it is empty."""
+    r = run([OBJDUMP, "-h", str(elf)])
+    m = re.search(rf"^\s*\d+\s+{re.escape(name)}\s+([0-9a-f]+)\s+([0-9a-f]+)",
+                  r.stdout, re.M)
+    if not m or int(m.group(1), 16) == 0:
+        return 0, b""
+    vma = int(m.group(2), 16)
+    out = elf.with_suffix(f".{name.strip('.')}.bin")
+    r = run([OBJCOPY, "-O", "binary", f"--only-section={name}", str(elf), str(out)])
+    if r.returncode:
+        die(f"objcopy failed on {elf.name}:\n{r.stderr.strip()}")
+    return vma, out.read_bytes()
+
+
+def build_test(core, suite, name):
+    """Compile one test for one core; return (rom_image, ram_image|None)."""
+    cfg = CORES[core]
+    src = SUITE / "isa" / suite / f"{name}.S"
+    if not src.exists():
+        die(f"no such test: {suite}/{name}.S")
+
+    out = BUILD / cfg["march"]
+    out.mkdir(parents=True, exist_ok=True)
+    elf = out / f"{suite}-{name}.elf"
+
+    r = run([GCC,
+             f"-march={cfg['march']}", f"-mabi={cfg['abi']}",
+             "-nostdlib", "-nostartfiles", "-ffreestanding",
+             "-I", str(ENV),
+             "-I", str(SUITE / "isa" / "macros" / "scalar"),
+             "-T", str(ENV / "link.ld"),
+             str(src), "-o", str(elf)])
+    if r.returncode:
+        raise RvtError(f"build failed:\n{r.stderr.strip()}")
+
+    text_vma, text = section(elf, ".text")
+    if not text:
+        raise RvtError("empty .text")
+    if text_vma != 0 or len(text) > ROM_WORDS * 4:
+        raise RvtError(f".text is {len(text)} bytes at {text_vma:#x}; "
+                       f"the ROM is {ROM_WORDS * 4} bytes at 0x0")
+
+    rom = out / f"{suite}-{name}.rom.hex"
+    rom.write_text(image_words([(0, text)], ROM_WORDS))
+
+    # The data RAM gets .data at its own address AND a copy of .text at
+    # address 0. The suite assumes one flat address space: rv32uc-p-rvc,
+    # for instance, parks its test vector inside the code stream and then
+    # reads it with c.lw. Mirroring the image keeps the *fetch* path
+    # read-only (the ROM is written once, at time 0) while letting the
+    # data path see anything the linker put in .text -- so fence_i still
+    # fails, and fails for the one reason that is actually about this
+    # hardware. See docs/40-riscv-tests.md.
+    data_vma, data = section(elf, ".data")
+    chunks = [(0, text)] + ([(data_vma, data)] if data else [])
+    ram = out / f"{suite}-{name}.ram.{cfg['ram']}.hex"
+    if cfg["ram"] == "word":
+        ram.write_text(image_words(chunks, RAM_WORDS))
+    else:
+        ram.write_text(image_bytes(chunks, RAM_BYTES))
+    return rom, ram
+
+
+# ---- building one simulation -----------------------------------------
+def build_sim(core):
+    cfg = CORES[core]
+    BUILD.mkdir(parents=True, exist_ok=True)
+    vvp = BUILD / f"{core}.vvp"
+    cmd = ["iverilog", "-g2012", "-o", str(vvp)]
+    if cfg["define"]:
+        cmd += ["-D" + cfg["define"]]
+    cmd += [str(REPO / "rtl" / f"{m}.v") for m in cfg["rtl"]]
+    cmd += [str(REPO / cfg["tb"])]
+    r = run(cmd, cwd=REPO)
+    if r.returncode:
+        die(f"iverilog failed for core '{core}':\n{r.stderr.strip()}")
+    return vvp
+
+
+# ---- running one test -------------------------------------------------
+VERDICT = re.compile(r"RVTEST verdict=(\w+)(.*)")
+
+
+def run_test(vvp, rom, ram, cycles, trace=False):
+    cmd = ["vvp", str(vvp), f"+ROM={rom}"]
+    if ram:
+        cmd.append(f"+RAM={ram}")
+    cmd.append(f"+CYCLES={cycles}")
+    if trace:
+        cmd.append("+TRACE=1")
+    r = run(cmd, cwd=REPO)
+    out = r.stdout + r.stderr
+    m = None
+    for line in out.splitlines():
+        m = VERDICT.match(line) or m
+    if not m:
+        return "error", {}, out
+    fields = dict(re.findall(r"(\w+)=(\S+)", m.group(2)))
+    return m.group(1), fields, out
+
+
+# ---- reporting --------------------------------------------------------
+RULE = "─" * 66
+
+
+def verdict_label(v, fields, known_gap):
+    if v == "pass":
+        return GREEN("pass")
+    if known_gap:
+        return YELLOW("gap ")
+    if v == "fail":
+        return RED("FAIL")
+    if v == "trap":
+        return RED("TRAP")
+    if v == "timeout":
+        return RED("HANG")
+    return RED("ERR ")
+
+
+def detail(v, fields):
+    if v == "pass":
+        return DIM(f"{fields.get('cycles', '?')} cycles")
+    if v == "fail":
+        return f"sub-test {fields.get('testnum', '?')}"
+    if v == "trap":
+        return f"unexpected trap in sub-test {fields.get('testnum', '?')}"
+    if v == "timeout":
+        return f"no result after {fields.get('cycles', '?')} cycles, pc={fields.get('pc', '?')}"
+    return "harness error"
+
+
+def run_core(core, wanted, cycles, jobs, quiet=False):
+    """Run the selected tests on one core. Returns a list of result dicts."""
+    cfg = CORES[core]
+    vvp = build_sim(core)
+
+    jobs_list = []
+    for suite in cfg["suites"]:
+        for name in suite_tests(suite):
+            full = f"{suite}-{name}"
+            if wanted and not any(w in full or w == name for w in wanted):
+                continue
+            jobs_list.append((suite, name))
+
+    if not jobs_list:
+        return []
+    if not quiet:
+        print()
+        print(RULE)
+        print(f"  {BOLD('riscv-tests')}   core: {core}  — {cfg['desc']}")
+        print(f"  {' ' * 11}   built: -march={cfg['march']} -mabi={cfg['abi']}")
+        print(RULE)
+
+    def one(job):
+        suite, name = job
+        full = f"{suite}-{name}"
+        gap = gap_for(core, full)
+        try:
+            rom, ram = build_test(core, suite, name)
+        except RvtError as e:
+            return dict(suite=suite, name=name, full=full, verdict="error",
+                        fields={}, gap=gap, note=str(e), log="")
+        v, fields, log = run_test(vvp, rom, ram, cycles)
+        return dict(suite=suite, name=name, full=full, verdict=v,
+                    fields=fields, gap=gap, note=None, log=log)
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=jobs) as pool:
+        results = list(pool.map(one, jobs_list))
+
+    if not quiet:
+        for r in results:
+            label = verdict_label(r["verdict"], r["fields"], r["gap"])
+            note = r["note"] or detail(r["verdict"], r["fields"])
+            print(f"  {r['full']:<24} {label}  {note}")
+    return results
+
+
+def summarise(core, results):
+    """Per-suite tallies, ignoring the documented gaps."""
+    real = [r for r in results if not r["gap"]]
+    gaps = [r for r in results if r["gap"]]
+    lines = []
+    for suite in dict.fromkeys(r["suite"] for r in real):
+        s = [r for r in real if r["suite"] == suite]
+        ok = sum(1 for r in s if r["verdict"] == "pass")
+        lines.append(f"{suite} {ok}/{len(s)}")
+    ok = sum(1 for r in real if r["verdict"] == "pass")
+    return ok, len(real), lines, gaps
+
+
+def report(core, results):
+    ok, total, lines, gaps = summarise(core, results)
+    print(RULE)
+    tally = "   ".join(lines)
+    verdict = GREEN("ALL PASS") if ok == total else RED(f"{total - ok} FAILED")
+    print(f"  {tally}      total {ok}/{total}   {verdict}")
+    if gaps:
+        print()
+        print("  known gaps (documented, not counted above):")
+        for r in gaps:
+            got = r["verdict"]
+            print(f"    {r['full']:<22} {YELLOW(got):<12} {r['gap']}")
+    print(RULE)
+    return ok == total
+
+
+def report_matrix(all_results):
+    print()
+    print(RULE)
+    print(f"  {BOLD('riscv-tests summary')}")
+    print(RULE)
+    for core, results in all_results.items():
+        ok, total, lines, _ = summarise(core, results)
+        state = GREEN("pass") if ok == total else RED("FAIL")
+        print(f"  {core:<6} {CORES[core]['desc']:<52} {ok:>3}/{total:<3} {state}")
+    print(RULE)
+
+
+# ---- entry point ------------------------------------------------------
+def main():
+    ap = argparse.ArgumentParser(
+        prog="rvtests",
+        description="run the official riscv-tests suite on the tutorial CPUs",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="cores:\n" + "\n".join(
+            f"  {k:<6} {v['desc']}\n         {' '.join(v['suites'])}"
+            for k, v in CORES.items()))
+    ap.add_argument("tests", nargs="*",
+                    help="substring filters, e.g. 'add' or 'rv32um'")
+    ap.add_argument("--core", default=DEFAULT_CORE,
+                    choices=list(CORES) + ["all"],
+                    help=f"core under test (default: {DEFAULT_CORE})")
+    ap.add_argument("--cycles", type=int, default=2000000,
+                    help="cycle cap per test before it counts as a hang")
+    ap.add_argument("--jobs", type=int, default=min(8, os.cpu_count() or 1),
+                    help="tests to build/run in parallel")
+    ap.add_argument("--list", action="store_true",
+                    help="list the tests that would run, then exit")
+    ap.add_argument("--fetch", action="store_true",
+                    help="fetch/refresh third_party/riscv-tests, then exit")
+    ap.add_argument("--trace", metavar="TEST",
+                    help="run one test with a per-cycle pc/instr trace")
+    args = ap.parse_args()
+
+    for tool in ("iverilog", "vvp", GCC, OBJCOPY, OBJDUMP):
+        need(tool)
+    ensure_suite(update=args.fetch)
+    if args.fetch:
+        return 0
+
+    cores = list(CORES) if args.core == "all" else [args.core]
+
+    if args.list:
+        for core in cores:
+            print(f"{core}: {CORES[core]['desc']}")
+            for suite in CORES[core]["suites"]:
+                names = suite_tests(suite)
+                print(f"  {suite:<8} ({len(names)}) {' '.join(names)}")
+        return 0
+
+    if args.trace:
+        core = cores[0]
+        vvp = build_sim(core)
+        for suite in CORES[core]["suites"]:
+            for name in suite_tests(suite):
+                if args.trace in (name, f"{suite}-{name}"):
+                    rom, ram = build_test(core, suite, name)
+                    _, _, log = run_test(vvp, rom, ram, args.cycles, trace=True)
+                    print(log)
+                    return 0
+        die(f"no test matching '{args.trace}' on core '{core}'")
+
+    all_results = {}
+    for core in cores:
+        all_results[core] = run_core(core, args.tests, args.cycles, args.jobs)
+        if all_results[core]:
+            report(core, all_results[core])
+    if not any(all_results.values()):
+        die(f"no test matches {args.tests} on {', '.join(cores)} "
+            f"(try --list)")
+    if len(cores) > 1:
+        report_matrix(all_results)
+
+    failed = any(r["verdict"] != "pass" and not r["gap"]
+                 for rs in all_results.values() for r in rs)
+    return 1 if failed else 0
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main())
+    except RvtError as e:
+        print(f"rvtests: {e}", file=sys.stderr)
+        sys.exit(2)
+    except KeyboardInterrupt:
+        sys.exit(130)

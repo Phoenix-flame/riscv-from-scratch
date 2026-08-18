@@ -244,7 +244,10 @@ module fpu_f (
                 else if (a_nan)     r = b;
                 else if (b_nan)     r = a;
                 else begin
-                    if (a[31]!=b[31]) less = a[31] && !(a_zero&&b_zero);
+                    // fmin/fmax ORDER the signed zeros (-0.0 < +0.0), unlike
+                    // flt/fle below, where -0.0 == +0.0. Hence no a_zero&&b_zero
+                    // exception here. (riscv-tests rv32uf-p-fmin, cases 30-33.)
+                    if (a[31]!=b[31]) less = a[31];
                     else if (!a[31])  less = (a[30:0] < b[30:0]);
                     else              less = (a[30:0] > b[30:0]);
                     if (fmt3==3'b000) r = less ? a : b; else r = less ? b : a;
@@ -276,12 +279,18 @@ module fpu_f (
                 end else if (a_zero) r=0;
                 else begin
                     e = ea;
+                    // |x| < 1 rounds (RTZ) to zero -- which every target type
+                    // can represent, negative or not. So this is INEXACT, not
+                    // invalid: fcvt.wu.s(-0.9) = 0 with NX, and only a value
+                    // that survives truncation as negative raises NV below.
                     if (e < 127) begin
                         r=0; fl=5'b00001;
-                        if (op==CVT_WUS && sa) begin r=0; fl=5'b10000; end
                     end else begin
                         sh = e - 127;
-                        if (sh >= 31) begin
+                        // `big` is 55 bits and holds a 24-bit significand, so
+                        // shifts up to 31 are exact; 2^32 and above cannot be
+                        // represented by either target type.
+                        if (sh >= 32) begin
                             if (op==CVT_WS) r = sa?32'h80000000:32'h7FFFFFFF;
                             else            r = sa?32'd0:32'hFFFFFFFF;
                             fl=5'b10000;
@@ -292,7 +301,12 @@ module fpu_f (
                                 r = sa ? (~ui + 1) : ui;
                                 if (!sa && ui[31]) begin r=32'h7FFFFFFF; fl=5'b10000; end
                                 if ( sa && (ui > 32'h80000000)) begin r=32'h80000000; fl=5'b10000; end
-                            end else r = sa ? 32'd0 : ui;
+                            end else begin
+                                // unsigned target: |x| >= 1 and negative is out
+                                // of range (NV); positive reaches 2^32-1.
+                                if (sa) begin r=32'd0; fl=5'b10000; end
+                                else         r = ui;
+                            end
                         end
                     end
                 end

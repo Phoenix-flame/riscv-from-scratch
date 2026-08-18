@@ -17,9 +17,10 @@
 `default_nettype none
 
 module cpu_pipe_trap #(
-    parameter INIT_FILE = "",
-    parameter DATA_INIT = "",
-    parameter RESET_PC  = 32'h0
+    parameter INIT_FILE  = "",
+    parameter DATA_INIT  = "",
+    parameter IMEM_WORDS = 1024,       // instruction ROM capacity (words)
+    parameter RESET_PC   = 32'h0
 ) (
     input  wire        clk,
     input  wire        rst,
@@ -58,7 +59,7 @@ module cpu_pipe_trap #(
     end
     assign pc_out = pc;
 
-    imem #(.WORDS(1024), .INIT_FILE(INIT_FILE)) u_imem (.addr(pc), .instr(instr_if));
+    imem #(.WORDS(IMEM_WORDS), .INIT_FILE(INIT_FILE)) u_imem (.addr(pc), .instr(instr_if));
 
     reg [31:0] ifid_pc, ifid_instr;
     reg        ifid_valid;            // 0 for flush-injected filler NOPs

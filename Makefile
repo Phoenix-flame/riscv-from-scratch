@@ -13,7 +13,7 @@ $(shell mkdir -p $(B))            # ensure the build dir exists (works from a cl
 RTL_CORE = rtl/alu.v rtl/regfile.v rtl/imem.v rtl/dmem.v \
            rtl/immgen.v rtl/control.v rtl/cpu.v
 
-.PHONY: all clean run sim
+.PHONY: all clean run sim riscv-tests riscv-tests-all riscv-tests-fetch
 all: alu regfile imem dmem immgen control cpu
 
 # ---- rvsim: run any .bin/.hex/.elf and print CPU registers + state --
@@ -238,6 +238,7 @@ wave-sum:
 
 clean:
 	rm -f $(B)/*.vvp $(B)/*.vcd
+	rm -rf $(B)/rvtests
 
 # ---- Synthesizable BRAM SoC for Zynq-7010 (Step 23) -----------------
 RTL_FPGA_FULL = rtl/alu.v rtl/regfile.v rtl/immgen.v rtl/control.v rtl/csr.v \
@@ -531,3 +532,25 @@ sw/smode.hex: sw/smode_demo.c sw/smode_asm.S sw/crt0.s sw/link.ld sw/bin2hex.py
 
 smode: sw/smode.hex ## supervisor mode: medeleg/mideleg delegate U/S traps to an S-mode kernel
 	$(IV) -o $(B)/smode_tb.vvp $(RTL_SMODE) tb/smode_tb.v && $(VVP) $(B)/smode_tb.vvp
+
+# ----- Step 40: the official riscv-tests suite -------------------------
+# riscv-tests is the reference per-instruction suite. tools/rvtests fetches
+# it into third_party/riscv-tests on first use (gitignored, pinned commit),
+# builds every test against our own target environment in
+# tests/riscv-tests/env/, and runs it on a compiled-once harness.
+#
+#   make riscv-tests                       # default core (cpu_mc)
+#   make riscv-tests CORE=all              # every core + summary matrix
+#   make riscv-tests CORE=pipe ARGS="add sra"
+#   make riscv-tests ARGS=--list
+#
+# Cores: mc (cpu_mc) · mc_c (cpu_mc_c) · mc_f (cpu_mc_f)
+#        sc (cpu_core) · pipe (cpu_pipe_trap) · all
+riscv-tests: ## official riscv-tests: rv32ui/um/ua/uc/uf per-instruction suite
+	python3 tools/rvtests --core $(or $(CORE),mc) $(ARGS)
+
+riscv-tests-all: ## the whole suite on every core, with a summary matrix
+	python3 tools/rvtests --core all
+
+riscv-tests-fetch: ## clone/refresh third_party/riscv-tests at the pinned commit
+	python3 tools/rvtests --fetch
