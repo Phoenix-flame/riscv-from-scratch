@@ -108,6 +108,31 @@ CORES = {
         "suites": ["rv32ui", "rv32um"],
         "ram": "byte",
     },
+    # The Spartan-6 build (spartan6/). One unified dual-port memory feeds
+    # both fetch and data, so this is the only core here that can pass
+    # fence_i -- a store really does become an instruction.
+    "s6": {
+        "desc": "Spartan-6 RV32IMAC + Zicsr, M/U (spartan6/rtl/s6_core.v)",
+        "rtl_dir": "spartan6/rtl",
+        "rtl": ["s6_regfile", "s6_rvc", "s6_muldiv", "s6_csr", "s6_core", "s6_ram"],
+        "tb": "spartan6/tb/rvtest_s6_tb.v",
+        "define": None,
+        "march": "rv32imac_zicsr_zifencei",
+        "abi": "ilp32",
+        "suites": ["rv32ui", "rv32um", "rv32ua", "rv32uc"],
+        "ram": "word",
+    },
+    "s6_sf": {
+        "desc": "... same core with FAST_FETCH=0 (separate FETCH state)",
+        "rtl_dir": "spartan6/rtl",
+        "rtl": ["s6_regfile", "s6_rvc", "s6_muldiv", "s6_csr", "s6_core", "s6_ram"],
+        "tb": "spartan6/tb/rvtest_s6_tb.v",
+        "define": "RVT_S6_SLOW",
+        "march": "rv32imac_zicsr_zifencei",
+        "abi": "ilp32",
+        "suites": ["rv32ui", "rv32um", "rv32ua", "rv32uc"],
+        "ram": "word",
+    },
 }
 
 DEFAULT_CORE = "mc"
@@ -124,14 +149,17 @@ RAM_BYTES = 65536         # 64 KB data RAM, as a byte array (dmem.v)
 # ---------------------------------------------------------------------
 KNOWN_GAPS = {
     # test            cores it applies to (None = all)
-    "rv32ui-fence_i": (None,
+    "rv32ui-fence_i": ({"mc", "mc_c", "mc_f", "sc", "pipe"},
         "self-modifying code. The instruction ROM is written once, at time "
-        "zero; no store can ever become an instruction."),
-    "rv32ui-ma_data": ({"mc", "mc_c", "mc_f"},
-        "misaligned load/store. These cores select a sub-word inside one RAM "
+        "zero; no store can ever become an instruction. (The s6 core has one "
+        "unified dual-port memory, so it passes.)"),
+    "rv32ui-ma_data": ({"mc", "mc_c", "mc_f", "s6", "s6_sf"},
+        "misaligned load/store. The mc cores select a sub-word inside one RAM "
         "word, so any access not aligned to its own width reads or writes the "
-        "wrong bytes -- silently, with no trap. The byte-addressed dmem.v "
-        "cores (sc, pipe) index bytes and pass this test."),
+        "wrong bytes -- silently, with no trap. The s6 core instead raises the "
+        "architecturally correct misaligned exception, and the `p` environment "
+        "has nothing to emulate it with. The byte-addressed dmem.v cores "
+        "(sc, pipe) index bytes and pass this test."),
     "rv32uf-fmadd": ({"mc_f"},
         "fused multiply-add. fmadd/fmsub/fnmadd/fnmsub are out of scope for "
         "the Step 35 FPU (single rounding needs a wide product); they decode "
@@ -316,7 +344,7 @@ def build_sim(core):
     cmd = ["iverilog", "-g2012", "-o", str(vvp)]
     if cfg["define"]:
         cmd += ["-D" + cfg["define"]]
-    cmd += [str(REPO / "rtl" / f"{m}.v") for m in cfg["rtl"]]
+    cmd += [str(REPO / cfg.get("rtl_dir", "rtl") / f"{m}.v") for m in cfg["rtl"]]
     cmd += [str(REPO / cfg["tb"])]
     r = run(cmd, cwd=REPO)
     if r.returncode:

@@ -1,0 +1,100 @@
+## =====================================================================
+## posedge_one_lx9.ucf  -  constraints for s6_top on the Posedge One
+##                         (Xilinx Spartan-6 XC6SLX9-TQG144)
+## ---------------------------------------------------------------------
+## Every LOC below is taken from the board's own pin map
+## (PosedgeOne_1V3.ucf); only the net names changed, because s6_top uses
+## vectors where the board file lists individual wing pins.
+##
+##   board net      s6_top port        pin
+##   ---------      -----------        ----
+##   CLOCK          clk_24             p50    24 MHz oscillator
+##   RESET_N        rst_n              p133   USER_PB, active low
+##   UART_TX        uart_tx            p104   -> FT2232 RX
+##   UART_RX        uart_rx            p105   <- FT2232 TX
+##   USER_LED       user_led           p88
+##   SRAM_*         sram_*                    IS61WV5128BLL 512K x 8
+##   W1_A01..A08    gpio_o[0..7]
+##   W1_B01..B08    gpio_i[0..7]
+##
+## NOTE 1  p104/p105 are shared with the FT2232's FT_D1/FT_D0 async-FIFO
+##         lines. This design uses them as a UART, so the FT2232 channel
+##         must be configured as a plain serial port, not FT245 FIFO.
+## NOTE 2  The remaining FT_* control pins are deliberately left
+##         unconstrained: nothing in this design drives them.
+## =====================================================================
+
+CONFIG VCCAUX = "3.3";
+
+## ---- 24 MHz oscillator ----------------------------------------------
+NET "clk_24"    LOC = P50  | IOSTANDARD = LVCMOS33;
+NET "clk_24"    TNM_NET = "clk_24";
+TIMESPEC "TS_clk_24" = PERIOD "clk_24" 41.667 ns HIGH 50%;
+
+## ---- reset pushbutton (active low, internal pull-up) -----------------
+NET "rst_n"     LOC = P133 | IOSTANDARD = LVCMOS33 | PULLUP;
+NET "rst_n"     TIG;
+
+## ---- USB <-> UART ----------------------------------------------------
+NET "uart_tx"   LOC = P104 | IOSTANDARD = LVCMOS33 | DRIVE = 8 | SLEW = SLOW;
+NET "uart_rx"   LOC = P105 | IOSTANDARD = LVCMOS33 | PULLUP;
+
+## ---- user LED --------------------------------------------------------
+NET "user_led"  LOC = P88  | IOSTANDARD = LVCMOS33 | DRIVE = 8 | SLEW = SLOW;
+
+## =====================================================================
+## IS61WV5128BLL asynchronous SRAM  (512K x 8)
+## =====================================================================
+NET "sram_ce_n"     LOC = P14  | IOSTANDARD = LVCMOS33 | SLEW = FAST | DRIVE = 8;
+NET "sram_we_n"     LOC = P22  | IOSTANDARD = LVCMOS33 | SLEW = FAST | DRIVE = 8;
+NET "sram_oe_n"     LOC = P140 | IOSTANDARD = LVCMOS33 | SLEW = FAST | DRIVE = 8;
+
+NET "sram_data<0>"  LOC = P15  | IOSTANDARD = LVCMOS33 | SLEW = FAST | DRIVE = 8;
+NET "sram_data<1>"  LOC = P16  | IOSTANDARD = LVCMOS33 | SLEW = FAST | DRIVE = 8;
+NET "sram_data<2>"  LOC = P17  | IOSTANDARD = LVCMOS33 | SLEW = FAST | DRIVE = 8;
+NET "sram_data<3>"  LOC = P21  | IOSTANDARD = LVCMOS33 | SLEW = FAST | DRIVE = 8;
+NET "sram_data<4>"  LOC = P144 | IOSTANDARD = LVCMOS33 | SLEW = FAST | DRIVE = 8;
+NET "sram_data<5>"  LOC = P143 | IOSTANDARD = LVCMOS33 | SLEW = FAST | DRIVE = 8;
+NET "sram_data<6>"  LOC = P142 | IOSTANDARD = LVCMOS33 | SLEW = FAST | DRIVE = 8;
+NET "sram_data<7>"  LOC = P141 | IOSTANDARD = LVCMOS33 | SLEW = FAST | DRIVE = 8;
+
+NET "sram_addr<0>"  LOC = P8   | IOSTANDARD = LVCMOS33 | SLEW = FAST | DRIVE = 8;
+NET "sram_addr<1>"  LOC = P9   | IOSTANDARD = LVCMOS33 | SLEW = FAST | DRIVE = 8;
+NET "sram_addr<2>"  LOC = P10  | IOSTANDARD = LVCMOS33 | SLEW = FAST | DRIVE = 8;
+NET "sram_addr<3>"  LOC = P11  | IOSTANDARD = LVCMOS33 | SLEW = FAST | DRIVE = 8;
+NET "sram_addr<4>"  LOC = P12  | IOSTANDARD = LVCMOS33 | SLEW = FAST | DRIVE = 8;
+NET "sram_addr<5>"  LOC = P23  | IOSTANDARD = LVCMOS33 | SLEW = FAST | DRIVE = 8;
+NET "sram_addr<6>"  LOC = P24  | IOSTANDARD = LVCMOS33 | SLEW = FAST | DRIVE = 8;
+NET "sram_addr<7>"  LOC = P26  | IOSTANDARD = LVCMOS33 | SLEW = FAST | DRIVE = 8;
+NET "sram_addr<8>"  LOC = P27  | IOSTANDARD = LVCMOS33 | SLEW = FAST | DRIVE = 8;
+NET "sram_addr<9>"  LOC = P29  | IOSTANDARD = LVCMOS33 | SLEW = FAST | DRIVE = 8;
+NET "sram_addr<10>" LOC = P7   | IOSTANDARD = LVCMOS33 | SLEW = FAST | DRIVE = 8;
+NET "sram_addr<11>" LOC = P6   | IOSTANDARD = LVCMOS33 | SLEW = FAST | DRIVE = 8;
+NET "sram_addr<12>" LOC = P5   | IOSTANDARD = LVCMOS33 | SLEW = FAST | DRIVE = 8;
+NET "sram_addr<13>" LOC = P2   | IOSTANDARD = LVCMOS33 | SLEW = FAST | DRIVE = 8;
+NET "sram_addr<14>" LOC = P1   | IOSTANDARD = LVCMOS33 | SLEW = FAST | DRIVE = 8;
+NET "sram_addr<15>" LOC = P139 | IOSTANDARD = LVCMOS33 | SLEW = FAST | DRIVE = 8;
+NET "sram_addr<16>" LOC = P138 | IOSTANDARD = LVCMOS33 | SLEW = FAST | DRIVE = 8;
+NET "sram_addr<17>" LOC = P137 | IOSTANDARD = LVCMOS33 | SLEW = FAST | DRIVE = 8;
+NET "sram_addr<18>" LOC = P134 | IOSTANDARD = LVCMOS33 | SLEW = FAST | DRIVE = 8;
+
+## =====================================================================
+## GPIO on wing W1  (A side out, B side in)
+## =====================================================================
+NET "gpio_o<0>" LOC = P85  | IOSTANDARD = LVCMOS33 | DRIVE = 8 | SLEW = SLOW;
+NET "gpio_o<1>" LOC = P83  | IOSTANDARD = LVCMOS33 | DRIVE = 8 | SLEW = SLOW;
+NET "gpio_o<2>" LOC = P81  | IOSTANDARD = LVCMOS33 | DRIVE = 8 | SLEW = SLOW;
+NET "gpio_o<3>" LOC = P79  | IOSTANDARD = LVCMOS33 | DRIVE = 8 | SLEW = SLOW;
+NET "gpio_o<4>" LOC = P75  | IOSTANDARD = LVCMOS33 | DRIVE = 8 | SLEW = SLOW;
+NET "gpio_o<5>" LOC = P67  | IOSTANDARD = LVCMOS33 | DRIVE = 8 | SLEW = SLOW;
+NET "gpio_o<6>" LOC = P59  | IOSTANDARD = LVCMOS33 | DRIVE = 8 | SLEW = SLOW;
+NET "gpio_o<7>" LOC = P57  | IOSTANDARD = LVCMOS33 | DRIVE = 8 | SLEW = SLOW;
+
+NET "gpio_i<0>" LOC = P87  | IOSTANDARD = LVCMOS33 | PULLDOWN;
+NET "gpio_i<1>" LOC = P84  | IOSTANDARD = LVCMOS33 | PULLDOWN;
+NET "gpio_i<2>" LOC = P82  | IOSTANDARD = LVCMOS33 | PULLDOWN;
+NET "gpio_i<3>" LOC = P80  | IOSTANDARD = LVCMOS33 | PULLDOWN;
+NET "gpio_i<4>" LOC = P78  | IOSTANDARD = LVCMOS33 | PULLDOWN;
+NET "gpio_i<5>" LOC = P74  | IOSTANDARD = LVCMOS33 | PULLDOWN;
+NET "gpio_i<6>" LOC = P66  | IOSTANDARD = LVCMOS33 | PULLDOWN;
+NET "gpio_i<7>" LOC = P58  | IOSTANDARD = LVCMOS33 | PULLDOWN;

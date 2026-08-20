@@ -1,0 +1,6 @@
+# Simulation and compile artifacts. The parent .gitignore's patterns are
+# anchored at the repo root, so they do not reach into this folder.
+build/
+sw/*.o
+sw/*.elf
+syn/work/
