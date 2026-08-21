@@ -28,6 +28,7 @@
     .\tools\s6.cmd prog
     .\tools\s6.cmd term
     .\tools\s6.cmd upload -Bin build\hello_app.bin -Port COM4
+    .\tools\s6.cmd term -Trace
 #>
 [CmdletBinding()]
 param(
@@ -41,7 +42,8 @@ param(
     [int]$Baud = 115200,
     [string]$Entry = '0x800',
     [string]$FpgaPart = 'xc6slx9tqg144',   # only prog-flash needs it
-    [switch]$NoTerm                      # upload without staying attached
+    [switch]$NoTerm,                     # upload without staying attached
+    [switch]$Trace                       # console: show both directions as hex
 )
 
 $ErrorActionPreference = 'Stop'
@@ -296,7 +298,9 @@ switch ($Command) {
 
     'term' {
         $p = Resolve-S6Port $Port
-        Invoke-S6Load @('-p', $p, '-b', "$Baud", '--term')
+        $a = @('-p', $p, '-b', "$Baud", '--term')
+        if ($Trace) { $a += '--trace' }
+        Invoke-S6Load $a
     }
 
     'upload' {
@@ -316,6 +320,7 @@ Copy the resulting .bin over, or point at another one with -Bin.
         $p = Resolve-S6Port $Port
         $a = @('-p', $p, '-b', "$Baud", '-e', $Entry, $Bin)
         if (-not $NoTerm) { $a += '--term' }
+        if ($Trace -and -not $NoTerm) { $a += '--trace' }
         Invoke-S6Load $a
     }
 
