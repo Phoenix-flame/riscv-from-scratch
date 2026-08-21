@@ -136,6 +136,19 @@ make bit-boot          # one-time: put the bootloader in the bitstream
 make upload PORT=/dev/ttyUSB1
 ```
 
+On Windows there is no make and no `/dev/ttyUSB1`, so the same verbs
+live in `tools\s6.cmd`, which finds the board's COM port by itself:
+
+```powershell
+cd spartan6
+.\tools\s6.cmd prog
+.\tools\s6.cmd term
+.\tools\s6.cmd upload
+```
+
+Synthesis still needs ISE 14.7; `docs/programming.md` has the Windows
+setup (openFPGALoader, the one-time Zadig driver swap, COM ports).
+
 ## Verification
 
 Everything below was run in this repository:
@@ -181,8 +194,9 @@ Core (in `s6_soc`/`s6_top`): `ENABLE_M`, `ENABLE_A`, `ENABLE_C`, `ENABLE_U`,
 SoC: `CLK_HZ`, `BAUD`, `MEM_WORDS`, `MEM_INIT`, `GPIO_W`, `ENABLE_SRAM`.
 
 `CLK_HZ` must match what the PLL in [`s6_clkgen.v`](rtl/s6_clkgen.v) actually
-produces (24 MHz × 32 ÷ 16 = 48 MHz by default), or the baud divisor and the
-CLINT's microsecond tick will both be wrong.
+produces (24 MHz × 32 ÷ 48 = 16 MHz by default), or the baud divisor and the
+CLINT's microsecond tick will both be wrong. 16 MHz is what the design
+closes at with `FAST_FETCH=1`; see the comment in `s6_clkgen.v`.
 
 ## Known limits
 

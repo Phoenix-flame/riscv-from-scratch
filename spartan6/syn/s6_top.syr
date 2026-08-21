@@ -1,0 +1,1361 @@
+Release 14.7 - xst P.20131013 (lin64)
+Copyright (c) 1995-2013 Xilinx, Inc.  All rights reserved.
+--> 
+Parameter TMPDIR set to xst/projnav.tmp
+
+
+Total REAL time to Xst completion: 0.00 secs
+Total CPU time to Xst completion: 0.00 secs
+ 
+--> 
+Parameter xsthdpdir set to xst
+
+
+Total REAL time to Xst completion: 0.00 secs
+Total CPU time to Xst completion: 0.00 secs
+ 
+--> 
+Reading design: s6_top.prj
+
+TABLE OF CONTENTS
+  1) Synthesis Options Summary
+  2) HDL Parsing
+  3) HDL Elaboration
+  4) HDL Synthesis
+       4.1) HDL Synthesis Report
+  5) Advanced HDL Synthesis
+       5.1) Advanced HDL Synthesis Report
+  6) Low Level Synthesis
+  7) Partition Report
+  8) Design Summary
+       8.1) Primitive and Black Box Usage
+       8.2) Device utilization summary
+       8.3) Partition Resource Summary
+       8.4) Timing Report
+            8.4.1) Clock Information
+            8.4.2) Asynchronous Control Signals Information
+            8.4.3) Timing Summary
+            8.4.4) Timing Details
+            8.4.5) Cross Clock Domains Report
+
+
+=========================================================================
+*                      Synthesis Options Summary                        *
+=========================================================================
+---- Source Parameters
+Input File Name                    : "s6_top.prj"
+Ignore Synthesis Constraint File   : NO
+
+---- Target Parameters
+Output File Name                   : "s6_top"
+Output Format                      : NGC
+Target Device                      : xc6slx9-2-tqg144
+
+---- Source Options
+Top Module Name                    : s6_top
+Verilog Macros                     : { SYNTHESIS }
+Automatic FSM Extraction           : YES
+FSM Encoding Algorithm             : Auto
+Safe Implementation                : No
+FSM Style                          : LUT
+RAM Extraction                     : Yes
+RAM Style                          : Auto
+ROM Extraction                     : Yes
+Shift Register Extraction          : YES
+ROM Style                          : Auto
+Resource Sharing                   : YES
+Asynchronous To Synchronous        : NO
+Shift Register Minimum Size        : 2
+Use DSP Block                      : Auto
+Automatic Register Balancing       : Yes
+
+---- Target Options
+LUT Combining                      : Auto
+Reduce Control Sets                : Auto
+Add IO Buffers                     : YES
+Global Maximum Fanout              : 100000
+Add Generic Clock Buffer(BUFG)     : 16
+Register Duplication               : YES
+Move First FlipFlop Stage          : YES
+Move Last FlipFlop Stage           : YES
+Optimize Instantiated Primitives   : NO
+Use Clock Enable                   : Auto
+Use Synchronous Set                : Auto
+Use Synchronous Reset              : Auto
+Pack IO Registers into IOBs        : Auto
+Equivalent register Removal        : YES
+
+---- General Options
+Optimization Goal                  : Speed
+Optimization Effort                : 2
+Power Reduction                    : NO
+Keep Hierarchy                     : No
+Netlist Hierarchy                  : As_Optimized
+RTL Output                         : Yes
+Global Optimization                : AllClockNets
+Read Cores                         : YES
+Write Timing Constraints           : NO
+Cross Clock Analysis               : NO
+Hierarchy Separator                : /
+Bus Delimiter                      : <>
+Case Specifier                     : Maintain
+Slice Utilization Ratio            : 100
+BRAM Utilization Ratio             : 100
+DSP48 Utilization Ratio            : 100
+Auto BRAM Packing                  : NO
+Slice Utilization Ratio Delta      : 5
+
+=========================================================================
+
+
+=========================================================================
+*                          HDL Parsing                                  *
+=========================================================================
+Analyzing Verilog file "/code/riscv-from-scratch/spartan6/rtl/s6_uart_tx.v" into library work
+Parsing module <s6_uart_tx>.
+Analyzing Verilog file "/code/riscv-from-scratch/spartan6/rtl/s6_uart_rx.v" into library work
+Parsing module <s6_uart_rx>.
+Analyzing Verilog file "/code/riscv-from-scratch/spartan6/rtl/s6_rvc.v" into library work
+Parsing module <s6_rvc>.
+Analyzing Verilog file "/code/riscv-from-scratch/spartan6/rtl/s6_regfile.v" into library work
+Parsing module <s6_regfile>.
+Analyzing Verilog file "/code/riscv-from-scratch/spartan6/rtl/s6_muldiv.v" into library work
+Parsing module <s6_muldiv>.
+Analyzing Verilog file "/code/riscv-from-scratch/spartan6/rtl/s6_fifo.v" into library work
+Parsing module <s6_fifo>.
+Analyzing Verilog file "/code/riscv-from-scratch/spartan6/rtl/s6_csr.v" into library work
+Parsing module <s6_csr>.
+Analyzing Verilog file "/code/riscv-from-scratch/spartan6/rtl/s6_uart.v" into library work
+Parsing module <s6_uart>.
+Analyzing Verilog file "/code/riscv-from-scratch/spartan6/rtl/s6_sram.v" into library work
+Parsing module <s6_sram>.
+Analyzing Verilog file "/code/riscv-from-scratch/spartan6/rtl/s6_ram.v" into library work
+Parsing module <s6_ram>.
+Analyzing Verilog file "/code/riscv-from-scratch/spartan6/rtl/s6_gpio.v" into library work
+Parsing module <s6_gpio>.
+Analyzing Verilog file "/code/riscv-from-scratch/spartan6/rtl/s6_core.v" into library work
+Parsing module <s6_core>.
+Analyzing Verilog file "/code/riscv-from-scratch/spartan6/rtl/s6_clint.v" into library work
+Parsing module <s6_clint>.
+Analyzing Verilog file "/code/riscv-from-scratch/spartan6/rtl/s6_soc.v" into library work
+Parsing module <s6_soc>.
+Analyzing Verilog file "/code/riscv-from-scratch/spartan6/rtl/s6_clkgen.v" into library work
+Parsing module <s6_clkgen>.
+Analyzing Verilog file "/code/riscv-from-scratch/spartan6/rtl/s6_top.v" into library work
+Parsing module <s6_top>.
+
+=========================================================================
+*                            HDL Elaboration                            *
+=========================================================================
+
+Elaborating module <s6_top>.
+
+Elaborating module <s6_clkgen>.
+
+Elaborating module <PLL_BASE(BANDWIDTH="OPTIMIZED",CLK_FEEDBACK="CLKFBOUT",COMPENSATION="INTERNAL",DIVCLK_DIVIDE=1,CLKFBOUT_MULT=32,CLKFBOUT_PHASE=0.0,CLKIN_PERIOD=41.667,CLKOUT0_DIVIDE=48,CLKOUT0_DUTY_CYCLE=0.5,CLKOUT0_PHASE=0.0,REF_JITTER=0.01)>.
+
+Elaborating module <BUFG>.
+
+Elaborating module <s6_soc(CLK_HZ=16000000,BAUD=115200,MEM_WORDS=4096,MEM_INIT="../sw/firmware.hex",GPIO_W=8,ENABLE_SRAM=1)>.
+
+Elaborating module <s6_core(RESET_ADDR=32'b0,ENABLE_M=1,ENABLE_A=1,ENABLE_C=1,ENABLE_U=1,MUL_DSP=0,FAST_FETCH=1)>.
+
+Elaborating module <s6_rvc>.
+
+Elaborating module <s6_regfile>.
+
+Elaborating module <s6_muldiv(MUL_DSP=0)>.
+
+Elaborating module <s6_csr(HART_ID=32'b0,MISA_VAL=32'b01000000000100000001000100000101,ENABLE_U=1,ENABLE_C=1)>.
+
+Elaborating module <s6_ram(WORDS=4096,INIT_FILE="../sw/firmware.hex")>.
+Reading initialization file \"../sw/firmware.hex\".
+
+Elaborating module <s6_uart(DEF_BAUDDIV=20'b010001010)>.
+WARNING:HDLCompiler:413 - "/code/riscv-from-scratch/spartan6/rtl/s6_uart.v" Line 107: Result of 21-bit expression is truncated to fit in 20-bit target.
+
+Elaborating module <s6_fifo(WIDTH=8,DEPTH=16)>.
+
+Elaborating module <s6_uart_tx>.
+
+Elaborating module <s6_uart_rx>.
+
+Elaborating module <s6_clint(TICK_DIV=32'sb010000)>.
+
+Elaborating module <s6_gpio(WIDTH=8)>.
+
+Elaborating module <s6_sram(RD_CYCLES=2,WR_CYCLES=2)>.
+WARNING:HDLCompiler:1127 - "/code/riscv-from-scratch/spartan6/rtl/s6_sram.v" Line 83: Assignment to is_wr ignored, since the identifier is never used
+
+=========================================================================
+*                           HDL Synthesis                               *
+=========================================================================
+
+Synthesizing Unit <s6_top>.
+    Related source file is "/code/riscv-from-scratch/spartan6/rtl/s6_top.v".
+        CLK_HZ = 16000000
+        BAUD = 115200
+        MEM_WORDS = 4096
+        MEM_INIT = "../sw/firmware.hex"
+INFO:Xst:3210 - "/code/riscv-from-scratch/spartan6/rtl/s6_top.v" line 83: Output port <dbg_pc> of the instance <u_soc> is unconnected or connected to loadless signal.
+INFO:Xst:3210 - "/code/riscv-from-scratch/spartan6/rtl/s6_top.v" line 83: Output port <dbg_instr> of the instance <u_soc> is unconnected or connected to loadless signal.
+INFO:Xst:3210 - "/code/riscv-from-scratch/spartan6/rtl/s6_top.v" line 83: Output port <uart_rts_n> of the instance <u_soc> is unconnected or connected to loadless signal.
+INFO:Xst:3210 - "/code/riscv-from-scratch/spartan6/rtl/s6_top.v" line 83: Output port <halted> of the instance <u_soc> is unconnected or connected to loadless signal.
+INFO:Xst:3210 - "/code/riscv-from-scratch/spartan6/rtl/s6_top.v" line 83: Output port <dbg_retire> of the instance <u_soc> is unconnected or connected to loadless signal.
+    Found 16-bit register for signal <rst_cnt>.
+    Found 1-bit register for signal <rst>.
+    Found 2-bit register for signal <rst_sync>.
+    Found 16-bit adder for signal <rst_cnt[15]_GND_1_o_add_2_OUT> created at line 65.
+    Found 1-bit tristate buffer for signal <sram_data<7>> created at line 74
+    Found 1-bit tristate buffer for signal <sram_data<6>> created at line 74
+    Found 1-bit tristate buffer for signal <sram_data<5>> created at line 74
+    Found 1-bit tristate buffer for signal <sram_data<4>> created at line 74
+    Found 1-bit tristate buffer for signal <sram_data<3>> created at line 74
+    Found 1-bit tristate buffer for signal <sram_data<2>> created at line 74
+    Found 1-bit tristate buffer for signal <sram_data<1>> created at line 74
+    Found 1-bit tristate buffer for signal <sram_data<0>> created at line 74
+    Summary:
+	inferred   1 Adder/Subtractor(s).
+	inferred  19 D-type flip-flop(s).
+	inferred   8 Tristate(s).
+Unit <s6_top> synthesized.
+
+Synthesizing Unit <s6_clkgen>.
+    Related source file is "/code/riscv-from-scratch/spartan6/rtl/s6_clkgen.v".
+        CLKIN_PERIOD_NS = 41.667000
+        MULT = 32
+        DIVCLK = 1
+        DIV = 48
+    Summary:
+	no macro.
+Unit <s6_clkgen> synthesized.
+
+Synthesizing Unit <s6_soc>.
+    Related source file is "/code/riscv-from-scratch/spartan6/rtl/s6_soc.v".
+        CLK_HZ = 16000000
+        BAUD = 115200
+        MEM_WORDS = 4096
+        MEM_INIT = "../sw/firmware.hex"
+        GPIO_W = 8
+        ENABLE_SRAM = 1
+        SRAM_BYTES = 524288
+        ENABLE_M = 1
+        ENABLE_A = 1
+        ENABLE_C = 1
+        ENABLE_U = 1
+        MUL_DSP = 0
+        FAST_FETCH = 1
+        SRAM_RD_CYC = 2
+        SRAM_WR_CYC = 2
+    Found 1-bit register for signal <halt_q>.
+    Found 32-bit register for signal <tohost_r>.
+    Found 1-bit register for signal <sys_rack>.
+    Found 32-bit register for signal <sys_rdata>.
+    Found 1-bit register for signal <ram_rack>.
+    Summary:
+	inferred  67 D-type flip-flop(s).
+	inferred  16 Multiplexer(s).
+Unit <s6_soc> synthesized.
+
+Synthesizing Unit <s6_core>.
+    Related source file is "/code/riscv-from-scratch/spartan6/rtl/s6_core.v".
+        RESET_ADDR = 32'b00000000000000000000000000000000
+        ENABLE_M = 1
+        ENABLE_A = 1
+        ENABLE_C = 1
+        ENABLE_U = 1
+        MUL_DSP = 0
+        FAST_FETCH = 1
+        HART_ID = 32'b00000000000000000000000000000000
+INFO:Xst:3210 - "/code/riscv-from-scratch/spartan6/rtl/s6_core.v" line 291: Output port <busy> of the instance <g_muldiv.u_md> is unconnected or connected to loadless signal.
+    Found 32-bit register for signal <pc>.
+    Found 1-bit register for signal <straddle_q>.
+    Found 16-bit register for signal <lo_half>.
+    Found 32-bit register for signal <amo_val>.
+    Found 1-bit register for signal <res_valid>.
+    Found 32-bit register for signal <res_addr>.
+    Found 4-bit register for signal <state>.
+    Found finite state machine <FSM_0> for signal <state>.
+    -----------------------------------------------------------------------
+    | States             | 9                                              |
+    | Transitions        | 252                                            |
+    | Inputs             | 20                                             |
+    | Outputs            | 12                                             |
+    | Clock              | clk (rising_edge)                              |
+    | Reset              | rst (positive)                                 |
+    | Reset type         | synchronous                                    |
+    | Reset State        | 0000                                           |
+    | Encoding           | auto                                           |
+    | Implementation     | LUT                                            |
+    -----------------------------------------------------------------------
+    Found 33-bit subtractor for signal <cmp_d> created at line 256.
+    Found 32-bit subtractor for signal <alu_a[31]_alu_b[31]_sub_86_OUT> created at line 265.
+    Found 32-bit adder for signal <alu_a[31]_alu_b[31]_add_94_OUT> created at line 279.
+    Found 32-bit adder for signal <pc_incr> created at line 306.
+    Found 32-bit adder for signal <pc_plus_imm> created at line 307.
+    Found 32-bit adder for signal <pc_word[31]_GND_14_o_add_218_OUT> created at line 540.
+    Found 32-bit shifter logical left for signal <alu_a[31]_shamt[4]_shift_left_86_OUT> created at line 266
+    Found 32-bit shifter logical right for signal <alu_a[31]_shamt[4]_shift_right_88_OUT> created at line 270
+    Found 32-bit shifter arithmetic right for signal <alu_a[31]_shamt[4]_shift_right_89_OUT> created at line 271
+    Found 4-bit shifter logical left for signal <GND_14_o_ba[1]_shift_left_172_OUT> created at line 448
+    Found 4-bit shifter logical left for signal <GND_14_o_ba[1]_shift_left_174_OUT> created at line 449
+    Found 32-bit 16-to-1 multiplexer for signal <alu_result> created at line 263.
+    Found 1-bit 5-to-1 multiplexer for signal <branch_cond> created at line 311.
+    Found 32-bit 4-to-1 multiplexer for signal <ba[1]_dw[31]_wide_mux_183_OUT> created at line 464.
+    Found 32-bit 4-to-1 multiplexer for signal <ba[1]_GND_14_o_wide_mux_185_OUT> created at line 472.
+    Found 32-bit 4-to-1 multiplexer for signal <_n2261> created at line 461.
+    Found 32-bit comparator equal for signal <cmp_eq> created at line 258
+    Found 32-bit comparator equal for signal <res_addr[31]_mem_addr[31]_equal_167_o> created at line 436
+    Summary:
+	inferred   6 Adder/Subtractor(s).
+	inferred 114 D-type flip-flop(s).
+	inferred   2 Comparator(s).
+	inferred 106 Multiplexer(s).
+	inferred   5 Combinational logic shifter(s).
+	inferred   1 Finite State Machine(s).
+Unit <s6_core> synthesized.
+
+Synthesizing Unit <s6_rvc>.
+    Related source file is "/code/riscv-from-scratch/spartan6/rtl/s6_rvc.v".
+    Found 1-bit 4-to-1 multiplexer for signal <c[11]_c[6]_Mux_46_o> created at line 85.
+    Found 32-bit 8-to-1 multiplexer for signal <f3[2]_c[12]_wide_mux_62_OUT> created at line 74.
+    Found 1-bit 4-to-1 multiplexer for signal <illegal> created at line 61.
+    Found 32-bit 4-to-1 multiplexer for signal <instr32> created at line 61.
+    Found 1-bit 4-to-1 multiplexer for signal <_n0302> created at line 63.
+    Found 1-bit 3-to-1 multiplexer for signal <_n0315> created at line 63.
+    Found 32-bit 4-to-1 multiplexer for signal <_n0336> created at line 112.
+    Found 1-bit 4-to-1 multiplexer for signal <_n0352> created at line 112.
+    Summary:
+	inferred  51 Multiplexer(s).
+Unit <s6_rvc> synthesized.
+
+Synthesizing Unit <s6_regfile>.
+    Related source file is "/code/riscv-from-scratch/spartan6/rtl/s6_regfile.v".
+    Found 32x32-bit dual-port RAM <Mram_regs> for signal <regs>.
+    Summary:
+	inferred   2 RAM(s).
+	inferred   2 Multiplexer(s).
+Unit <s6_regfile> synthesized.
+
+Synthesizing Unit <s6_muldiv>.
+    Related source file is "/code/riscv-from-scratch/spartan6/rtl/s6_muldiv.v".
+        MUL_DSP = 0
+    Found 6-bit register for signal <count>.
+    Found 33-bit register for signal <acc>.
+    Found 32-bit register for signal <q>.
+    Found 33-bit register for signal <m>.
+    Found 3-bit register for signal <op_q>.
+    Found 1-bit register for signal <msign_q>.
+    Found 1-bit register for signal <qneg_q>.
+    Found 1-bit register for signal <rneg_q>.
+    Found 1-bit register for signal <shortcut>.
+    Found 2-bit register for signal <state>.
+    Found finite state machine <FSM_1> for signal <state>.
+    -----------------------------------------------------------------------
+    | States             | 3                                              |
+    | Transitions        | 10                                             |
+    | Inputs             | 7                                              |
+    | Outputs            | 4                                              |
+    | Clock              | clk (rising_edge)                              |
+    | Reset              | rst (positive)                                 |
+    | Reset type         | synchronous                                    |
+    | Reset State        | 00                                             |
+    | Encoding           | auto                                           |
+    | Implementation     | LUT                                            |
+    -----------------------------------------------------------------------
+    Found 34-bit subtractor for signal <acc34[33]_m34[33]_sub_19_OUT> created at line 100.
+    Found 33-bit subtractor for signal <rem_dif> created at line 103.
+    Found 32-bit adder for signal <a[31]_GND_17_o_add_6_OUT> created at line 70.
+    Found 32-bit adder for signal <b[31]_GND_17_o_add_9_OUT> created at line 71.
+    Found 34-bit adder for signal <acc34[33]_m34[33]_add_19_OUT> created at line 100.
+    Found 6-bit adder for signal <count[5]_GND_17_o_add_43_OUT> created at line 153.
+    Found 32-bit adder for signal <q[31]_GND_17_o_add_68_OUT> created at line 165.
+    Found 32-bit adder for signal <acc[31]_GND_17_o_add_71_OUT> created at line 166.
+    Summary:
+	inferred   6 Adder/Subtractor(s).
+	inferred 111 D-type flip-flop(s).
+	inferred  23 Multiplexer(s).
+	inferred   1 Finite State Machine(s).
+Unit <s6_muldiv> synthesized.
+
+Synthesizing Unit <s6_csr>.
+    Related source file is "/code/riscv-from-scratch/spartan6/rtl/s6_csr.v".
+        HART_ID = 32'b00000000000000000000000000000000
+        MISA_VAL = 32'b01000000000100000001000100000101
+        ENABLE_U = 1
+        ENABLE_C = 1
+WARNING:Xst:647 - Input <f3<2:2>> is never used. This port will be preserved and left unconnected if it belongs to a top-level block or it belongs to a sub-block and the hierarchy of this sub-block is preserved.
+    Found 1-bit register for signal <st_mpie>.
+    Found 2-bit register for signal <st_mpp>.
+    Found 2-bit register for signal <priv_r>.
+    Found 1-bit register for signal <ie_msie>.
+    Found 1-bit register for signal <ie_mtie>.
+    Found 1-bit register for signal <ie_meie>.
+    Found 30-bit register for signal <tvec_base>.
+    Found 1-bit register for signal <tvec_vec>.
+    Found 32-bit register for signal <mscratch_r>.
+    Found 32-bit register for signal <mepc_r>.
+    Found 32-bit register for signal <mcause_r>.
+    Found 32-bit register for signal <mtval_r>.
+    Found 3-bit register for signal <mcounteren_r>.
+    Found 3-bit register for signal <mcountinhibit_r>.
+    Found 64-bit register for signal <mcycle_r>.
+    Found 64-bit register for signal <minstret_r>.
+    Found 1-bit register for signal <st_mie>.
+    Found 32-bit adder for signal <tvec_bse[31]_GND_18_o_add_11_OUT> created at line 105.
+    Found 64-bit adder for signal <mcycle_r[63]_GND_18_o_add_56_OUT> created at line 155.
+    Found 64-bit adder for signal <minstret_r[63]_GND_18_o_add_58_OUT> created at line 156.
+    Found 32-bit 4-to-1 multiplexer for signal <wdata> created at line 137.
+    Found 2-bit comparator greater for signal <priv_short> created at line 131
+    Summary:
+	inferred   3 Adder/Subtractor(s).
+	inferred 302 D-type flip-flop(s).
+	inferred   1 Comparator(s).
+	inferred  16 Multiplexer(s).
+Unit <s6_csr> synthesized.
+
+Synthesizing Unit <s6_ram>.
+    Related source file is "/code/riscv-from-scratch/spartan6/rtl/s6_ram.v".
+        WORDS = 4096
+        INIT_FILE = "../sw/firmware.hex"
+        AW = 12
+    Found 4096x32-bit dual-port RAM <Mram_mem> for signal <mem>.
+    Found 32-bit register for signal <b_rdata>.
+    Found 32-bit register for signal <a_rdata>.
+    Summary:
+	inferred   1 RAM(s).
+	inferred  64 D-type flip-flop(s).
+	inferred   4 Multiplexer(s).
+Unit <s6_ram> synthesized.
+
+Synthesizing Unit <s6_uart>.
+    Related source file is "/code/riscv-from-scratch/spartan6/rtl/s6_uart.v".
+        DEF_BAUDDIV = 20'b00000000000010001010
+        FIFO_DEPTH = 16
+WARNING:Xst:647 - Input <wdata<31:20>> is never used. This port will be preserved and left unconnected if it belongs to a top-level block or it belongs to a sub-block and the hierarchy of this sub-block is preserved.
+    Found 20-bit register for signal <acc>.
+    Found 1-bit register for signal <os_tick>.
+    Found 1-bit register for signal <tx_start_q>.
+    Found 20-bit register for signal <bauddiv>.
+    Found 1-bit register for signal <c_tx_en>.
+    Found 1-bit register for signal <c_rx_en>.
+    Found 1-bit register for signal <c_loop>.
+    Found 1-bit register for signal <c_rts_en>.
+    Found 1-bit register for signal <c_cts_en>.
+    Found 1-bit register for signal <c_stop2>.
+    Found 2-bit register for signal <c_parity>.
+    Found 4-bit register for signal <c_dbits>.
+    Found 6-bit register for signal <ien>.
+    Found 4-bit register for signal <wm_tx>.
+    Found 4-bit register for signal <wm_rx>.
+    Found 5-bit register for signal <idle_cfg>.
+    Found 1-bit register for signal <st_over>.
+    Found 1-bit register for signal <st_frame>.
+    Found 1-bit register for signal <st_parity>.
+    Found 1-bit register for signal <st_idle>.
+    Found 32-bit register for signal <rdata>.
+    Found 1-bit register for signal <rd_ack>.
+    Found 21-bit subtractor for signal <acc_next[20]_GND_20_o_sub_7_OUT> created at line 107.
+    Found 21-bit adder for signal <n0210> created at line 99.
+    Found 32-bit 12-to-1 multiplexer for signal <_n0276> created at line 238.
+    Found 21-bit comparator lessequal for signal <n0009> created at line 100
+    Found 20-bit comparator lessequal for signal <n0011> created at line 100
+    Found 8-bit comparator greater for signal <rx_lvl[7]_GND_20_o_LessThan_18_o> created at line 174
+    Found 4-bit comparator lessequal for signal <n0048> created at line 196
+    Found 4-bit comparator lessequal for signal <n0050> created at line 196
+    Found 8-bit comparator lessequal for signal <n0137> created at line 228
+    Summary:
+	inferred   2 Adder/Subtractor(s).
+	inferred 110 D-type flip-flop(s).
+	inferred   6 Comparator(s).
+	inferred  10 Multiplexer(s).
+Unit <s6_uart> synthesized.
+
+Synthesizing Unit <s6_fifo>.
+    Related source file is "/code/riscv-from-scratch/spartan6/rtl/s6_fifo.v".
+        WIDTH = 8
+        DEPTH = 16
+        AW = 4
+    Found 16x8-bit dual-port RAM <Mram_mem> for signal <mem>.
+    Found 5-bit register for signal <rptr>.
+    Found 5-bit register for signal <wptr>.
+    Found 5-bit subtractor for signal <level> created at line 58.
+    Found 5-bit adder for signal <wptr[4]_GND_21_o_add_1_OUT> created at line 47.
+    Found 5-bit adder for signal <rptr[4]_GND_21_o_add_3_OUT> created at line 48.
+    Found 5-bit comparator equal for signal <empty> created at line 56
+    Found 4-bit comparator equal for signal <wptr[3]_rptr[3]_equal_14_o> created at line 57
+    Found 1-bit comparator not equal for signal <n0017> created at line 57
+    Summary:
+	inferred   1 RAM(s).
+	inferred   3 Adder/Subtractor(s).
+	inferred  10 D-type flip-flop(s).
+	inferred   3 Comparator(s).
+Unit <s6_fifo> synthesized.
+
+Synthesizing Unit <s6_uart_tx>.
+    Related source file is "/code/riscv-from-scratch/spartan6/rtl/s6_uart_tx.v".
+    Found 1-bit register for signal <tx>.
+    Found 4-bit register for signal <tcnt>.
+    Found 3-bit register for signal <bidx>.
+    Found 8-bit register for signal <sh>.
+    Found 1-bit register for signal <par_r>.
+    Found 1-bit register for signal <stop_second>.
+    Found 3-bit register for signal <st>.
+    Found finite state machine <FSM_2> for signal <st>.
+    -----------------------------------------------------------------------
+    | States             | 5                                              |
+    | Transitions        | 17                                             |
+    | Inputs             | 6                                              |
+    | Outputs            | 4                                              |
+    | Clock              | clk (rising_edge)                              |
+    | Reset              | rst (positive)                                 |
+    | Reset type         | synchronous                                    |
+    | Reset State        | 000                                            |
+    | Encoding           | auto                                           |
+    | Implementation     | LUT                                            |
+    -----------------------------------------------------------------------
+    Found 4-bit subtractor for signal <PWR_19_o_data_bits[3]_sub_1_OUT> created at line 34.
+    Found 3-bit subtractor for signal <lastb> created at line 35.
+    Found 4-bit adder for signal <tcnt[3]_GND_22_o_add_6_OUT> created at line 45.
+    Found 3-bit adder for signal <bidx[2]_GND_22_o_add_18_OUT> created at line 71.
+    Found 8-bit shifter logical right for signal <mask> created at line 34
+    Found 3-bit comparator equal for signal <bidx[2]_lastb[2]_equal_17_o> created at line 63
+    Summary:
+	inferred   4 Adder/Subtractor(s).
+	inferred  18 D-type flip-flop(s).
+	inferred   1 Comparator(s).
+	inferred  12 Multiplexer(s).
+	inferred   1 Combinational logic shifter(s).
+	inferred   1 Finite State Machine(s).
+Unit <s6_uart_tx> synthesized.
+
+Synthesizing Unit <s6_uart_rx>.
+    Related source file is "/code/riscv-from-scratch/spartan6/rtl/s6_uart_rx.v".
+    Found 3-bit register for signal <st>.
+    Found 4-bit register for signal <tcnt>.
+    Found 3-bit register for signal <bidx>.
+    Found 8-bit register for signal <sh>.
+    Found 2-bit register for signal <smpl>.
+    Found 1-bit register for signal <par_acc>.
+    Found 8-bit register for signal <data>.
+    Found 1-bit register for signal <valid>.
+    Found 1-bit register for signal <frame_err>.
+    Found 1-bit register for signal <parity_err>.
+    Found 1-bit register for signal <idle>.
+    Found 9-bit register for signal <idle_cnt>.
+    Found 1-bit register for signal <armed>.
+    Found 2-bit register for signal <sync>.
+    Found finite state machine <FSM_3> for signal <st>.
+    -----------------------------------------------------------------------
+    | States             | 5                                              |
+    | Transitions        | 19                                             |
+    | Inputs             | 6                                              |
+    | Outputs            | 4                                              |
+    | Clock              | clk (rising_edge)                              |
+    | Reset              | rst (positive)                                 |
+    | Reset type         | synchronous                                    |
+    | Reset State        | 000                                            |
+    | Encoding           | auto                                           |
+    | Implementation     | LUT                                            |
+    -----------------------------------------------------------------------
+    Found 3-bit subtractor for signal <lastb> created at line 50.
+    Found 4-bit subtractor for signal <PWR_22_o_data_bits[3]_sub_52_OUT> created at line 129.
+    Found 4-bit adder for signal <tcnt[3]_GND_24_o_add_8_OUT> created at line 67.
+    Found 2-bit adder for signal <smpl[1]_GND_24_o_add_15_OUT> created at line 72.
+    Found 9-bit adder for signal <idle_cnt[8]_GND_24_o_add_23_OUT> created at line 80.
+    Found 3-bit adder for signal <bidx[2]_GND_24_o_add_43_OUT> created at line 118.
+    Found 8-bit shifter logical right for signal <sh[7]_PWR_22_o_shift_right_52_OUT> created at line 129
+    Found 9-bit comparator greater for signal <idle_cnt[8]_idle_lim[8]_LessThan_22_o> created at line 78
+    Found 9-bit comparator equal for signal <idle_cnt[8]_idle_lim[8]_equal_25_o> created at line 80
+    Found 3-bit comparator equal for signal <bidx[2]_lastb[2]_equal_42_o> created at line 115
+    Found 1-bit comparator not equal for signal <n0068> created at line 123
+    Summary:
+	inferred   6 Adder/Subtractor(s).
+	inferred  42 D-type flip-flop(s).
+	inferred   4 Comparator(s).
+	inferred  13 Multiplexer(s).
+	inferred   1 Combinational logic shifter(s).
+	inferred   1 Finite State Machine(s).
+Unit <s6_uart_rx> synthesized.
+
+Synthesizing Unit <s6_clint>.
+    Related source file is "/code/riscv-from-scratch/spartan6/rtl/s6_clint.v".
+        TICK_DIV = 16
+    Found 64-bit register for signal <mtime_r>.
+    Found 64-bit register for signal <mtimecmp_r>.
+    Found 32-bit register for signal <divcnt>.
+    Found 1-bit register for signal <msip_r>.
+    Found 32-bit register for signal <rdata>.
+    Found 1-bit register for signal <rd_ack>.
+    Found 32-bit adder for signal <divcnt[31]_GND_25_o_add_4_OUT> created at line 58.
+    Found 64-bit adder for signal <mtime_r[63]_GND_25_o_add_6_OUT> created at line 59.
+    Found 64-bit comparator lessequal for signal <n0037> created at line 84
+    Summary:
+	inferred   2 Adder/Subtractor(s).
+	inferred 194 D-type flip-flop(s).
+	inferred   1 Comparator(s).
+	inferred   3 Multiplexer(s).
+Unit <s6_clint> synthesized.
+
+Synthesizing Unit <s6_gpio>.
+    Related source file is "/code/riscv-from-scratch/spartan6/rtl/s6_gpio.v".
+        WIDTH = 8
+WARNING:Xst:647 - Input <wdata<31:8>> is never used. This port will be preserved and left unconnected if it belongs to a top-level block or it belongs to a sub-block and the hierarchy of this sub-block is preserved.
+    Found 8-bit register for signal <sync0>.
+    Found 8-bit register for signal <sync1>.
+    Found 8-bit register for signal <prev>.
+    Found 8-bit register for signal <out_r>.
+    Found 8-bit register for signal <ie_r>.
+    Found 8-bit register for signal <ip_r>.
+    Found 32-bit register for signal <rdata>.
+    Found 1-bit register for signal <rd_ack>.
+    Found 32-bit 4-to-1 multiplexer for signal <_n0107> created at line 78.
+    Summary:
+	inferred  81 D-type flip-flop(s).
+	inferred   5 Multiplexer(s).
+Unit <s6_gpio> synthesized.
+
+Synthesizing Unit <s6_sram>.
+    Related source file is "/code/riscv-from-scratch/spartan6/rtl/s6_sram.v".
+        RD_CYCLES = 2
+        WR_CYCLES = 2
+WARNING:Xst:647 - Input <addr<1:0>> is never used. This port will be preserved and left unconnected if it belongs to a top-level block or it belongs to a sub-block and the hierarchy of this sub-block is preserved.
+    Found 2-bit register for signal <bi>.
+    Found 8-bit register for signal <cnt>.
+    Found 17-bit register for signal <word_a>.
+    Found 32-bit register for signal <wbuf>.
+    Found 4-bit register for signal <bebuf>.
+    Found 32-bit register for signal <rdata>.
+    Found 3-bit register for signal <st>.
+    Found finite state machine <FSM_4> for signal <st>.
+    -----------------------------------------------------------------------
+    | States             | 6                                              |
+    | Transitions        | 15                                             |
+    | Inputs             | 6                                              |
+    | Outputs            | 9                                              |
+    | Clock              | clk (rising_edge)                              |
+    | Reset              | rst (positive)                                 |
+    | Reset type         | synchronous                                    |
+    | Reset State        | 000                                            |
+    | Encoding           | auto                                           |
+    | Implementation     | LUT                                            |
+    -----------------------------------------------------------------------
+    Found 8-bit adder for signal <cnt[7]_GND_27_o_add_30_OUT> created at line 131.
+    Found 2-bit adder for signal <bi[1]_GND_27_o_add_33_OUT> created at line 136.
+    Found 32-bit 4-to-1 multiplexer for signal <bi[1]_sram_din[7]_wide_mux_14_OUT> created at line 103.
+    Found 1-bit 4-to-1 multiplexer for signal <bi[1]_bebuf[3]_Mux_23_o> created at line 119.
+    Found 8-bit 4-to-1 multiplexer for signal <sram_dout> created at line 60.
+    Summary:
+	inferred   2 Adder/Subtractor(s).
+	inferred  95 D-type flip-flop(s).
+	inferred  10 Multiplexer(s).
+	inferred   1 Finite State Machine(s).
+Unit <s6_sram> synthesized.
+
+=========================================================================
+HDL Synthesis Report
+
+Macro Statistics
+# RAMs                                                 : 5
+ 16x8-bit dual-port RAM                                : 2
+ 32x32-bit dual-port RAM                               : 2
+ 4096x32-bit dual-port RAM                             : 1
+# Adders/Subtractors                                   : 38
+ 16-bit adder                                          : 1
+ 2-bit adder                                           : 2
+ 21-bit adder                                          : 1
+ 21-bit subtractor                                     : 1
+ 3-bit adder                                           : 2
+ 3-bit subtractor                                      : 2
+ 32-bit adder                                          : 9
+ 32-bit subtractor                                     : 1
+ 33-bit subtractor                                     : 2
+ 34-bit addsub                                         : 1
+ 4-bit adder                                           : 2
+ 4-bit subtractor                                      : 2
+ 5-bit adder                                           : 4
+ 5-bit subtractor                                      : 2
+ 6-bit adder                                           : 1
+ 64-bit adder                                          : 3
+ 8-bit adder                                           : 1
+ 9-bit adder                                           : 1
+# Registers                                            : 106
+ 1-bit register                                        : 41
+ 16-bit register                                       : 3
+ 17-bit register                                       : 1
+ 2-bit register                                        : 7
+ 20-bit register                                       : 2
+ 3-bit register                                        : 5
+ 30-bit register                                       : 1
+ 32-bit register                                       : 18
+ 33-bit register                                       : 2
+ 4-bit register                                        : 6
+ 5-bit register                                        : 5
+ 6-bit register                                        : 2
+ 64-bit register                                       : 4
+ 8-bit register                                        : 8
+ 9-bit register                                        : 1
+# Comparators                                          : 21
+ 1-bit comparator not equal                            : 3
+ 2-bit comparator greater                              : 1
+ 20-bit comparator lessequal                           : 1
+ 21-bit comparator lessequal                           : 1
+ 3-bit comparator equal                                : 2
+ 32-bit comparator equal                               : 2
+ 4-bit comparator equal                                : 2
+ 4-bit comparator lessequal                            : 2
+ 5-bit comparator equal                                : 2
+ 64-bit comparator lessequal                           : 1
+ 8-bit comparator greater                              : 1
+ 8-bit comparator lessequal                            : 1
+ 9-bit comparator equal                                : 1
+ 9-bit comparator greater                              : 1
+# Multiplexers                                         : 271
+ 1-bit 2-to-1 multiplexer                              : 120
+ 1-bit 3-to-1 multiplexer                              : 1
+ 1-bit 4-to-1 multiplexer                              : 5
+ 1-bit 5-to-1 multiplexer                              : 1
+ 16-bit 2-to-1 multiplexer                             : 1
+ 2-bit 2-to-1 multiplexer                              : 6
+ 20-bit 2-to-1 multiplexer                             : 1
+ 21-bit 2-to-1 multiplexer                             : 1
+ 3-bit 2-to-1 multiplexer                              : 2
+ 32-bit 12-to-1 multiplexer                            : 1
+ 32-bit 16-to-1 multiplexer                            : 1
+ 32-bit 2-to-1 multiplexer                             : 73
+ 32-bit 4-to-1 multiplexer                             : 8
+ 32-bit 8-to-1 multiplexer                             : 1
+ 33-bit 2-to-1 multiplexer                             : 6
+ 34-bit 2-to-1 multiplexer                             : 1
+ 4-bit 2-to-1 multiplexer                              : 16
+ 5-bit 2-to-1 multiplexer                              : 1
+ 6-bit 2-to-1 multiplexer                              : 1
+ 64-bit 2-to-1 multiplexer                             : 6
+ 8-bit 2-to-1 multiplexer                              : 16
+ 8-bit 4-to-1 multiplexer                              : 1
+ 9-bit 2-to-1 multiplexer                              : 1
+# Logic shifters                                       : 7
+ 32-bit shifter arithmetic right                       : 1
+ 32-bit shifter logical left                           : 1
+ 32-bit shifter logical right                          : 1
+ 4-bit shifter logical left                            : 2
+ 8-bit shifter logical right                           : 2
+# Tristates                                            : 8
+ 1-bit tristate buffer                                 : 8
+# FSMs                                                 : 5
+# Xors                                                 : 7
+ 1-bit xor2                                            : 3
+ 1-bit xor8                                            : 1
+ 32-bit xor2                                           : 1
+ 8-bit xor2                                            : 2
+
+=========================================================================
+INFO:Xst:1767 - HDL ADVISOR - Resource sharing has identified that some arithmetic operations in this design can share the same physical resources for reduced device utilization. For improved clock frequency you may try to disable resource sharing.
+
+=========================================================================
+*                       Advanced HDL Synthesis                          *
+=========================================================================
+
+INFO:Xst:2261 - The FF/Latch <res_addr_0> in Unit <u_core> is equivalent to the following FF/Latch, which will be removed : <res_addr_1> 
+WARNING:Xst:1710 - FF/Latch <res_addr_0> (without init value) has a constant value of 0 in block <u_core>. This FF/Latch will be trimmed during the optimization process.
+
+Synthesizing (advanced) Unit <s6_clint>.
+The following registers are absorbed into counter <divcnt>: 1 register on signal <divcnt>.
+Unit <s6_clint> synthesized (advanced).
+
+Synthesizing (advanced) Unit <s6_fifo>.
+The following registers are absorbed into counter <rptr>: 1 register on signal <rptr>.
+The following registers are absorbed into counter <wptr>: 1 register on signal <wptr>.
+INFO:Xst:3218 - HDL ADVISOR - The RAM <Mram_mem> will be implemented on LUTs either because you have described an asynchronous read or because of currently unsupported block RAM features. If you have described an asynchronous read, making it synchronous would allow you to take advantage of available block RAM resources, for optimized device usage and improved timings. Please refer to your documentation for coding guidelines.
+    -----------------------------------------------------------------------
+    | ram_type           | Distributed                         |          |
+    -----------------------------------------------------------------------
+    | Port A                                                              |
+    |     aspect ratio   | 16-word x 8-bit                     |          |
+    |     clkA           | connected to signal <clk>           | rise     |
+    |     weA            | connected to signal <do_wr>         | high     |
+    |     addrA          | connected to signal <wptr<3:0>>     |          |
+    |     diA            | connected to signal <wdata>         |          |
+    -----------------------------------------------------------------------
+    | Port B                                                              |
+    |     aspect ratio   | 16-word x 8-bit                     |          |
+    |     addrB          | connected to signal <rptr<3:0>>     |          |
+    |     doB            | connected to internal node          |          |
+    -----------------------------------------------------------------------
+Unit <s6_fifo> synthesized (advanced).
+
+Synthesizing (advanced) Unit <s6_muldiv>.
+The following registers are absorbed into counter <count>: 1 register on signal <count>.
+Unit <s6_muldiv> synthesized (advanced).
+
+Synthesizing (advanced) Unit <s6_ram>.
+INFO:Xst:3226 - The RAM <Mram_mem> will be implemented as a BLOCK RAM, absorbing the following register(s): <b_rdata> <a_rdata>
+    -----------------------------------------------------------------------
+    | ram_type           | Block                               |          |
+    -----------------------------------------------------------------------
+    | Port A                                                              |
+    |     aspect ratio   | 4096-word x 32-bit                  |          |
+    |     mode           | read-first                          |          |
+    |     clkA           | connected to signal <clk>           | rise     |
+    |     weA<3>         | connected to signal <b_we<3>>       | high     |
+    |     weA<2>         | connected to signal <b_we<2>>       | high     |
+    |     weA<1>         | connected to signal <b_we<1>>       | high     |
+    |     weA<0>         | connected to signal <b_we<0>>       | high     |
+    |     addrA          | connected to signal <b_addr>        |          |
+    |     diA            | connected to signal <b_wdata>       |          |
+    |     doA            | connected to signal <b_rdata>       |          |
+    -----------------------------------------------------------------------
+    | optimization       | speed                               |          |
+    -----------------------------------------------------------------------
+    | Port B                                                              |
+    |     aspect ratio   | 4096-word x 32-bit                  |          |
+    |     mode           | write-first                         |          |
+    |     clkB           | connected to signal <clk>           | rise     |
+    |     addrB          | connected to signal <a_addr>        |          |
+    |     doB            | connected to signal <a_rdata>       |          |
+    -----------------------------------------------------------------------
+    | optimization       | speed                               |          |
+    -----------------------------------------------------------------------
+Unit <s6_ram> synthesized (advanced).
+
+Synthesizing (advanced) Unit <s6_regfile>.
+INFO:Xst:3218 - HDL ADVISOR - The RAM <Mram_regs> will be implemented on LUTs either because you have described an asynchronous read or because of currently unsupported block RAM features. If you have described an asynchronous read, making it synchronous would allow you to take advantage of available block RAM resources, for optimized device usage and improved timings. Please refer to your documentation for coding guidelines.
+    -----------------------------------------------------------------------
+    | ram_type           | Distributed                         |          |
+    -----------------------------------------------------------------------
+    | Port A                                                              |
+    |     aspect ratio   | 32-word x 32-bit                    |          |
+    |     clkA           | connected to signal <clk>           | rise     |
+    |     weA            | connected to internal node          | high     |
+    |     addrA          | connected to signal <rd_addr>       |          |
+    |     diA            | connected to signal <rd_data>       |          |
+    -----------------------------------------------------------------------
+    | Port B                                                              |
+    |     aspect ratio   | 32-word x 32-bit                    |          |
+    |     addrB          | connected to signal <rs1_addr>      |          |
+    |     doB            | connected to internal node          |          |
+    -----------------------------------------------------------------------
+INFO:Xst:3218 - HDL ADVISOR - The RAM <Mram_regs1> will be implemented on LUTs either because you have described an asynchronous read or because of currently unsupported block RAM features. If you have described an asynchronous read, making it synchronous would allow you to take advantage of available block RAM resources, for optimized device usage and improved timings. Please refer to your documentation for coding guidelines.
+    -----------------------------------------------------------------------
+    | ram_type           | Distributed                         |          |
+    -----------------------------------------------------------------------
+    | Port A                                                              |
+    |     aspect ratio   | 32-word x 32-bit                    |          |
+    |     clkA           | connected to signal <clk>           | rise     |
+    |     weA            | connected to internal node          | high     |
+    |     addrA          | connected to signal <rd_addr>       |          |
+    |     diA            | connected to signal <rd_data>       |          |
+    -----------------------------------------------------------------------
+    | Port B                                                              |
+    |     aspect ratio   | 32-word x 32-bit                    |          |
+    |     addrB          | connected to signal <rs2_addr>      |          |
+    |     doB            | connected to internal node          |          |
+    -----------------------------------------------------------------------
+Unit <s6_regfile> synthesized (advanced).
+
+Synthesizing (advanced) Unit <s6_top>.
+The following registers are absorbed into counter <rst_cnt>: 1 register on signal <rst_cnt>.
+Unit <s6_top> synthesized (advanced).
+
+Synthesizing (advanced) Unit <s6_uart_rx>.
+The following registers are absorbed into accumulator <smpl>: 1 register on signal <smpl>.
+The following registers are absorbed into counter <bidx>: 1 register on signal <bidx>.
+Unit <s6_uart_rx> synthesized (advanced).
+
+Synthesizing (advanced) Unit <s6_uart_tx>.
+The following registers are absorbed into counter <bidx>: 1 register on signal <bidx>.
+Unit <s6_uart_tx> synthesized (advanced).
+
+=========================================================================
+Advanced HDL Synthesis Report
+
+Macro Statistics
+# RAMs                                                 : 5
+ 16x8-bit dual-port distributed RAM                    : 2
+ 32x32-bit dual-port distributed RAM                   : 2
+ 4096x32-bit dual-port block RAM                       : 1
+# Adders/Subtractors                                   : 28
+ 2-bit adder                                           : 1
+ 21-bit adder                                          : 1
+ 21-bit subtractor                                     : 1
+ 3-bit subtractor                                      : 2
+ 32-bit adder                                          : 8
+ 32-bit subtractor                                     : 1
+ 33-bit subtractor                                     : 2
+ 34-bit addsub                                         : 1
+ 4-bit adder                                           : 2
+ 4-bit subtractor                                      : 2
+ 5-bit subtractor                                      : 2
+ 64-bit adder                                          : 3
+ 8-bit adder                                           : 1
+ 9-bit adder                                           : 1
+# Counters                                             : 9
+ 16-bit up counter                                     : 1
+ 3-bit up counter                                      : 2
+ 32-bit up counter                                     : 1
+ 5-bit up counter                                      : 4
+ 6-bit up counter                                      : 1
+# Accumulators                                         : 1
+ 2-bit up loadable accumulator                         : 1
+# Registers                                            : 1091
+ Flip-Flops                                            : 1091
+# Comparators                                          : 21
+ 1-bit comparator not equal                            : 3
+ 2-bit comparator greater                              : 1
+ 20-bit comparator lessequal                           : 1
+ 21-bit comparator lessequal                           : 1
+ 3-bit comparator equal                                : 2
+ 32-bit comparator equal                               : 2
+ 4-bit comparator equal                                : 2
+ 4-bit comparator lessequal                            : 2
+ 5-bit comparator equal                                : 2
+ 64-bit comparator lessequal                           : 1
+ 8-bit comparator greater                              : 1
+ 8-bit comparator lessequal                            : 1
+ 9-bit comparator equal                                : 1
+ 9-bit comparator greater                              : 1
+# Multiplexers                                         : 331
+ 1-bit 2-to-1 multiplexer                              : 192
+ 1-bit 3-to-1 multiplexer                              : 1
+ 1-bit 4-to-1 multiplexer                              : 5
+ 1-bit 5-to-1 multiplexer                              : 1
+ 16-bit 2-to-1 multiplexer                             : 1
+ 2-bit 2-to-1 multiplexer                              : 5
+ 20-bit 2-to-1 multiplexer                             : 1
+ 21-bit 2-to-1 multiplexer                             : 1
+ 32-bit 12-to-1 multiplexer                            : 1
+ 32-bit 16-to-1 multiplexer                            : 1
+ 32-bit 2-to-1 multiplexer                             : 70
+ 32-bit 4-to-1 multiplexer                             : 8
+ 32-bit 8-to-1 multiplexer                             : 1
+ 33-bit 2-to-1 multiplexer                             : 6
+ 34-bit 2-to-1 multiplexer                             : 1
+ 4-bit 2-to-1 multiplexer                              : 16
+ 5-bit 2-to-1 multiplexer                              : 1
+ 64-bit 2-to-1 multiplexer                             : 6
+ 8-bit 2-to-1 multiplexer                              : 11
+ 8-bit 4-to-1 multiplexer                              : 1
+ 9-bit 2-to-1 multiplexer                              : 1
+# Logic shifters                                       : 7
+ 32-bit shifter arithmetic right                       : 1
+ 32-bit shifter logical left                           : 1
+ 32-bit shifter logical right                          : 1
+ 4-bit shifter logical left                            : 2
+ 8-bit shifter logical right                           : 2
+# FSMs                                                 : 5
+# Xors                                                 : 7
+ 1-bit xor2                                            : 3
+ 1-bit xor8                                            : 1
+ 32-bit xor2                                           : 1
+ 8-bit xor2                                            : 2
+
+=========================================================================
+
+=========================================================================
+*                         Low Level Synthesis                           *
+=========================================================================
+WARNING:Xst:1710 - FF/Latch <res_addr_0> (without init value) has a constant value of 0 in block <s6_core>. This FF/Latch will be trimmed during the optimization process.
+WARNING:Xst:1895 - Due to other FF/Latch trimming, FF/Latch <res_addr_1> (without init value) has a constant value of 0 in block <s6_core>. This FF/Latch will be trimmed during the optimization process.
+Analyzing FSM <MFsm> for best encoding.
+Optimizing FSM <u_soc/g_sram.u_sram/FSM_4> on signal <st[1:3]> with user encoding.
+-------------------
+ State | Encoding
+-------------------
+ 000   | 000
+ 001   | 001
+ 010   | 010
+ 101   | 101
+ 011   | 011
+ 100   | 100
+-------------------
+Analyzing FSM <MFsm> for best encoding.
+Optimizing FSM <u_soc/u_core/FSM_0> on signal <state[1:4]> with user encoding.
+-------------------
+ State | Encoding
+-------------------
+ 0000  | 0000
+ 0001  | 0001
+ 0011  | 0011
+ 0101  | 0101
+ 0010  | 0010
+ 0100  | 0100
+ 0111  | 0111
+ 0110  | 0110
+ 1000  | 1000
+-------------------
+Analyzing FSM <MFsm> for best encoding.
+Optimizing FSM <u_soc/u_core/g_muldiv.u_md/FSM_1> on signal <state[1:2]> with gray encoding.
+-------------------
+ State | Encoding
+-------------------
+ 00    | 00
+ 01    | 01
+ 10    | 11
+-------------------
+Analyzing FSM <MFsm> for best encoding.
+Optimizing FSM <u_soc/u_uart/u_tx/FSM_2> on signal <st[1:3]> with gray encoding.
+-------------------
+ State | Encoding
+-------------------
+ 000   | 000
+ 001   | 001
+ 010   | 011
+ 100   | 010
+ 011   | 110
+-------------------
+Analyzing FSM <MFsm> for best encoding.
+Optimizing FSM <u_soc/u_uart/u_rx/FSM_3> on signal <st[1:3]> with gray encoding.
+-------------------
+ State | Encoding
+-------------------
+ 000   | 000
+ 001   | 001
+ 010   | 011
+ 100   | 010
+ 011   | 110
+-------------------
+WARNING:Xst:1710 - FF/Latch <rdata_31> (without init value) has a constant value of 0 in block <s6_gpio>. This FF/Latch will be trimmed during the optimization process.
+WARNING:Xst:1895 - Due to other FF/Latch trimming, FF/Latch <rdata_30> (without init value) has a constant value of 0 in block <s6_gpio>. This FF/Latch will be trimmed during the optimization process.
+WARNING:Xst:1895 - Due to other FF/Latch trimming, FF/Latch <rdata_29> (without init value) has a constant value of 0 in block <s6_gpio>. This FF/Latch will be trimmed during the optimization process.
+WARNING:Xst:1895 - Due to other FF/Latch trimming, FF/Latch <rdata_28> (without init value) has a constant value of 0 in block <s6_gpio>. This FF/Latch will be trimmed during the optimization process.
+WARNING:Xst:1895 - Due to other FF/Latch trimming, FF/Latch <rdata_27> (without init value) has a constant value of 0 in block <s6_gpio>. This FF/Latch will be trimmed during the optimization process.
+WARNING:Xst:1895 - Due to other FF/Latch trimming, FF/Latch <rdata_26> (without init value) has a constant value of 0 in block <s6_gpio>. This FF/Latch will be trimmed during the optimization process.
+WARNING:Xst:1895 - Due to other FF/Latch trimming, FF/Latch <rdata_25> (without init value) has a constant value of 0 in block <s6_gpio>. This FF/Latch will be trimmed during the optimization process.
+WARNING:Xst:1895 - Due to other FF/Latch trimming, FF/Latch <rdata_24> (without init value) has a constant value of 0 in block <s6_gpio>. This FF/Latch will be trimmed during the optimization process.
+WARNING:Xst:1895 - Due to other FF/Latch trimming, FF/Latch <rdata_23> (without init value) has a constant value of 0 in block <s6_gpio>. This FF/Latch will be trimmed during the optimization process.
+WARNING:Xst:1895 - Due to other FF/Latch trimming, FF/Latch <rdata_22> (without init value) has a constant value of 0 in block <s6_gpio>. This FF/Latch will be trimmed during the optimization process.
+WARNING:Xst:1895 - Due to other FF/Latch trimming, FF/Latch <rdata_21> (without init value) has a constant value of 0 in block <s6_gpio>. This FF/Latch will be trimmed during the optimization process.
+WARNING:Xst:1895 - Due to other FF/Latch trimming, FF/Latch <rdata_20> (without init value) has a constant value of 0 in block <s6_gpio>. This FF/Latch will be trimmed during the optimization process.
+WARNING:Xst:1895 - Due to other FF/Latch trimming, FF/Latch <rdata_19> (without init value) has a constant value of 0 in block <s6_gpio>. This FF/Latch will be trimmed during the optimization process.
+WARNING:Xst:1895 - Due to other FF/Latch trimming, FF/Latch <rdata_18> (without init value) has a constant value of 0 in block <s6_gpio>. This FF/Latch will be trimmed during the optimization process.
+WARNING:Xst:1895 - Due to other FF/Latch trimming, FF/Latch <rdata_17> (without init value) has a constant value of 0 in block <s6_gpio>. This FF/Latch will be trimmed during the optimization process.
+WARNING:Xst:1895 - Due to other FF/Latch trimming, FF/Latch <rdata_16> (without init value) has a constant value of 0 in block <s6_gpio>. This FF/Latch will be trimmed during the optimization process.
+WARNING:Xst:1895 - Due to other FF/Latch trimming, FF/Latch <rdata_15> (without init value) has a constant value of 0 in block <s6_gpio>. This FF/Latch will be trimmed during the optimization process.
+WARNING:Xst:1895 - Due to other FF/Latch trimming, FF/Latch <rdata_14> (without init value) has a constant value of 0 in block <s6_gpio>. This FF/Latch will be trimmed during the optimization process.
+WARNING:Xst:1895 - Due to other FF/Latch trimming, FF/Latch <rdata_13> (without init value) has a constant value of 0 in block <s6_gpio>. This FF/Latch will be trimmed during the optimization process.
+WARNING:Xst:1895 - Due to other FF/Latch trimming, FF/Latch <rdata_12> (without init value) has a constant value of 0 in block <s6_gpio>. This FF/Latch will be trimmed during the optimization process.
+WARNING:Xst:1895 - Due to other FF/Latch trimming, FF/Latch <rdata_11> (without init value) has a constant value of 0 in block <s6_gpio>. This FF/Latch will be trimmed during the optimization process.
+WARNING:Xst:1895 - Due to other FF/Latch trimming, FF/Latch <rdata_10> (without init value) has a constant value of 0 in block <s6_gpio>. This FF/Latch will be trimmed during the optimization process.
+WARNING:Xst:1895 - Due to other FF/Latch trimming, FF/Latch <rdata_9> (without init value) has a constant value of 0 in block <s6_gpio>. This FF/Latch will be trimmed during the optimization process.
+WARNING:Xst:1895 - Due to other FF/Latch trimming, FF/Latch <rdata_8> (without init value) has a constant value of 0 in block <s6_gpio>. This FF/Latch will be trimmed during the optimization process.
+WARNING:Xst:1710 - FF/Latch <rdata_20> (without init value) has a constant value of 0 in block <s6_uart>. This FF/Latch will be trimmed during the optimization process.
+WARNING:Xst:1895 - Due to other FF/Latch trimming, FF/Latch <rdata_21> (without init value) has a constant value of 0 in block <s6_uart>. This FF/Latch will be trimmed during the optimization process.
+WARNING:Xst:1895 - Due to other FF/Latch trimming, FF/Latch <rdata_22> (without init value) has a constant value of 0 in block <s6_uart>. This FF/Latch will be trimmed during the optimization process.
+WARNING:Xst:1895 - Due to other FF/Latch trimming, FF/Latch <rdata_23> (without init value) has a constant value of 0 in block <s6_uart>. This FF/Latch will be trimmed during the optimization process.
+WARNING:Xst:1895 - Due to other FF/Latch trimming, FF/Latch <rdata_24> (without init value) has a constant value of 0 in block <s6_uart>. This FF/Latch will be trimmed during the optimization process.
+WARNING:Xst:1895 - Due to other FF/Latch trimming, FF/Latch <rdata_25> (without init value) has a constant value of 0 in block <s6_uart>. This FF/Latch will be trimmed during the optimization process.
+WARNING:Xst:1895 - Due to other FF/Latch trimming, FF/Latch <rdata_26> (without init value) has a constant value of 0 in block <s6_uart>. This FF/Latch will be trimmed during the optimization process.
+WARNING:Xst:1895 - Due to other FF/Latch trimming, FF/Latch <rdata_27> (without init value) has a constant value of 0 in block <s6_uart>. This FF/Latch will be trimmed during the optimization process.
+WARNING:Xst:1895 - Due to other FF/Latch trimming, FF/Latch <rdata_28> (without init value) has a constant value of 0 in block <s6_uart>. This FF/Latch will be trimmed during the optimization process.
+WARNING:Xst:1895 - Due to other FF/Latch trimming, FF/Latch <rdata_29> (without init value) has a constant value of 0 in block <s6_uart>. This FF/Latch will be trimmed during the optimization process.
+WARNING:Xst:1895 - Due to other FF/Latch trimming, FF/Latch <rdata_30> (without init value) has a constant value of 0 in block <s6_uart>. This FF/Latch will be trimmed during the optimization process.
+WARNING:Xst:1895 - Due to other FF/Latch trimming, FF/Latch <rdata_31> (without init value) has a constant value of 0 in block <s6_uart>. This FF/Latch will be trimmed during the optimization process.
+INFO:Xst:1901 - Instance u_clk/u_pll in unit u_clk/u_pll of type PLL_BASE has been replaced by PLL_ADV
+
+Optimizing unit <s6_top> ...
+
+Optimizing unit <s6_soc> ...
+
+Optimizing unit <s6_gpio> ...
+
+Optimizing unit <s6_sram> ...
+
+Optimizing unit <s6_core> ...
+
+Optimizing unit <s6_csr> ...
+
+Optimizing unit <s6_regfile> ...
+
+Optimizing unit <s6_muldiv> ...
+
+Optimizing unit <s6_rvc> ...
+
+Optimizing unit <s6_uart> ...
+
+Optimizing unit <s6_fifo> ...
+
+Optimizing unit <s6_uart_tx> ...
+
+Optimizing unit <s6_uart_rx> ...
+
+Optimizing unit <s6_clint> ...
+WARNING:Xst:1710 - FF/Latch <u_soc/g_sram.u_sram/cnt_7> (without init value) has a constant value of 0 in block <s6_top>. This FF/Latch will be trimmed during the optimization process.
+WARNING:Xst:1710 - FF/Latch <u_soc/g_sram.u_sram/cnt_6> (without init value) has a constant value of 0 in block <s6_top>. This FF/Latch will be trimmed during the optimization process.
+WARNING:Xst:1710 - FF/Latch <u_soc/g_sram.u_sram/cnt_5> (without init value) has a constant value of 0 in block <s6_top>. This FF/Latch will be trimmed during the optimization process.
+WARNING:Xst:1710 - FF/Latch <u_soc/g_sram.u_sram/cnt_4> (without init value) has a constant value of 0 in block <s6_top>. This FF/Latch will be trimmed during the optimization process.
+WARNING:Xst:1710 - FF/Latch <u_soc/g_sram.u_sram/cnt_3> (without init value) has a constant value of 0 in block <s6_top>. This FF/Latch will be trimmed during the optimization process.
+WARNING:Xst:1710 - FF/Latch <u_soc/g_sram.u_sram/cnt_2> (without init value) has a constant value of 0 in block <s6_top>. This FF/Latch will be trimmed during the optimization process.
+WARNING:Xst:1710 - FF/Latch <u_soc/g_sram.u_sram/cnt_1> (without init value) has a constant value of 0 in block <s6_top>. This FF/Latch will be trimmed during the optimization process.
+INFO:Xst:2261 - The FF/Latch <u_soc/u_core/lo_half_1> in Unit <s6_top> is equivalent to the following FF/Latch, which will be removed : <u_soc/u_core/lo_half_0> 
+
+Mapping all equations...
+Building and optimizing final netlist ...
+Found area constraint ratio of 100 (+ 5) on block s6_top, actual ratio is 84.
+
+Pipelining and Register Balancing Report ...
+
+Processing Unit <s6_top> :
+	Register(s) u_soc/g_sram.u_sram/bebuf_0 has(ve) been backward balanced into : u_soc/g_sram.u_sram/bebuf_0_BRB0 u_soc/g_sram.u_sram/bebuf_0_BRB1 u_soc/g_sram.u_sram/bebuf_0_BRB2 u_soc/g_sram.u_sram/bebuf_0_BRB3 u_soc/g_sram.u_sram/bebuf_0_BRB4.
+	Register(s) u_soc/g_sram.u_sram/bebuf_3 has(ve) been backward balanced into : u_soc/g_sram.u_sram/bebuf_3_BRB0 u_soc/g_sram.u_sram/bebuf_3_BRB1 u_soc/g_sram.u_sram/bebuf_3_BRB3 .
+	Register(s) u_soc/g_sram.u_sram/bi_0 has(ve) been backward balanced into : u_soc/g_sram.u_sram/bi_0_BRB1 u_soc/g_sram.u_sram/bi_0_BRB2 u_soc/g_sram.u_sram/bi_0_BRB3 u_soc/g_sram.u_sram/bi_0_BRB4.
+	Register(s) u_soc/g_sram.u_sram/bi_1 has(ve) been backward balanced into : u_soc/g_sram.u_sram/bi_1_BRB0 u_soc/g_sram.u_sram/bi_1_BRB1 u_soc/g_sram.u_sram/bi_1_BRB3 u_soc/g_sram.u_sram/bi_1_BRB4.
+	Register(s) u_soc/g_sram.u_sram/cnt_0 has(ve) been backward balanced into : u_soc/g_sram.u_sram/cnt_0_BRB0 u_soc/g_sram.u_sram/cnt_0_BRB1 u_soc/g_sram.u_sram/cnt_0_BRB2 u_soc/g_sram.u_sram/cnt_0_BRB3 u_soc/g_sram.u_sram/cnt_0_BRB4.
+	Register(s) u_soc/g_sram.u_sram/st_FSM_FFd2 has(ve) been backward balanced into : u_soc/g_sram.u_sram/st_FSM_FFd2_BRB0 u_soc/g_sram.u_sram/st_FSM_FFd2_BRB1 u_soc/g_sram.u_sram/st_FSM_FFd2_BRB2 u_soc/g_sram.u_sram/st_FSM_FFd2_BRB3 u_soc/g_sram.u_sram/st_FSM_FFd2_BRB4 u_soc/g_sram.u_sram/st_FSM_FFd2_BRB5.
+	Register(s) u_soc/u_core/g_muldiv.u_md/state_FSM_FFd2 has(ve) been backward balanced into : u_soc/u_core/g_muldiv.u_md/state_FSM_FFd2_BRB0 u_soc/u_core/g_muldiv.u_md/state_FSM_FFd2_BRB1 u_soc/u_core/g_muldiv.u_md/state_FSM_FFd2_BRB2.
+	Register(s) u_soc/u_uart/u_rx/sync_0 has(ve) been backward balanced into : u_soc/u_uart/u_rx/sync_0_BRB0 u_soc/u_uart/u_rx/sync_0_BRB1 u_soc/u_uart/u_rx/sync_0_BRB2.
+Unit <s6_top> processed.
+FlipFlop u_soc/inst_LPM_FF1_0 has been replicated 1 time(s)
+FlipFlop u_soc/inst_LPM_FF1_1 has been replicated 2 time(s)
+FlipFlop u_soc/inst_LPM_FF1_2 has been replicated 2 time(s)
+
+Final Macro Processing ...
+
+=========================================================================
+Final Register Report
+
+Macro Statistics
+# Registers                                            : 1176
+ Flip-Flops                                            : 1176
+
+=========================================================================
+
+=========================================================================
+*                           Partition Report                            *
+=========================================================================
+
+Partition Implementation Status
+-------------------------------
+
+  No Partitions were found in this design.
+
+-------------------------------
+
+=========================================================================
+*                            Design Summary                             *
+=========================================================================
+
+Top Level Output File Name         : s6_top.ngc
+
+Primitive and Black Box Usage:
+------------------------------
+# BELS                             : 5923
+#      GND                         : 1
+#      INV                         : 13
+#      LUT1                        : 316
+#      LUT2                        : 180
+#      LUT3                        : 431
+#      LUT4                        : 348
+#      LUT5                        : 767
+#      LUT6                        : 2394
+#      MUXCY                       : 686
+#      MUXF7                       : 177
+#      VCC                         : 1
+#      XORCY                       : 609
+# FlipFlops/Latches                : 1176
+#      FD                          : 26
+#      FDE                         : 71
+#      FDR                         : 315
+#      FDRE                        : 688
+#      FDS                         : 7
+#      FDSE                        : 69
+# RAMS                             : 88
+#      RAM16X1D                    : 16
+#      RAM32X1D                    : 64
+#      RAMB16BWER                  : 8
+# Clock Buffers                    : 1
+#      BUFG                        : 1
+# IO Buffers                       : 51
+#      IBUF                        : 11
+#      IOBUF                       : 8
+#      OBUF                        : 32
+# Others                           : 1
+#      PLL_ADV                     : 1
+
+Device utilization summary:
+---------------------------
+
+Selected Device : 6slx9tqg144-2 
+
+
+Slice Logic Utilization: 
+ Number of Slice Registers:            1176  out of  11440    10%  
+ Number of Slice LUTs:                 4609  out of   5720    80%  
+    Number used as Logic:              4449  out of   5720    77%  
+    Number used as Memory:              160  out of   1440    11%  
+       Number used as RAM:              160
+
+Slice Logic Distribution: 
+ Number of LUT Flip Flop pairs used:   4755
+   Number with an unused Flip Flop:    3579  out of   4755    75%  
+   Number with an unused LUT:           146  out of   4755     3%  
+   Number of fully used LUT-FF pairs:  1030  out of   4755    21%  
+   Number of unique control sets:        60
+
+IO Utilization: 
+ Number of IOs:                          51
+ Number of bonded IOBs:                  51  out of    102    50%  
+
+Specific Feature Utilization:
+ Number of Block RAM/FIFO:                8  out of     32    25%  
+    Number using Block RAM only:          8
+ Number of BUFG/BUFGCTRLs:                1  out of     16     6%  
+ Number of PLL_ADVs:                      1  out of      2    50%  
+
+---------------------------
+Partition Resource Summary:
+---------------------------
+
+  No Partitions were found in this design.
+
+---------------------------
+
+
+=========================================================================
+Timing Report
+
+NOTE: THESE TIMING NUMBERS ARE ONLY A SYNTHESIS ESTIMATE.
+      FOR ACCURATE TIMING INFORMATION PLEASE REFER TO THE TRACE REPORT
+      GENERATED AFTER PLACE-and-ROUTE.
+
+Clock Information:
+------------------
+-----------------------------------+------------------------+-------+
+Clock Signal                       | Clock buffer(FF name)  | Load  |
+-----------------------------------+------------------------+-------+
+u_clk/u_pll/CLKOUT0                | BUFG                   | 1264  |
+-----------------------------------+------------------------+-------+
+
+Asynchronous Control Signals Information:
+----------------------------------------
+No asynchronous control signals found in this design
+
+Timing Summary:
+---------------
+Speed Grade: -2
+
+   Minimum period: 31.195ns (Maximum Frequency: 32.056MHz)
+   Minimum input arrival time before clock: 2.460ns
+   Maximum output required time after clock: 8.159ns
+   Maximum combinational path delay: No path found
+
+Timing Details:
+---------------
+All values displayed in nanoseconds (ns)
+
+=========================================================================
+Timing constraint: Default period analysis for Clock 'u_clk/u_pll/CLKOUT0'
+  Clock period: 31.195ns (frequency: 32.056MHz)
+  Total number of paths / destination ports: 2671946507917 / 4433
+-------------------------------------------------------------------------
+Delay:               31.195ns (Levels of Logic = 27)
+  Source:            u_soc/u_ram/Mram_mem7 (RAM)
+  Destination:       u_soc/u_ram/Mram_mem7 (RAM)
+  Source Clock:      u_clk/u_pll/CLKOUT0 rising
+  Destination Clock: u_clk/u_pll/CLKOUT0 rising
+
+  Data Path: u_soc/u_ram/Mram_mem7 to u_soc/u_ram/Mram_mem7
+                                Gate     Net
+    Cell:in->out      fanout   Delay   Delay  Logical Name (Net Name)
+    ----------------------------------------  ------------
+     RAMB16BWER:CLKB->DOB27    1   2.100   0.958  u_soc/u_ram/Mram_mem7 (u_soc/N453)
+     LUT6:I2->O            1   0.254   0.000  u_soc/inst_LPM_MUX59_3 (u_soc/inst_LPM_MUX59_3)
+     MUXF7:I1->O           8   0.175   1.052  u_soc/inst_LPM_MUX59_2_f7 (u_soc/irdata<27>)
+     LUT3:I1->O            1   0.250   1.112  u_soc/u_core/Mmux_raw1631_1 (u_soc/u_core/Mmux_raw1631)
+     LUT5:I0->O           16   0.254   1.182  u_soc/u_core/g_rvc.u_rvc/rd[4]_GND_15_o_equal_40_o<4>1 (u_soc/u_core/g_rvc.u_rvc/rd[4]_GND_15_o_equal_40_o)
+     LUT6:I5->O            1   0.254   0.682  u_soc/u_core/g_rvc.u_rvc/Mmux_instr321911_SW2 (N906)
+     LUT6:I5->O           46   0.254   1.754  u_soc/u_core/Mmux_instr285 (u_soc/dbg_instr<5>)
+     LUT6:I5->O           14   0.254   1.127  u_soc/u_core/is_jal<6>11 (u_soc/u_core/is_jal<6>1)
+     LUT6:I5->O            1   0.254   0.910  u_soc/u_core/is_amo_rmw1_1 (u_soc/u_core/is_amo_rmw1)
+     LUT5:I2->O          285   0.235   2.434  u_soc/u_core/is_op_is_amo_OR_103_o1 (u_soc/u_core/is_op_is_amo_OR_103_o)
+     MUXF7:S->O          102   0.185   2.323  u_soc/u_core/Mmux_alu_b271 (u_soc/u_core/alu_b<4>)
+     LUT6:I4->O            1   0.250   0.000  u_soc/u_core/Sh5411_SW4_G (N1660)
+     MUXF7:I1->O           1   0.175   0.958  u_soc/u_core/Sh5411_SW4 (N1322)
+     LUT6:I2->O            1   0.254   0.682  u_soc/u_core/Sh821 (u_soc/u_core/Sh82)
+     LUT6:I5->O            1   0.254   0.682  u_soc/u_core/Mmux_alu_result_718 (u_soc/u_core/Mmux_alu_result_718)
+     LUT6:I5->O            5   0.254   0.841  u_soc/u_core/alu_op<3>91 (u_soc/u_core/alu_result<18>)
+     LUT5:I4->O           14   0.254   1.127  u_soc/u_core/Mmux_mem_addr111 (u_soc/daddr<18>)
+     LUT6:I5->O            1   0.254   0.000  u_soc/u_core/Mcompar_res_addr[31]_mem_addr[31]_equal_167_o_lut<5> (u_soc/u_core/Mcompar_res_addr[31]_mem_addr[31]_equal_167_o_lut<5>)
+     MUXCY:S->O            1   0.215   0.000  u_soc/u_core/Mcompar_res_addr[31]_mem_addr[31]_equal_167_o_cy<5> (u_soc/u_core/Mcompar_res_addr[31]_mem_addr[31]_equal_167_o_cy<5>)
+     MUXCY:CI->O           1   0.023   0.000  u_soc/u_core/Mcompar_res_addr[31]_mem_addr[31]_equal_167_o_cy<6> (u_soc/u_core/Mcompar_res_addr[31]_mem_addr[31]_equal_167_o_cy<6>)
+     MUXCY:CI->O           1   0.023   0.000  u_soc/u_core/Mcompar_res_addr[31]_mem_addr[31]_equal_167_o_cy<7> (u_soc/u_core/Mcompar_res_addr[31]_mem_addr[31]_equal_167_o_cy<7>)
+     MUXCY:CI->O           1   0.023   0.000  u_soc/u_core/Mcompar_res_addr[31]_mem_addr[31]_equal_167_o_cy<8> (u_soc/u_core/Mcompar_res_addr[31]_mem_addr[31]_equal_167_o_cy<8>)
+     MUXCY:CI->O          10   0.023   1.008  u_soc/u_core/Mcompar_res_addr[31]_mem_addr[31]_equal_167_o_cy<9> (u_soc/u_core/res_addr[31]_mem_addr[31]_equal_167_o)
+     LUT6:I5->O            7   0.254   0.910  u_soc/Mmux_dready27 (u_soc/Mmux_dready27)
+     LUT6:I5->O            1   0.254   0.000  u_soc/Mmux_dready28_SW2_G (N1582)
+     MUXF7:I1->O           2   0.175   0.726  u_soc/Mmux_dready28_SW2 (N908)
+     LUT6:I5->O           44   0.254   1.721  u_soc/u_core/_n2417_inv1 (u_soc/u_core/_n2417_inv1)
+     LUT6:I5->O            8   0.254   0.943  u_soc/u_core/Mmux_ibus_addr11 (u_soc/iaddr<10>)
+     RAMB16BWER:ADDRB13        0.400          u_soc/u_ram/Mram_mem7
+    ----------------------------------------
+    Total                     31.195ns (8.063ns logic, 23.132ns route)
+                                       (25.8% logic, 74.2% route)
+
+=========================================================================
+Timing constraint: Default OFFSET IN BEFORE for Clock 'u_clk/u_pll/CLKOUT0'
+  Total number of paths / destination ports: 42 / 42
+-------------------------------------------------------------------------
+Offset:              2.460ns (Levels of Logic = 2)
+  Source:            sram_data<7> (PAD)
+  Destination:       u_soc/g_sram.u_sram/rdata_31 (FF)
+  Destination Clock: u_clk/u_pll/CLKOUT0 rising
+
+  Data Path: sram_data<7> to u_soc/g_sram.u_sram/rdata_31
+                                Gate     Net
+    Cell:in->out      fanout   Delay   Delay  Logical Name (Net Name)
+    ----------------------------------------  ------------
+     IOBUF:IO->O           4   1.328   0.804  sram_data_7_IOBUF (N408)
+     LUT4:I3->O            1   0.254   0.000  u_soc/g_sram.u_sram/Mmux_bi[1]_sram_din[7]_wide_mux_14_OUT161 (u_soc/g_sram.u_sram/bi[1]_sram_din[7]_wide_mux_14_OUT<23>)
+     FDRE:D                    0.074          u_soc/g_sram.u_sram/rdata_23
+    ----------------------------------------
+    Total                      2.460ns (1.656ns logic, 0.804ns route)
+                                       (67.3% logic, 32.7% route)
+
+=========================================================================
+Timing constraint: Default OFFSET OUT AFTER for Clock 'u_clk/u_pll/CLKOUT0'
+  Total number of paths / destination ports: 237 / 40
+-------------------------------------------------------------------------
+Offset:              8.159ns (Levels of Logic = 3)
+  Source:            u_soc/g_sram.u_sram/cnt_0_BRB3 (FF)
+  Destination:       sram_data<7> (PAD)
+  Source Clock:      u_clk/u_pll/CLKOUT0 rising
+
+  Data Path: u_soc/g_sram.u_sram/cnt_0_BRB3 to sram_data<7>
+                                Gate     Net
+    Cell:in->out      fanout   Delay   Delay  Logical Name (Net Name)
+    ----------------------------------------  ------------
+     FD:C->Q               4   0.525   1.234  u_soc/g_sram.u_sram/cnt_0_BRB3 (u_soc/g_sram.u_sram/cnt_0_BRB3)
+     LUT5:I0->O           53   0.254   2.299  u_soc/g_sram.u_sram/bi_0_rstpot (u_soc/g_sram.u_sram/bi_0)
+     LUT6:I0->O            1   0.254   0.681  u_soc/g_sram.u_sram/Mmux_sram_dout81 (sram_dout<7>)
+     IOBUF:I->IO               2.912          sram_data_7_IOBUF (sram_data<7>)
+    ----------------------------------------
+    Total                      8.159ns (3.945ns logic, 4.214ns route)
+                                       (48.3% logic, 51.7% route)
+
+=========================================================================
+
+Cross Clock Domains Report:
+--------------------------
+
+Clock to Setup on destination clock u_clk/u_pll/CLKOUT0
+-------------------+---------+---------+---------+---------+
+                   | Src:Rise| Src:Fall| Src:Rise| Src:Fall|
+Source Clock       |Dest:Rise|Dest:Rise|Dest:Fall|Dest:Fall|
+-------------------+---------+---------+---------+---------+
+u_clk/u_pll/CLKOUT0|   31.195|         |         |         |
+-------------------+---------+---------+---------+---------+
+
+=========================================================================
+
+
+Total REAL time to Xst completion: 61.00 secs
+Total CPU time to Xst completion: 18.31 secs
+ 
+--> 
+
+
+Total memory usage is 528280 kilobytes
+
+Number of errors   :    0 (   0 filtered)
+Number of warnings :   52 (   0 filtered)
+Number of infos    :   14 (   0 filtered)
+

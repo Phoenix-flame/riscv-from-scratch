@@ -4,7 +4,7 @@
 // Board resources this design uses, all straight from the board's own
 // UCF (constraints/posedge_one_lx9.ucf):
 //
-//   CLOCK      p50    24 MHz oscillator -> PLL -> 48 MHz SoC clock
+//   CLOCK      p50    24 MHz oscillator -> PLL -> 16 MHz SoC clock
 //   RESET_N    p133   USER_PB, active low, internal pull-up
 //   UART_TX    p104   to the FT2232's RX      (FPGA drives)
 //   UART_RX    p105   from the FT2232's TX    (FPGA samples)
@@ -24,7 +24,7 @@
 `default_nettype none
 
 module s6_top #(
-    parameter integer CLK_HZ    = 48_000_000,
+    parameter integer CLK_HZ    = 16_000_000,
     parameter integer BAUD      = 115200,
     parameter integer MEM_WORDS = 4096,
     // $readmemh resolves this relative to the directory synthesis runs in,

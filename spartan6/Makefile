@@ -26,8 +26,21 @@ SOC_RTL  = $(CORE_RTL) rtl/s6_ram.v rtl/s6_fifo.v rtl/s6_uart_tx.v \
            rtl/s6_uart_rx.v rtl/s6_uart.v rtl/s6_clint.v rtl/s6_gpio.v \
            rtl/s6_sram.v rtl/s6_soc.v
 
-# serial port the board shows up on (FT2232 channel B)
-PORT ?= /dev/ttyUSB1
+# Tools and the serial port the board shows up on (FT2232 channel B).
+# On Windows that port is a COM device and the Store's "python3" is a stub
+# that only opens the Store, so both defaults change; tools/s6.ps1 finds the
+# port by itself and needs no make at all (docs/programming.md, "Windows").
+ifeq ($(OS),Windows_NT)
+PORT   ?= COM4
+PYTHON ?= python
+else
+PORT   ?= /dev/ttyUSB1
+PYTHON ?= python3
+endif
+OFL    ?= openFPGALoader
+# Writing to SPI flash goes through a spiOverJtag bitstream, and
+# openFPGALoader picks it by device+package -- it cannot guess.
+FPGA_PART ?= xc6slx9tqg144
 
 .PHONY: all test muldiv uart soc bootsim riscv-tests firmware boot app \
         bit bit-tcl prog prog-flash upload term lint clean
@@ -64,11 +77,11 @@ bootsim: sw/boot.hex
 # The official riscv-tests suite (rv32ui / um / ua / uc), driven by the
 # parent repo's runner. `s6_sf` re-runs the whole thing with FAST_FETCH=0.
 riscv-tests:
-	cd .. && python3 tools/rvtests --core s6
+	cd .. && $(PYTHON) tools/rvtests --core s6
 
 riscv-tests-all:
-	cd .. && python3 tools/rvtests --core s6
-	cd .. && python3 tools/rvtests --core s6_sf
+	cd .. && $(PYTHON) tools/rvtests --core s6
+	cd .. && $(PYTHON) tools/rvtests --core s6_sf
 
 # A syntax/elaboration check of everything, including the FPGA top.
 lint:
@@ -106,23 +119,24 @@ bit-tcl: sw/hello.hex
 
 # Put the bootloader in the bitstream instead, and iterate over serial.
 bit-boot: sw/boot.hex
-	cp sw/boot.hex sw/firmware_selected.hex
-	@echo "edit s6_top's MEM_INIT to ../sw/boot.hex, then: make bit"
+	cp sw/boot.hex sw/firmware.hex
+	@echo "sw/firmware.hex now holds the bootloader -- run: make bit"
+	@echo "to go back to the plain firmware: git checkout -- sw/firmware.hex"
 
 # =====================================================================
 # Programming the board  (see docs/programming.md)
 # =====================================================================
 prog:
-	openFPGALoader -c ft2232 syn/s6_top.bit
+	$(OFL) -c ft2232 syn/s6_top.bit
 
 prog-flash:
-	openFPGALoader -c ft2232 -f syn/s6_top.bit
+	$(OFL) -c ft2232 --fpga-part $(FPGA_PART) -f syn/s6_top.bit
 
 upload: build/hello_app.bin
-	python3 tools/s6load.py -p $(PORT) build/hello_app.bin --term
+	$(PYTHON) tools/s6load.py -p $(PORT) build/hello_app.bin --term
 
 term:
-	python3 tools/s6load.py -p $(PORT) --term
+	$(PYTHON) tools/s6load.py -p $(PORT) --term
 
 # =====================================================================
 clean:

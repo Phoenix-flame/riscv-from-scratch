@@ -1,0 +1,28 @@
+# =====================================================================
+# Line endings
+# ---------------------------------------------------------------------
+# This tree is edited on Windows (core.autocrlf=true) but most of it is
+# consumed on Linux -- WSL, and the box that runs ISE. A CR at the end of
+# a shebang is why ./sw/build.sh failed with
+#
+#     bash: ./sw/build.sh: /usr/bin: bad interpreter: Permission denied
+#
+# so anything a Unix shell, make, or a Verilog $readmemh has to read is
+# pinned to LF here regardless of the platform it is checked out on.
+# =====================================================================
+* text=auto
+
+*.sh    text eol=lf
+*.py    text eol=lf
+*.tcl   text eol=lf
+*.mk    text eol=lf
+Makefile text eol=lf
+tools/rvtests text eol=lf
+
+# Memory images: $readmemh reads these on Linux.
+*.hex   text eol=lf
+
+# Windows-native helpers, on the other hand, want CRLF.
+*.ps1   text eol=crlf
+*.cmd   text eol=crlf
+*.bat   text eol=crlf

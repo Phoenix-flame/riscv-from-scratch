@@ -1,6 +1,6 @@
 -w
 -g DebugBitstream:No
--g Binary:Yes
+-g Binary:yes
 -g CRC:Enable
 -g Reset_on_err:No
 -g ConfigRate:26

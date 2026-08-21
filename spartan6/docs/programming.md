@@ -47,6 +47,99 @@ ls -l /dev/serial/by-id/
 Everything below assumes `/dev/ttyUSB1`; pass `PORT=...` to the Makefile
 if yours differs.
 
+### Windows
+
+Everything except synthesis runs natively on Windows -- no make, no
+bash, no WSL. `tools\s6.cmd` is the same set of verbs as the Makefile:
+
+| Makefile | Windows |
+|----------|---------|
+| `make prog` | `.\tools\s6.cmd prog` |
+| `make prog-flash` | `.\tools\s6.cmd prog-flash` |
+| `make term` | `.\tools\s6.cmd term` |
+| `make upload PORT=...` | `.\tools\s6.cmd upload` (`-Port COM4` to pin it) |
+| `make bit-boot` | `.\tools\s6.cmd bit-boot` |
+| -- | `.\tools\s6.cmd ports` -- list the serial ports it can see |
+
+Run them from the `spartan6` directory:
+
+```powershell
+cd spartan6
+.\tools\s6.cmd ports
+.\tools\s6.cmd prog
+.\tools\s6.cmd term
+```
+
+The real script is `tools\s6.ps1`; `s6.cmd` is a one-line wrapper that
+exists because a stock Windows refuses to run `.ps1` files at all
+(execution policy `Restricted` -- *"running scripts is disabled on this
+system"*). The wrapper bypasses that for its own process only and
+changes nothing on the machine. To call the `.ps1` directly instead,
+allow local scripts for your account once -- that one *is* a machine
+setting, so it is your call:
+
+```powershell
+Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
+```
+
+Run it with no arguments for the full list of switches.
+
+**What to install**
+
+| Tool | How |
+|------|-----|
+| Python 3 + pyserial | `winget install Python.Python.3.12` then `python -m pip install pyserial` |
+| `openFPGALoader` | there is no standalone Windows `.exe` -- it ships as an MSYS2 package. `winget install MSYS2.MSYS2`, then in the MinGW64 shell `pacman -S mingw-w64-x86_64-openFPGALoader`. `s6.cmd` looks in `C:\msys64\mingw64\bin` on its own, so nothing needs to go on `PATH` |
+| Zadig | [zadig.akeo.ie](https://zadig.akeo.ie/) — one-time driver swap, below |
+| ISE 14.7 | only for `make bit`. It is a Linux/old-Windows tool; if you build on another machine, copy its `s6_top.bit` into `spartan6\syn\` and `prog` will pick it up |
+
+**The one-time Zadig step**
+
+openFPGALoader talks to the FT2232H through libusb, and Windows binds
+both of its interfaces to the FTDI VCP driver at plug-in. Interface 0
+(JTAG) has to be handed over; interface 1 (the UART) must be left alone.
+
+1. Plug the board in.
+2. Run Zadig, tick **Options → List All Devices**.
+3. Select **Dual RS232-HS (Interface 0)** -- some boards spell it
+   **USB Serial Converter A**. Check it twice: it is interface **0**,
+   not 1. Interface 1 is the console.
+4. Pick **WinUSB** in the driver box and press *Replace Driver*.
+
+Until that is done, `prog` fails with *unable to open ftdi device: -4
+(usb_open() failed)*. Afterwards:
+
+```powershell
+C:\msys64\mingw64\bin\openFPGALoader.exe --scan-usb   # the probe is visible
+C:\msys64\mingw64\bin\openFPGALoader.exe -c ft2232 --detect   # the LX9 answers
+```
+
+`.\tools\s6.cmd ports` should still show the console port -- if it does
+not, Zadig took interface 1 by mistake; undo it in Device Manager with
+*Uninstall device* + *Scan for hardware changes*.
+
+**Which COM port?**
+
+`.\tools\s6.cmd ports` labels them. The UART is FT2232H channel B, and
+Windows spells that as a device whose serial number ends in `B`:
+
+```
+Port Channel  Name
+---- -------  ----
+COM4 B - UART USB Serial Port (COM4)
+```
+
+The script picks channel B on its own; `-Port COM7` overrides it. The
+Makefile cannot auto-detect, so it defaults to `COM4` on Windows —
+`make term PORT=COM7` if yours differs.
+
+**What does not work from Windows**
+
+`make bit`, `make test` and `make riscv-tests` need ISE 14.7,
+`riscv64-unknown-elf-gcc` and `iverilog`. Build the `.bit`, the `.hex`
+and `build\hello_app.bin` wherever that toolchain lives, then do the
+programming, uploading and console work here.
+
 ---
 
 ## 1. Path A — firmware baked into the bitstream
@@ -183,7 +276,10 @@ Both paths above configure the FPGA over JTAG, which is lost at power
 off. To make it survive, write the bitstream to the board's QSPI flash:
 
 ```bash
-openFPGALoader -c ft2232 -f syn/s6_top.bit        # -f = write to flash
+# -f writes to flash; --fpga-part picks the spiOverJtag bitstream the
+# write goes through, and openFPGALoader cannot infer it. Without it:
+#   Can't program SPI flash: missing device-package information
+openFPGALoader -c ft2232 --fpga-part xc6slx9tqg144 -f syn/s6_top.bit
 ```
 
 or with xc3sprog, which needs the Spartan-6 SPI bridge bitstream:
@@ -192,6 +288,14 @@ or with xc3sprog, which needs the Spartan-6 SPI bridge bitstream:
 xc3sprog -c ft2232 -I/usr/share/xc3sprog/bscan_spi_xc6slx9.bit \
          syn/s6_top.bit:w:0:BIN
 ```
+
+Writing flash leaves the *spiOverJtag* helper bitstream in the FPGA, not
+your design -- the flash is written through it. Power-cycle the board to
+see what you just wrote. `openFPGALoader -r` claims to reconfigure in
+place, but on this FT2232 it drops the whole USB device off the bus: the
+COM port vanishes, `--scan-usb` starts answering *Error code -12*, and
+only unplugging and replugging the cable brings it back. Prefer the
+power cycle.
 
 The FPGA then loads itself from flash at power-up. A bitstream containing
 the *bootloader* will still sit and wait for a serial upload; a bitstream
@@ -241,7 +345,15 @@ you re-synthesise the PLL to a different frequency.
 ## 6. When it does not work
 
 **Nothing on the terminal.**
-`uart_tx` (`p104`) must go to the FT2232's *receive* line. If the channel
+Read `syn/s6_top.twr` before suspecting the wiring. If the design missed
+its clock constraint the CPU executes nothing at all, and *complete*
+silence -- no boot banner, not one framing error -- is what that looks
+like from here. "Timing not met" below is the fix. This is not the same
+symptom as garbled output, which means the design runs and only the baud
+rate is wrong.
+
+If timing is clean, then `uart_tx` (`p104`) must go to the FT2232's
+*receive* line. If the channel
 is configured for FT245 async-FIFO mode instead of UART mode, `p104`/
 `p105` belong to the FIFO and no serial data will ever appear — the two
 personalities share the same FPGA pins. Check the FT2232 EEPROM
@@ -250,7 +362,7 @@ configuration first.
 **Garbled characters, roughly the right rate.**
 A clock/baud mismatch. `CLK_HZ` on `s6_soc` must equal what
 `s6_clkgen` actually produces. The defaults are 24 MHz in, `MULT=32`,
-`DIV=16`, so 48 MHz out; change one and you must change the other.
+`DIV=48`, so 16 MHz out; change one and you must change the other.
 
 **Garbled characters, wildly wrong rate.**
 The PLL did not lock, and the design is running off something unexpected.

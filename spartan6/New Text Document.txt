@@ -1,0 +1,1 @@
+Set-Location D:\Code\riscv-from-scratch\spartan6; Write-Output "policy: $(Get-ExecutionPolicy) / user: $(Get-ExecutionPolicy -Scope CurrentUser)"; .\tools\s6.cmd ports; Write-Output "=== exit $LASTEXITCODE ==="; .\tools\s6.cmd upload; Write-Output "=== exit $LASTEXITCODE ==="

@@ -83,18 +83,16 @@ project set "ROM Style"  "Auto" -process "Synthesize - XST"
 project set "Use DSP Block" "Auto" -process "Synthesize - XST"
 
 # ---- implementation --------------------------------------------------
-project set "Pack I/O Registers into IOBs" "For Inputs and Outputs" \
-        -process "Map"
-project set "Place & Route Effort Level (Overall)" "High" -process "Map"
-project set "Perform Timing-Driven Packing and Placement" true -process "Map"
-project set "Extra Effort (Highest PAR level only)" "Normal" \
-        -process "Place & Route"
+project set "Pack I/O Registers/Latches into IOBs" "For Inputs and Outputs"  -process "Map"
+# PAR effort is a Place & Route property, not a Map one -- and Spartan-6 MAP
+# is always timing-driven, so it has no packing-and-placement switch.
+project set "Place & Route Effort Level (Overall)" "High" -process "Place & Route"
+project set "Extra Effort (Highest PAR level only)" "Normal"  -process "Place & Route"
 
 # ---- bitstream -------------------------------------------------------
 # A .bin as well as the .bit: xc3sprog and openFPGALoader are happy with
 # either, but SPI-flash tools generally want the raw .bin.
-project set "Create Binary Configuration File" true \
-        -process "Generate Programming File"
+project set "Create Binary Configuration File" true  -process "Generate Programming File"
 project set "Unused IOB Pins" "Pull Down" -process "Generate Programming File"
 project set "Configuration Rate" "26" -process "Generate Programming File"
 

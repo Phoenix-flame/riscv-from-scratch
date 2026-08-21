@@ -71,7 +71,12 @@ module s6_soc #(
     output wire [31:0]       dbg_instr,
     output wire              dbg_retire
 );
-    localparam integer AW = $clog2(MEM_WORDS);
+    // AW = log2(MEM_WORDS); a ladder, because XST rejects $clog2 here.
+    localparam integer AW = (MEM_WORDS<=256)    ?  8 : (MEM_WORDS<=512)    ?  9 :
+                            (MEM_WORDS<=1024)   ? 10 : (MEM_WORDS<=2048)   ? 11 :
+                            (MEM_WORDS<=4096)   ? 12 : (MEM_WORDS<=8192)   ? 13 :
+                            (MEM_WORDS<=16384)  ? 14 : (MEM_WORDS<=32768)  ? 15 :
+                            (MEM_WORDS<=65536)  ? 16 : (MEM_WORDS<=131072) ? 17 : 18;
     localparam integer BAUDDIV  = CLK_HZ / BAUD;
     localparam integer TICK_DIV = (CLK_HZ / 1000000) < 1 ? 1 : (CLK_HZ / 1000000);
 

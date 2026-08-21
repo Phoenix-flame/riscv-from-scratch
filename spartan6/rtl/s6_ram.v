@@ -17,14 +17,22 @@
 
 module s6_ram #(
     parameter WORDS     = 4096,
-    parameter INIT_FILE = ""
+    parameter INIT_FILE = "",
+    // AW = log2(WORDS), derived from it -- never override at instantiation.
+    // ISE's XST rejects $clog2 in declarations, so the ladder below does
+    // the same job as a constant expression every Verilog-2001 tool takes.
+    parameter AW = (WORDS<=256)    ?  8 : (WORDS<=512)    ?  9 :
+                   (WORDS<=1024)   ? 10 : (WORDS<=2048)   ? 11 :
+                   (WORDS<=4096)   ? 12 : (WORDS<=8192)   ? 13 :
+                   (WORDS<=16384)  ? 14 : (WORDS<=32768)  ? 15 :
+                   (WORDS<=65536)  ? 16 : (WORDS<=131072) ? 17 : 18
 ) (
     input  wire                      clk,
     // port A: instruction fetch
-    input  wire [$clog2(WORDS)-1:0]  a_addr,
+    input  wire [AW-1:0]             a_addr,
     output reg  [31:0]               a_rdata,
     // port B: data
-    input  wire [$clog2(WORDS)-1:0]  b_addr,
+    input  wire [AW-1:0]             b_addr,
     input  wire [3:0]                b_we,
     input  wire [31:0]               b_wdata,
     output reg  [31:0]               b_rdata

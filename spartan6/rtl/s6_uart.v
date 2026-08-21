@@ -65,7 +65,11 @@ module s6_uart #(
     output wire        rts_n,
     output wire        irq
 );
-    localparam LW = $clog2(FIFO_DEPTH);
+    // LW = log2(FIFO_DEPTH); a ladder, because XST rejects $clog2 here.
+    localparam LW = (FIFO_DEPTH<=2)   ? 1 : (FIFO_DEPTH<=4)   ? 2 :
+                    (FIFO_DEPTH<=8)   ? 3 : (FIFO_DEPTH<=16)  ? 4 :
+                    (FIFO_DEPTH<=32)  ? 5 : (FIFO_DEPTH<=64)  ? 6 :
+                    (FIFO_DEPTH<=128) ? 7 : (FIFO_DEPTH<=256) ? 8 : 9;
 
     // ---- configuration registers ----
     reg [19:0] bauddiv;

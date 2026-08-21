@@ -2,7 +2,6 @@ set -tmpdir "xst/projnav.tmp"
 set -xsthdpdir "xst"
 run
 -ifn s6_top.prj
--ifmt mixed
 -ofn s6_top
 -ofmt NGC
 -p xc6slx9-2-tqg144
@@ -24,6 +23,9 @@ run
 -slice_utilization_ratio 100
 -bram_utilization_ratio 100
 -dsp_utilization_ratio 100
+-lc Auto
+-reduce_control_sets Auto
+-define { SYNTHESIS }
 -fsm_extract YES -fsm_encoding Auto
 -safe_implementation No
 -fsm_style LUT
@@ -35,17 +37,19 @@ run
 -auto_bram_packing NO
 -resource_sharing YES
 -async_to_sync NO
--use_dsp48 auto
+-shreg_min_size 2
+-use_dsp48 Auto
 -iobuf YES
 -max_fanout 100000
 -bufg 16
 -register_duplication YES
 -register_balancing Yes
+-move_first_stage YES
+-move_last_stage YES
 -optimize_primitives NO
 -use_clock_enable Auto
 -use_sync_set Auto
 -use_sync_reset Auto
--iob auto
+-iob Auto
 -equivalent_register_removal YES
 -slice_utilization_ratio_maxmargin 5
--define {SYNTHESIS=1}

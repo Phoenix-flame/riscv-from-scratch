@@ -1,0 +1,967 @@
+//! **************************************************************************
+// Written by: Map P.20131013 on Fri Aug 21 14:09:03 2026
+//! **************************************************************************
+
+SCHEMATIC START;
+CONFIG VCCAUX = "3.3";
+COMP "rst_n" LOCATE = SITE "P133" LEVEL 1;
+COMP "gpio_i<0>" LOCATE = SITE "P87" LEVEL 1;
+COMP "gpio_i<1>" LOCATE = SITE "P84" LEVEL 1;
+COMP "gpio_i<2>" LOCATE = SITE "P82" LEVEL 1;
+COMP "gpio_i<3>" LOCATE = SITE "P80" LEVEL 1;
+COMP "gpio_i<4>" LOCATE = SITE "P78" LEVEL 1;
+COMP "gpio_i<5>" LOCATE = SITE "P74" LEVEL 1;
+COMP "gpio_i<6>" LOCATE = SITE "P66" LEVEL 1;
+COMP "gpio_i<7>" LOCATE = SITE "P58" LEVEL 1;
+COMP "gpio_o<0>" LOCATE = SITE "P85" LEVEL 1;
+COMP "gpio_o<1>" LOCATE = SITE "P83" LEVEL 1;
+COMP "gpio_o<2>" LOCATE = SITE "P81" LEVEL 1;
+COMP "gpio_o<3>" LOCATE = SITE "P79" LEVEL 1;
+COMP "gpio_o<4>" LOCATE = SITE "P75" LEVEL 1;
+COMP "gpio_o<5>" LOCATE = SITE "P67" LEVEL 1;
+COMP "gpio_o<6>" LOCATE = SITE "P59" LEVEL 1;
+COMP "gpio_o<7>" LOCATE = SITE "P57" LEVEL 1;
+COMP "sram_addr<0>" LOCATE = SITE "P8" LEVEL 1;
+COMP "sram_addr<1>" LOCATE = SITE "P9" LEVEL 1;
+COMP "sram_addr<2>" LOCATE = SITE "P10" LEVEL 1;
+COMP "sram_addr<3>" LOCATE = SITE "P11" LEVEL 1;
+COMP "sram_addr<4>" LOCATE = SITE "P12" LEVEL 1;
+COMP "sram_addr<5>" LOCATE = SITE "P23" LEVEL 1;
+COMP "sram_addr<6>" LOCATE = SITE "P24" LEVEL 1;
+COMP "sram_addr<7>" LOCATE = SITE "P26" LEVEL 1;
+COMP "sram_addr<8>" LOCATE = SITE "P27" LEVEL 1;
+COMP "sram_addr<9>" LOCATE = SITE "P29" LEVEL 1;
+COMP "uart_rx" LOCATE = SITE "P105" LEVEL 1;
+COMP "uart_tx" LOCATE = SITE "P104" LEVEL 1;
+COMP "sram_data<0>" LOCATE = SITE "P15" LEVEL 1;
+COMP "sram_data<1>" LOCATE = SITE "P16" LEVEL 1;
+COMP "sram_data<2>" LOCATE = SITE "P17" LEVEL 1;
+COMP "sram_data<3>" LOCATE = SITE "P21" LEVEL 1;
+COMP "sram_data<4>" LOCATE = SITE "P144" LEVEL 1;
+COMP "sram_data<5>" LOCATE = SITE "P143" LEVEL 1;
+COMP "sram_data<6>" LOCATE = SITE "P142" LEVEL 1;
+COMP "sram_data<7>" LOCATE = SITE "P141" LEVEL 1;
+COMP "clk_24" LOCATE = SITE "P50" LEVEL 1;
+COMP "sram_ce_n" LOCATE = SITE "P14" LEVEL 1;
+COMP "sram_oe_n" LOCATE = SITE "P140" LEVEL 1;
+COMP "sram_we_n" LOCATE = SITE "P22" LEVEL 1;
+COMP "sram_addr<10>" LOCATE = SITE "P7" LEVEL 1;
+COMP "sram_addr<11>" LOCATE = SITE "P6" LEVEL 1;
+COMP "sram_addr<12>" LOCATE = SITE "P5" LEVEL 1;
+COMP "sram_addr<13>" LOCATE = SITE "P2" LEVEL 1;
+COMP "sram_addr<14>" LOCATE = SITE "P1" LEVEL 1;
+COMP "sram_addr<15>" LOCATE = SITE "P139" LEVEL 1;
+COMP "sram_addr<16>" LOCATE = SITE "P138" LEVEL 1;
+COMP "sram_addr<17>" LOCATE = SITE "P137" LEVEL 1;
+COMP "sram_addr<18>" LOCATE = SITE "P134" LEVEL 1;
+COMP "user_led" LOCATE = SITE "P88" LEVEL 1;
+PIN u_soc/u_ram/Mram_mem7_pins<18> = BEL "u_soc/u_ram/Mram_mem7" PINNAME CLKA;
+PIN u_soc/u_ram/Mram_mem7_pins<19> = BEL "u_soc/u_ram/Mram_mem7" PINNAME CLKB;
+PIN u_soc/u_ram/Mram_mem6_pins<18> = BEL "u_soc/u_ram/Mram_mem6" PINNAME CLKA;
+PIN u_soc/u_ram/Mram_mem6_pins<19> = BEL "u_soc/u_ram/Mram_mem6" PINNAME CLKB;
+PIN u_soc/u_ram/Mram_mem8_pins<18> = BEL "u_soc/u_ram/Mram_mem8" PINNAME CLKA;
+PIN u_soc/u_ram/Mram_mem8_pins<19> = BEL "u_soc/u_ram/Mram_mem8" PINNAME CLKB;
+PIN u_soc/u_ram/Mram_mem4_pins<18> = BEL "u_soc/u_ram/Mram_mem4" PINNAME CLKA;
+PIN u_soc/u_ram/Mram_mem4_pins<19> = BEL "u_soc/u_ram/Mram_mem4" PINNAME CLKB;
+PIN u_soc/u_ram/Mram_mem3_pins<18> = BEL "u_soc/u_ram/Mram_mem3" PINNAME CLKA;
+PIN u_soc/u_ram/Mram_mem3_pins<19> = BEL "u_soc/u_ram/Mram_mem3" PINNAME CLKB;
+PIN u_soc/u_ram/Mram_mem5_pins<18> = BEL "u_soc/u_ram/Mram_mem5" PINNAME CLKA;
+PIN u_soc/u_ram/Mram_mem5_pins<19> = BEL "u_soc/u_ram/Mram_mem5" PINNAME CLKB;
+PIN u_soc/u_ram/Mram_mem1_pins<18> = BEL "u_soc/u_ram/Mram_mem1" PINNAME CLKA;
+PIN u_soc/u_ram/Mram_mem1_pins<19> = BEL "u_soc/u_ram/Mram_mem1" PINNAME CLKB;
+PIN u_soc/u_ram/Mram_mem2_pins<18> = BEL "u_soc/u_ram/Mram_mem2" PINNAME CLKA;
+PIN u_soc/u_ram/Mram_mem2_pins<19> = BEL "u_soc/u_ram/Mram_mem2" PINNAME CLKB;
+TIMEGRP u_clk_clk_out_raw = BEL "rst_sync_0" BEL "rst_sync_1" BEL "rst" BEL
+        "rst_cnt_0" BEL "rst_cnt_1" BEL "rst_cnt_2" BEL "rst_cnt_3" BEL
+        "rst_cnt_4" BEL "rst_cnt_5" BEL "rst_cnt_6" BEL "rst_cnt_7" BEL
+        "rst_cnt_8" BEL "rst_cnt_9" BEL "rst_cnt_10" BEL "rst_cnt_11" BEL
+        "rst_cnt_12" BEL "rst_cnt_13" BEL "rst_cnt_14" BEL "rst_cnt_15" BEL
+        "u_clk/u_bufg" BEL "u_soc/inst_LPM_FF1_0" BEL "u_soc/inst_LPM_FF1_1"
+        BEL "u_soc/inst_LPM_FF1_2" BEL "u_soc/inst_LPM_FF_0" BEL
+        "u_soc/inst_LPM_FF_1" BEL "u_soc/inst_LPM_FF_2" BEL
+        "u_soc/tohost_r_31" BEL "u_soc/tohost_r_30" BEL "u_soc/tohost_r_29"
+        BEL "u_soc/tohost_r_28" BEL "u_soc/tohost_r_27" BEL
+        "u_soc/tohost_r_26" BEL "u_soc/tohost_r_25" BEL "u_soc/tohost_r_24"
+        BEL "u_soc/tohost_r_23" BEL "u_soc/tohost_r_22" BEL
+        "u_soc/tohost_r_21" BEL "u_soc/tohost_r_20" BEL "u_soc/tohost_r_19"
+        BEL "u_soc/tohost_r_18" BEL "u_soc/tohost_r_17" BEL
+        "u_soc/tohost_r_16" BEL "u_soc/tohost_r_15" BEL "u_soc/tohost_r_14"
+        BEL "u_soc/tohost_r_13" BEL "u_soc/tohost_r_12" BEL
+        "u_soc/tohost_r_11" BEL "u_soc/tohost_r_10" BEL "u_soc/tohost_r_9" BEL
+        "u_soc/tohost_r_8" BEL "u_soc/tohost_r_7" BEL "u_soc/tohost_r_6" BEL
+        "u_soc/tohost_r_5" BEL "u_soc/tohost_r_4" BEL "u_soc/tohost_r_3" BEL
+        "u_soc/tohost_r_2" BEL "u_soc/tohost_r_1" BEL "u_soc/tohost_r_0" BEL
+        "u_soc/sys_rdata_31" BEL "u_soc/sys_rdata_30" BEL "u_soc/sys_rdata_29"
+        BEL "u_soc/sys_rdata_28" BEL "u_soc/sys_rdata_27" BEL
+        "u_soc/sys_rdata_26" BEL "u_soc/sys_rdata_25" BEL "u_soc/sys_rdata_24"
+        BEL "u_soc/sys_rdata_23" BEL "u_soc/sys_rdata_22" BEL
+        "u_soc/sys_rdata_21" BEL "u_soc/sys_rdata_20" BEL "u_soc/sys_rdata_19"
+        BEL "u_soc/sys_rdata_18" BEL "u_soc/sys_rdata_17" BEL
+        "u_soc/sys_rdata_16" BEL "u_soc/sys_rdata_15" BEL "u_soc/sys_rdata_14"
+        BEL "u_soc/sys_rdata_13" BEL "u_soc/sys_rdata_12" BEL
+        "u_soc/sys_rdata_11" BEL "u_soc/sys_rdata_10" BEL "u_soc/sys_rdata_9"
+        BEL "u_soc/sys_rdata_8" BEL "u_soc/sys_rdata_7" BEL
+        "u_soc/sys_rdata_6" BEL "u_soc/sys_rdata_5" BEL "u_soc/sys_rdata_4"
+        BEL "u_soc/sys_rdata_3" BEL "u_soc/sys_rdata_2" BEL
+        "u_soc/sys_rdata_1" BEL "u_soc/sys_rdata_0" BEL "u_soc/ram_rack" BEL
+        "u_soc/sys_rack" BEL "u_soc/u_gpio/rdata_7" BEL "u_soc/u_gpio/rdata_6"
+        BEL "u_soc/u_gpio/rdata_5" BEL "u_soc/u_gpio/rdata_4" BEL
+        "u_soc/u_gpio/rdata_3" BEL "u_soc/u_gpio/rdata_2" BEL
+        "u_soc/u_gpio/rdata_1" BEL "u_soc/u_gpio/rdata_0" BEL
+        "u_soc/u_gpio/out_r_7" BEL "u_soc/u_gpio/out_r_6" BEL
+        "u_soc/u_gpio/out_r_5" BEL "u_soc/u_gpio/out_r_4" BEL
+        "u_soc/u_gpio/out_r_3" BEL "u_soc/u_gpio/out_r_2" BEL
+        "u_soc/u_gpio/out_r_1" BEL "u_soc/u_gpio/out_r_0" BEL
+        "u_soc/u_gpio/sync1_7" BEL "u_soc/u_gpio/sync1_6" BEL
+        "u_soc/u_gpio/sync1_5" BEL "u_soc/u_gpio/sync1_4" BEL
+        "u_soc/u_gpio/sync1_3" BEL "u_soc/u_gpio/sync1_2" BEL
+        "u_soc/u_gpio/sync1_1" BEL "u_soc/u_gpio/sync1_0" BEL
+        "u_soc/u_gpio/prev_7" BEL "u_soc/u_gpio/prev_6" BEL
+        "u_soc/u_gpio/prev_5" BEL "u_soc/u_gpio/prev_4" BEL
+        "u_soc/u_gpio/prev_3" BEL "u_soc/u_gpio/prev_2" BEL
+        "u_soc/u_gpio/prev_1" BEL "u_soc/u_gpio/prev_0" BEL
+        "u_soc/u_gpio/ip_r_7" BEL "u_soc/u_gpio/ip_r_6" BEL
+        "u_soc/u_gpio/ip_r_5" BEL "u_soc/u_gpio/ip_r_4" BEL
+        "u_soc/u_gpio/ip_r_3" BEL "u_soc/u_gpio/ip_r_2" BEL
+        "u_soc/u_gpio/ip_r_1" BEL "u_soc/u_gpio/ip_r_0" BEL
+        "u_soc/u_gpio/ie_r_7" BEL "u_soc/u_gpio/ie_r_6" BEL
+        "u_soc/u_gpio/ie_r_5" BEL "u_soc/u_gpio/ie_r_4" BEL
+        "u_soc/u_gpio/ie_r_3" BEL "u_soc/u_gpio/ie_r_2" BEL
+        "u_soc/u_gpio/ie_r_1" BEL "u_soc/u_gpio/ie_r_0" BEL
+        "u_soc/u_gpio/rd_ack" BEL "u_soc/u_gpio/sync0_7" BEL
+        "u_soc/u_gpio/sync0_6" BEL "u_soc/u_gpio/sync0_5" BEL
+        "u_soc/u_gpio/sync0_4" BEL "u_soc/u_gpio/sync0_3" BEL
+        "u_soc/u_gpio/sync0_2" BEL "u_soc/u_gpio/sync0_1" BEL
+        "u_soc/u_gpio/sync0_0" BEL "u_soc/g_sram.u_sram/st_FSM_FFd3" BEL
+        "u_soc/g_sram.u_sram/st_FSM_FFd1" BEL "u_soc/g_sram.u_sram/rdata_31"
+        BEL "u_soc/g_sram.u_sram/rdata_30" BEL "u_soc/g_sram.u_sram/rdata_29"
+        BEL "u_soc/g_sram.u_sram/rdata_28" BEL "u_soc/g_sram.u_sram/rdata_27"
+        BEL "u_soc/g_sram.u_sram/rdata_26" BEL "u_soc/g_sram.u_sram/rdata_25"
+        BEL "u_soc/g_sram.u_sram/rdata_24" BEL "u_soc/g_sram.u_sram/rdata_23"
+        BEL "u_soc/g_sram.u_sram/rdata_22" BEL "u_soc/g_sram.u_sram/rdata_21"
+        BEL "u_soc/g_sram.u_sram/rdata_20" BEL "u_soc/g_sram.u_sram/rdata_19"
+        BEL "u_soc/g_sram.u_sram/rdata_18" BEL "u_soc/g_sram.u_sram/rdata_17"
+        BEL "u_soc/g_sram.u_sram/rdata_16" BEL "u_soc/g_sram.u_sram/rdata_15"
+        BEL "u_soc/g_sram.u_sram/rdata_14" BEL "u_soc/g_sram.u_sram/rdata_13"
+        BEL "u_soc/g_sram.u_sram/rdata_12" BEL "u_soc/g_sram.u_sram/rdata_11"
+        BEL "u_soc/g_sram.u_sram/rdata_10" BEL "u_soc/g_sram.u_sram/rdata_9"
+        BEL "u_soc/g_sram.u_sram/rdata_8" BEL "u_soc/g_sram.u_sram/rdata_7"
+        BEL "u_soc/g_sram.u_sram/rdata_6" BEL "u_soc/g_sram.u_sram/rdata_5"
+        BEL "u_soc/g_sram.u_sram/rdata_4" BEL "u_soc/g_sram.u_sram/rdata_3"
+        BEL "u_soc/g_sram.u_sram/rdata_2" BEL "u_soc/g_sram.u_sram/rdata_1"
+        BEL "u_soc/g_sram.u_sram/rdata_0" BEL "u_soc/g_sram.u_sram/word_a_16"
+        BEL "u_soc/g_sram.u_sram/word_a_15" BEL
+        "u_soc/g_sram.u_sram/word_a_14" BEL "u_soc/g_sram.u_sram/word_a_13"
+        BEL "u_soc/g_sram.u_sram/word_a_12" BEL
+        "u_soc/g_sram.u_sram/word_a_11" BEL "u_soc/g_sram.u_sram/word_a_10"
+        BEL "u_soc/g_sram.u_sram/word_a_9" BEL "u_soc/g_sram.u_sram/word_a_8"
+        BEL "u_soc/g_sram.u_sram/word_a_7" BEL "u_soc/g_sram.u_sram/word_a_6"
+        BEL "u_soc/g_sram.u_sram/word_a_5" BEL "u_soc/g_sram.u_sram/word_a_4"
+        BEL "u_soc/g_sram.u_sram/word_a_3" BEL "u_soc/g_sram.u_sram/word_a_2"
+        BEL "u_soc/g_sram.u_sram/word_a_1" BEL "u_soc/g_sram.u_sram/word_a_0"
+        BEL "u_soc/g_sram.u_sram/wbuf_31" BEL "u_soc/g_sram.u_sram/wbuf_30"
+        BEL "u_soc/g_sram.u_sram/wbuf_29" BEL "u_soc/g_sram.u_sram/wbuf_28"
+        BEL "u_soc/g_sram.u_sram/wbuf_27" BEL "u_soc/g_sram.u_sram/wbuf_26"
+        BEL "u_soc/g_sram.u_sram/wbuf_25" BEL "u_soc/g_sram.u_sram/wbuf_24"
+        BEL "u_soc/g_sram.u_sram/wbuf_23" BEL "u_soc/g_sram.u_sram/wbuf_22"
+        BEL "u_soc/g_sram.u_sram/wbuf_21" BEL "u_soc/g_sram.u_sram/wbuf_20"
+        BEL "u_soc/g_sram.u_sram/wbuf_19" BEL "u_soc/g_sram.u_sram/wbuf_18"
+        BEL "u_soc/g_sram.u_sram/wbuf_17" BEL "u_soc/g_sram.u_sram/wbuf_16"
+        BEL "u_soc/g_sram.u_sram/wbuf_15" BEL "u_soc/g_sram.u_sram/wbuf_14"
+        BEL "u_soc/g_sram.u_sram/wbuf_13" BEL "u_soc/g_sram.u_sram/wbuf_12"
+        BEL "u_soc/g_sram.u_sram/wbuf_11" BEL "u_soc/g_sram.u_sram/wbuf_10"
+        BEL "u_soc/g_sram.u_sram/wbuf_9" BEL "u_soc/g_sram.u_sram/wbuf_8" BEL
+        "u_soc/g_sram.u_sram/wbuf_7" BEL "u_soc/g_sram.u_sram/wbuf_6" BEL
+        "u_soc/g_sram.u_sram/wbuf_5" BEL "u_soc/g_sram.u_sram/wbuf_4" BEL
+        "u_soc/g_sram.u_sram/wbuf_3" BEL "u_soc/g_sram.u_sram/wbuf_2" BEL
+        "u_soc/g_sram.u_sram/wbuf_1" BEL "u_soc/g_sram.u_sram/wbuf_0" BEL
+        "u_soc/u_core/state_FSM_FFd1" BEL "u_soc/u_core/state_FSM_FFd2" BEL
+        "u_soc/u_core/state_FSM_FFd4" BEL "u_soc/u_core/state_FSM_FFd3" BEL
+        "u_soc/u_core/pc_31" BEL "u_soc/u_core/pc_30" BEL "u_soc/u_core/pc_29"
+        BEL "u_soc/u_core/pc_28" BEL "u_soc/u_core/pc_27" BEL
+        "u_soc/u_core/pc_26" BEL "u_soc/u_core/pc_25" BEL "u_soc/u_core/pc_24"
+        BEL "u_soc/u_core/pc_23" BEL "u_soc/u_core/pc_22" BEL
+        "u_soc/u_core/pc_21" BEL "u_soc/u_core/pc_20" BEL "u_soc/u_core/pc_19"
+        BEL "u_soc/u_core/pc_18" BEL "u_soc/u_core/pc_17" BEL
+        "u_soc/u_core/pc_16" BEL "u_soc/u_core/pc_15" BEL "u_soc/u_core/pc_14"
+        BEL "u_soc/u_core/pc_13" BEL "u_soc/u_core/pc_12" BEL
+        "u_soc/u_core/pc_11" BEL "u_soc/u_core/pc_10" BEL "u_soc/u_core/pc_9"
+        BEL "u_soc/u_core/pc_8" BEL "u_soc/u_core/pc_7" BEL
+        "u_soc/u_core/pc_6" BEL "u_soc/u_core/pc_5" BEL "u_soc/u_core/pc_4"
+        BEL "u_soc/u_core/pc_3" BEL "u_soc/u_core/pc_2" BEL
+        "u_soc/u_core/pc_1" BEL "u_soc/u_core/pc_0" BEL
+        "u_soc/u_core/res_addr_31" BEL "u_soc/u_core/res_addr_30" BEL
+        "u_soc/u_core/res_addr_29" BEL "u_soc/u_core/res_addr_28" BEL
+        "u_soc/u_core/res_addr_27" BEL "u_soc/u_core/res_addr_26" BEL
+        "u_soc/u_core/res_addr_25" BEL "u_soc/u_core/res_addr_24" BEL
+        "u_soc/u_core/res_addr_23" BEL "u_soc/u_core/res_addr_22" BEL
+        "u_soc/u_core/res_addr_21" BEL "u_soc/u_core/res_addr_20" BEL
+        "u_soc/u_core/res_addr_19" BEL "u_soc/u_core/res_addr_18" BEL
+        "u_soc/u_core/res_addr_17" BEL "u_soc/u_core/res_addr_16" BEL
+        "u_soc/u_core/res_addr_15" BEL "u_soc/u_core/res_addr_14" BEL
+        "u_soc/u_core/res_addr_13" BEL "u_soc/u_core/res_addr_12" BEL
+        "u_soc/u_core/res_addr_11" BEL "u_soc/u_core/res_addr_10" BEL
+        "u_soc/u_core/res_addr_9" BEL "u_soc/u_core/res_addr_8" BEL
+        "u_soc/u_core/res_addr_7" BEL "u_soc/u_core/res_addr_6" BEL
+        "u_soc/u_core/res_addr_5" BEL "u_soc/u_core/res_addr_4" BEL
+        "u_soc/u_core/res_addr_3" BEL "u_soc/u_core/res_addr_2" BEL
+        "u_soc/u_core/lo_half_15" BEL "u_soc/u_core/lo_half_14" BEL
+        "u_soc/u_core/lo_half_13" BEL "u_soc/u_core/lo_half_12" BEL
+        "u_soc/u_core/lo_half_11" BEL "u_soc/u_core/lo_half_10" BEL
+        "u_soc/u_core/lo_half_9" BEL "u_soc/u_core/lo_half_8" BEL
+        "u_soc/u_core/lo_half_7" BEL "u_soc/u_core/lo_half_6" BEL
+        "u_soc/u_core/lo_half_5" BEL "u_soc/u_core/lo_half_4" BEL
+        "u_soc/u_core/lo_half_3" BEL "u_soc/u_core/lo_half_2" BEL
+        "u_soc/u_core/lo_half_1" BEL "u_soc/u_core/straddle_q" BEL
+        "u_soc/u_core/amo_val_31" BEL "u_soc/u_core/amo_val_30" BEL
+        "u_soc/u_core/amo_val_29" BEL "u_soc/u_core/amo_val_28" BEL
+        "u_soc/u_core/amo_val_27" BEL "u_soc/u_core/amo_val_26" BEL
+        "u_soc/u_core/amo_val_25" BEL "u_soc/u_core/amo_val_24" BEL
+        "u_soc/u_core/amo_val_23" BEL "u_soc/u_core/amo_val_22" BEL
+        "u_soc/u_core/amo_val_21" BEL "u_soc/u_core/amo_val_20" BEL
+        "u_soc/u_core/amo_val_19" BEL "u_soc/u_core/amo_val_18" BEL
+        "u_soc/u_core/amo_val_17" BEL "u_soc/u_core/amo_val_16" BEL
+        "u_soc/u_core/amo_val_15" BEL "u_soc/u_core/amo_val_14" BEL
+        "u_soc/u_core/amo_val_13" BEL "u_soc/u_core/amo_val_12" BEL
+        "u_soc/u_core/amo_val_11" BEL "u_soc/u_core/amo_val_10" BEL
+        "u_soc/u_core/amo_val_9" BEL "u_soc/u_core/amo_val_8" BEL
+        "u_soc/u_core/amo_val_7" BEL "u_soc/u_core/amo_val_6" BEL
+        "u_soc/u_core/amo_val_5" BEL "u_soc/u_core/amo_val_4" BEL
+        "u_soc/u_core/amo_val_3" BEL "u_soc/u_core/amo_val_2" BEL
+        "u_soc/u_core/amo_val_1" BEL "u_soc/u_core/amo_val_0" BEL
+        "u_soc/u_core/u_csr/st_mie" BEL "u_soc/u_core/u_csr/priv_r_1" BEL
+        "u_soc/u_core/u_csr/priv_r_0" BEL "u_soc/u_core/u_csr/minstret_r_63"
+        BEL "u_soc/u_core/u_csr/minstret_r_62" BEL
+        "u_soc/u_core/u_csr/minstret_r_61" BEL
+        "u_soc/u_core/u_csr/minstret_r_60" BEL
+        "u_soc/u_core/u_csr/minstret_r_59" BEL
+        "u_soc/u_core/u_csr/minstret_r_58" BEL
+        "u_soc/u_core/u_csr/minstret_r_57" BEL
+        "u_soc/u_core/u_csr/minstret_r_56" BEL
+        "u_soc/u_core/u_csr/minstret_r_55" BEL
+        "u_soc/u_core/u_csr/minstret_r_54" BEL
+        "u_soc/u_core/u_csr/minstret_r_53" BEL
+        "u_soc/u_core/u_csr/minstret_r_52" BEL
+        "u_soc/u_core/u_csr/minstret_r_51" BEL
+        "u_soc/u_core/u_csr/minstret_r_50" BEL
+        "u_soc/u_core/u_csr/minstret_r_49" BEL
+        "u_soc/u_core/u_csr/minstret_r_48" BEL
+        "u_soc/u_core/u_csr/minstret_r_47" BEL
+        "u_soc/u_core/u_csr/minstret_r_46" BEL
+        "u_soc/u_core/u_csr/minstret_r_45" BEL
+        "u_soc/u_core/u_csr/minstret_r_44" BEL
+        "u_soc/u_core/u_csr/minstret_r_43" BEL
+        "u_soc/u_core/u_csr/minstret_r_42" BEL
+        "u_soc/u_core/u_csr/minstret_r_41" BEL
+        "u_soc/u_core/u_csr/minstret_r_40" BEL
+        "u_soc/u_core/u_csr/minstret_r_39" BEL
+        "u_soc/u_core/u_csr/minstret_r_38" BEL
+        "u_soc/u_core/u_csr/minstret_r_37" BEL
+        "u_soc/u_core/u_csr/minstret_r_36" BEL
+        "u_soc/u_core/u_csr/minstret_r_35" BEL
+        "u_soc/u_core/u_csr/minstret_r_34" BEL
+        "u_soc/u_core/u_csr/minstret_r_33" BEL
+        "u_soc/u_core/u_csr/minstret_r_32" BEL
+        "u_soc/u_core/u_csr/minstret_r_31" BEL
+        "u_soc/u_core/u_csr/minstret_r_30" BEL
+        "u_soc/u_core/u_csr/minstret_r_29" BEL
+        "u_soc/u_core/u_csr/minstret_r_28" BEL
+        "u_soc/u_core/u_csr/minstret_r_27" BEL
+        "u_soc/u_core/u_csr/minstret_r_26" BEL
+        "u_soc/u_core/u_csr/minstret_r_25" BEL
+        "u_soc/u_core/u_csr/minstret_r_24" BEL
+        "u_soc/u_core/u_csr/minstret_r_23" BEL
+        "u_soc/u_core/u_csr/minstret_r_22" BEL
+        "u_soc/u_core/u_csr/minstret_r_21" BEL
+        "u_soc/u_core/u_csr/minstret_r_20" BEL
+        "u_soc/u_core/u_csr/minstret_r_19" BEL
+        "u_soc/u_core/u_csr/minstret_r_18" BEL
+        "u_soc/u_core/u_csr/minstret_r_17" BEL
+        "u_soc/u_core/u_csr/minstret_r_16" BEL
+        "u_soc/u_core/u_csr/minstret_r_15" BEL
+        "u_soc/u_core/u_csr/minstret_r_14" BEL
+        "u_soc/u_core/u_csr/minstret_r_13" BEL
+        "u_soc/u_core/u_csr/minstret_r_12" BEL
+        "u_soc/u_core/u_csr/minstret_r_11" BEL
+        "u_soc/u_core/u_csr/minstret_r_10" BEL
+        "u_soc/u_core/u_csr/minstret_r_9" BEL
+        "u_soc/u_core/u_csr/minstret_r_8" BEL
+        "u_soc/u_core/u_csr/minstret_r_7" BEL
+        "u_soc/u_core/u_csr/minstret_r_6" BEL
+        "u_soc/u_core/u_csr/minstret_r_5" BEL
+        "u_soc/u_core/u_csr/minstret_r_4" BEL
+        "u_soc/u_core/u_csr/minstret_r_3" BEL
+        "u_soc/u_core/u_csr/minstret_r_2" BEL
+        "u_soc/u_core/u_csr/minstret_r_1" BEL
+        "u_soc/u_core/u_csr/minstret_r_0" BEL "u_soc/u_core/u_csr/mcycle_r_63"
+        BEL "u_soc/u_core/u_csr/mcycle_r_62" BEL
+        "u_soc/u_core/u_csr/mcycle_r_61" BEL "u_soc/u_core/u_csr/mcycle_r_60"
+        BEL "u_soc/u_core/u_csr/mcycle_r_59" BEL
+        "u_soc/u_core/u_csr/mcycle_r_58" BEL "u_soc/u_core/u_csr/mcycle_r_57"
+        BEL "u_soc/u_core/u_csr/mcycle_r_56" BEL
+        "u_soc/u_core/u_csr/mcycle_r_55" BEL "u_soc/u_core/u_csr/mcycle_r_54"
+        BEL "u_soc/u_core/u_csr/mcycle_r_53" BEL
+        "u_soc/u_core/u_csr/mcycle_r_52" BEL "u_soc/u_core/u_csr/mcycle_r_51"
+        BEL "u_soc/u_core/u_csr/mcycle_r_50" BEL
+        "u_soc/u_core/u_csr/mcycle_r_49" BEL "u_soc/u_core/u_csr/mcycle_r_48"
+        BEL "u_soc/u_core/u_csr/mcycle_r_47" BEL
+        "u_soc/u_core/u_csr/mcycle_r_46" BEL "u_soc/u_core/u_csr/mcycle_r_45"
+        BEL "u_soc/u_core/u_csr/mcycle_r_44" BEL
+        "u_soc/u_core/u_csr/mcycle_r_43" BEL "u_soc/u_core/u_csr/mcycle_r_42"
+        BEL "u_soc/u_core/u_csr/mcycle_r_41" BEL
+        "u_soc/u_core/u_csr/mcycle_r_40" BEL "u_soc/u_core/u_csr/mcycle_r_39"
+        BEL "u_soc/u_core/u_csr/mcycle_r_38" BEL
+        "u_soc/u_core/u_csr/mcycle_r_37" BEL "u_soc/u_core/u_csr/mcycle_r_36"
+        BEL "u_soc/u_core/u_csr/mcycle_r_35" BEL
+        "u_soc/u_core/u_csr/mcycle_r_34" BEL "u_soc/u_core/u_csr/mcycle_r_33"
+        BEL "u_soc/u_core/u_csr/mcycle_r_32" BEL
+        "u_soc/u_core/u_csr/mcycle_r_31" BEL "u_soc/u_core/u_csr/mcycle_r_30"
+        BEL "u_soc/u_core/u_csr/mcycle_r_29" BEL
+        "u_soc/u_core/u_csr/mcycle_r_28" BEL "u_soc/u_core/u_csr/mcycle_r_27"
+        BEL "u_soc/u_core/u_csr/mcycle_r_26" BEL
+        "u_soc/u_core/u_csr/mcycle_r_25" BEL "u_soc/u_core/u_csr/mcycle_r_24"
+        BEL "u_soc/u_core/u_csr/mcycle_r_23" BEL
+        "u_soc/u_core/u_csr/mcycle_r_22" BEL "u_soc/u_core/u_csr/mcycle_r_21"
+        BEL "u_soc/u_core/u_csr/mcycle_r_20" BEL
+        "u_soc/u_core/u_csr/mcycle_r_19" BEL "u_soc/u_core/u_csr/mcycle_r_18"
+        BEL "u_soc/u_core/u_csr/mcycle_r_17" BEL
+        "u_soc/u_core/u_csr/mcycle_r_16" BEL "u_soc/u_core/u_csr/mcycle_r_15"
+        BEL "u_soc/u_core/u_csr/mcycle_r_14" BEL
+        "u_soc/u_core/u_csr/mcycle_r_13" BEL "u_soc/u_core/u_csr/mcycle_r_12"
+        BEL "u_soc/u_core/u_csr/mcycle_r_11" BEL
+        "u_soc/u_core/u_csr/mcycle_r_10" BEL "u_soc/u_core/u_csr/mcycle_r_9"
+        BEL "u_soc/u_core/u_csr/mcycle_r_8" BEL
+        "u_soc/u_core/u_csr/mcycle_r_7" BEL "u_soc/u_core/u_csr/mcycle_r_6"
+        BEL "u_soc/u_core/u_csr/mcycle_r_5" BEL
+        "u_soc/u_core/u_csr/mcycle_r_4" BEL "u_soc/u_core/u_csr/mcycle_r_3"
+        BEL "u_soc/u_core/u_csr/mcycle_r_2" BEL
+        "u_soc/u_core/u_csr/mcycle_r_1" BEL "u_soc/u_core/u_csr/mcycle_r_0"
+        BEL "u_soc/u_core/u_csr/mtval_r_31" BEL
+        "u_soc/u_core/u_csr/mtval_r_30" BEL "u_soc/u_core/u_csr/mtval_r_29"
+        BEL "u_soc/u_core/u_csr/mtval_r_28" BEL
+        "u_soc/u_core/u_csr/mtval_r_27" BEL "u_soc/u_core/u_csr/mtval_r_26"
+        BEL "u_soc/u_core/u_csr/mtval_r_25" BEL
+        "u_soc/u_core/u_csr/mtval_r_24" BEL "u_soc/u_core/u_csr/mtval_r_23"
+        BEL "u_soc/u_core/u_csr/mtval_r_22" BEL
+        "u_soc/u_core/u_csr/mtval_r_21" BEL "u_soc/u_core/u_csr/mtval_r_20"
+        BEL "u_soc/u_core/u_csr/mtval_r_19" BEL
+        "u_soc/u_core/u_csr/mtval_r_18" BEL "u_soc/u_core/u_csr/mtval_r_17"
+        BEL "u_soc/u_core/u_csr/mtval_r_16" BEL
+        "u_soc/u_core/u_csr/mtval_r_15" BEL "u_soc/u_core/u_csr/mtval_r_14"
+        BEL "u_soc/u_core/u_csr/mtval_r_13" BEL
+        "u_soc/u_core/u_csr/mtval_r_12" BEL "u_soc/u_core/u_csr/mtval_r_11"
+        BEL "u_soc/u_core/u_csr/mtval_r_10" BEL "u_soc/u_core/u_csr/mtval_r_9"
+        BEL "u_soc/u_core/u_csr/mtval_r_8" BEL "u_soc/u_core/u_csr/mtval_r_7"
+        BEL "u_soc/u_core/u_csr/mtval_r_6" BEL "u_soc/u_core/u_csr/mtval_r_5"
+        BEL "u_soc/u_core/u_csr/mtval_r_4" BEL "u_soc/u_core/u_csr/mtval_r_3"
+        BEL "u_soc/u_core/u_csr/mtval_r_2" BEL "u_soc/u_core/u_csr/mtval_r_1"
+        BEL "u_soc/u_core/u_csr/mtval_r_0" BEL
+        "u_soc/u_core/u_csr/mcause_r_31" BEL "u_soc/u_core/u_csr/mcause_r_30"
+        BEL "u_soc/u_core/u_csr/mcause_r_29" BEL
+        "u_soc/u_core/u_csr/mcause_r_28" BEL "u_soc/u_core/u_csr/mcause_r_27"
+        BEL "u_soc/u_core/u_csr/mcause_r_26" BEL
+        "u_soc/u_core/u_csr/mcause_r_25" BEL "u_soc/u_core/u_csr/mcause_r_24"
+        BEL "u_soc/u_core/u_csr/mcause_r_23" BEL
+        "u_soc/u_core/u_csr/mcause_r_22" BEL "u_soc/u_core/u_csr/mcause_r_21"
+        BEL "u_soc/u_core/u_csr/mcause_r_20" BEL
+        "u_soc/u_core/u_csr/mcause_r_19" BEL "u_soc/u_core/u_csr/mcause_r_18"
+        BEL "u_soc/u_core/u_csr/mcause_r_17" BEL
+        "u_soc/u_core/u_csr/mcause_r_16" BEL "u_soc/u_core/u_csr/mcause_r_15"
+        BEL "u_soc/u_core/u_csr/mcause_r_14" BEL
+        "u_soc/u_core/u_csr/mcause_r_13" BEL "u_soc/u_core/u_csr/mcause_r_12"
+        BEL "u_soc/u_core/u_csr/mcause_r_11" BEL
+        "u_soc/u_core/u_csr/mcause_r_10" BEL "u_soc/u_core/u_csr/mcause_r_9"
+        BEL "u_soc/u_core/u_csr/mcause_r_8" BEL
+        "u_soc/u_core/u_csr/mcause_r_7" BEL "u_soc/u_core/u_csr/mcause_r_6"
+        BEL "u_soc/u_core/u_csr/mcause_r_5" BEL
+        "u_soc/u_core/u_csr/mcause_r_4" BEL "u_soc/u_core/u_csr/mcause_r_3"
+        BEL "u_soc/u_core/u_csr/mcause_r_2" BEL
+        "u_soc/u_core/u_csr/mcause_r_1" BEL "u_soc/u_core/u_csr/mcause_r_0"
+        BEL "u_soc/u_core/u_csr/mepc_r_31" BEL "u_soc/u_core/u_csr/mepc_r_30"
+        BEL "u_soc/u_core/u_csr/mepc_r_29" BEL "u_soc/u_core/u_csr/mepc_r_28"
+        BEL "u_soc/u_core/u_csr/mepc_r_27" BEL "u_soc/u_core/u_csr/mepc_r_26"
+        BEL "u_soc/u_core/u_csr/mepc_r_25" BEL "u_soc/u_core/u_csr/mepc_r_24"
+        BEL "u_soc/u_core/u_csr/mepc_r_23" BEL "u_soc/u_core/u_csr/mepc_r_22"
+        BEL "u_soc/u_core/u_csr/mepc_r_21" BEL "u_soc/u_core/u_csr/mepc_r_20"
+        BEL "u_soc/u_core/u_csr/mepc_r_19" BEL "u_soc/u_core/u_csr/mepc_r_18"
+        BEL "u_soc/u_core/u_csr/mepc_r_17" BEL "u_soc/u_core/u_csr/mepc_r_16"
+        BEL "u_soc/u_core/u_csr/mepc_r_15" BEL "u_soc/u_core/u_csr/mepc_r_14"
+        BEL "u_soc/u_core/u_csr/mepc_r_13" BEL "u_soc/u_core/u_csr/mepc_r_12"
+        BEL "u_soc/u_core/u_csr/mepc_r_11" BEL "u_soc/u_core/u_csr/mepc_r_10"
+        BEL "u_soc/u_core/u_csr/mepc_r_9" BEL "u_soc/u_core/u_csr/mepc_r_8"
+        BEL "u_soc/u_core/u_csr/mepc_r_7" BEL "u_soc/u_core/u_csr/mepc_r_6"
+        BEL "u_soc/u_core/u_csr/mepc_r_5" BEL "u_soc/u_core/u_csr/mepc_r_4"
+        BEL "u_soc/u_core/u_csr/mepc_r_3" BEL "u_soc/u_core/u_csr/mepc_r_2"
+        BEL "u_soc/u_core/u_csr/mepc_r_1" BEL "u_soc/u_core/u_csr/mepc_r_0"
+        BEL "u_soc/u_core/u_csr/mcountinhibit_r_2" BEL
+        "u_soc/u_core/u_csr/mcountinhibit_r_1" BEL
+        "u_soc/u_core/u_csr/mcountinhibit_r_0" BEL
+        "u_soc/u_core/u_csr/mcounteren_r_2" BEL
+        "u_soc/u_core/u_csr/mcounteren_r_1" BEL
+        "u_soc/u_core/u_csr/mcounteren_r_0" BEL
+        "u_soc/u_core/u_csr/mscratch_r_31" BEL
+        "u_soc/u_core/u_csr/mscratch_r_30" BEL
+        "u_soc/u_core/u_csr/mscratch_r_29" BEL
+        "u_soc/u_core/u_csr/mscratch_r_28" BEL
+        "u_soc/u_core/u_csr/mscratch_r_27" BEL
+        "u_soc/u_core/u_csr/mscratch_r_26" BEL
+        "u_soc/u_core/u_csr/mscratch_r_25" BEL
+        "u_soc/u_core/u_csr/mscratch_r_24" BEL
+        "u_soc/u_core/u_csr/mscratch_r_23" BEL
+        "u_soc/u_core/u_csr/mscratch_r_22" BEL
+        "u_soc/u_core/u_csr/mscratch_r_21" BEL
+        "u_soc/u_core/u_csr/mscratch_r_20" BEL
+        "u_soc/u_core/u_csr/mscratch_r_19" BEL
+        "u_soc/u_core/u_csr/mscratch_r_18" BEL
+        "u_soc/u_core/u_csr/mscratch_r_17" BEL
+        "u_soc/u_core/u_csr/mscratch_r_16" BEL
+        "u_soc/u_core/u_csr/mscratch_r_15" BEL
+        "u_soc/u_core/u_csr/mscratch_r_14" BEL
+        "u_soc/u_core/u_csr/mscratch_r_13" BEL
+        "u_soc/u_core/u_csr/mscratch_r_12" BEL
+        "u_soc/u_core/u_csr/mscratch_r_11" BEL
+        "u_soc/u_core/u_csr/mscratch_r_10" BEL
+        "u_soc/u_core/u_csr/mscratch_r_9" BEL
+        "u_soc/u_core/u_csr/mscratch_r_8" BEL
+        "u_soc/u_core/u_csr/mscratch_r_7" BEL
+        "u_soc/u_core/u_csr/mscratch_r_6" BEL
+        "u_soc/u_core/u_csr/mscratch_r_5" BEL
+        "u_soc/u_core/u_csr/mscratch_r_4" BEL
+        "u_soc/u_core/u_csr/mscratch_r_3" BEL
+        "u_soc/u_core/u_csr/mscratch_r_2" BEL
+        "u_soc/u_core/u_csr/mscratch_r_1" BEL
+        "u_soc/u_core/u_csr/mscratch_r_0" BEL "u_soc/u_core/u_csr/tvec_vec"
+        BEL "u_soc/u_core/u_csr/tvec_base_29" BEL
+        "u_soc/u_core/u_csr/tvec_base_28" BEL
+        "u_soc/u_core/u_csr/tvec_base_27" BEL
+        "u_soc/u_core/u_csr/tvec_base_26" BEL
+        "u_soc/u_core/u_csr/tvec_base_25" BEL
+        "u_soc/u_core/u_csr/tvec_base_24" BEL
+        "u_soc/u_core/u_csr/tvec_base_23" BEL
+        "u_soc/u_core/u_csr/tvec_base_22" BEL
+        "u_soc/u_core/u_csr/tvec_base_21" BEL
+        "u_soc/u_core/u_csr/tvec_base_20" BEL
+        "u_soc/u_core/u_csr/tvec_base_19" BEL
+        "u_soc/u_core/u_csr/tvec_base_18" BEL
+        "u_soc/u_core/u_csr/tvec_base_17" BEL
+        "u_soc/u_core/u_csr/tvec_base_16" BEL
+        "u_soc/u_core/u_csr/tvec_base_15" BEL
+        "u_soc/u_core/u_csr/tvec_base_14" BEL
+        "u_soc/u_core/u_csr/tvec_base_13" BEL
+        "u_soc/u_core/u_csr/tvec_base_12" BEL
+        "u_soc/u_core/u_csr/tvec_base_11" BEL
+        "u_soc/u_core/u_csr/tvec_base_10" BEL "u_soc/u_core/u_csr/tvec_base_9"
+        BEL "u_soc/u_core/u_csr/tvec_base_8" BEL
+        "u_soc/u_core/u_csr/tvec_base_7" BEL "u_soc/u_core/u_csr/tvec_base_6"
+        BEL "u_soc/u_core/u_csr/tvec_base_5" BEL
+        "u_soc/u_core/u_csr/tvec_base_4" BEL "u_soc/u_core/u_csr/tvec_base_3"
+        BEL "u_soc/u_core/u_csr/tvec_base_2" BEL
+        "u_soc/u_core/u_csr/tvec_base_1" BEL "u_soc/u_core/u_csr/tvec_base_0"
+        BEL "u_soc/u_core/u_csr/ie_meie" BEL "u_soc/u_core/u_csr/ie_msie" BEL
+        "u_soc/u_core/u_csr/ie_mtie" BEL
+        "u_soc/u_core/g_muldiv.u_md/state_FSM_FFd1" BEL
+        "u_soc/u_core/g_muldiv.u_md/count_5" BEL
+        "u_soc/u_core/g_muldiv.u_md/count_4" BEL
+        "u_soc/u_core/g_muldiv.u_md/count_3" BEL
+        "u_soc/u_core/g_muldiv.u_md/count_2" BEL
+        "u_soc/u_core/g_muldiv.u_md/count_1" BEL
+        "u_soc/u_core/g_muldiv.u_md/count_0" BEL
+        "u_soc/u_core/g_muldiv.u_md/acc_32" BEL
+        "u_soc/u_core/g_muldiv.u_md/acc_31" BEL
+        "u_soc/u_core/g_muldiv.u_md/acc_30" BEL
+        "u_soc/u_core/g_muldiv.u_md/acc_29" BEL
+        "u_soc/u_core/g_muldiv.u_md/acc_28" BEL
+        "u_soc/u_core/g_muldiv.u_md/acc_27" BEL
+        "u_soc/u_core/g_muldiv.u_md/acc_26" BEL
+        "u_soc/u_core/g_muldiv.u_md/acc_25" BEL
+        "u_soc/u_core/g_muldiv.u_md/acc_24" BEL
+        "u_soc/u_core/g_muldiv.u_md/acc_23" BEL
+        "u_soc/u_core/g_muldiv.u_md/acc_22" BEL
+        "u_soc/u_core/g_muldiv.u_md/acc_21" BEL
+        "u_soc/u_core/g_muldiv.u_md/acc_20" BEL
+        "u_soc/u_core/g_muldiv.u_md/acc_19" BEL
+        "u_soc/u_core/g_muldiv.u_md/acc_18" BEL
+        "u_soc/u_core/g_muldiv.u_md/acc_17" BEL
+        "u_soc/u_core/g_muldiv.u_md/acc_16" BEL
+        "u_soc/u_core/g_muldiv.u_md/acc_15" BEL
+        "u_soc/u_core/g_muldiv.u_md/acc_14" BEL
+        "u_soc/u_core/g_muldiv.u_md/acc_13" BEL
+        "u_soc/u_core/g_muldiv.u_md/acc_12" BEL
+        "u_soc/u_core/g_muldiv.u_md/acc_11" BEL
+        "u_soc/u_core/g_muldiv.u_md/acc_10" BEL
+        "u_soc/u_core/g_muldiv.u_md/acc_9" BEL
+        "u_soc/u_core/g_muldiv.u_md/acc_8" BEL
+        "u_soc/u_core/g_muldiv.u_md/acc_7" BEL
+        "u_soc/u_core/g_muldiv.u_md/acc_6" BEL
+        "u_soc/u_core/g_muldiv.u_md/acc_5" BEL
+        "u_soc/u_core/g_muldiv.u_md/acc_4" BEL
+        "u_soc/u_core/g_muldiv.u_md/acc_3" BEL
+        "u_soc/u_core/g_muldiv.u_md/acc_2" BEL
+        "u_soc/u_core/g_muldiv.u_md/acc_1" BEL
+        "u_soc/u_core/g_muldiv.u_md/acc_0" BEL
+        "u_soc/u_core/g_muldiv.u_md/q_31" BEL
+        "u_soc/u_core/g_muldiv.u_md/q_30" BEL
+        "u_soc/u_core/g_muldiv.u_md/q_29" BEL
+        "u_soc/u_core/g_muldiv.u_md/q_28" BEL
+        "u_soc/u_core/g_muldiv.u_md/q_27" BEL
+        "u_soc/u_core/g_muldiv.u_md/q_26" BEL
+        "u_soc/u_core/g_muldiv.u_md/q_25" BEL
+        "u_soc/u_core/g_muldiv.u_md/q_24" BEL
+        "u_soc/u_core/g_muldiv.u_md/q_23" BEL
+        "u_soc/u_core/g_muldiv.u_md/q_22" BEL
+        "u_soc/u_core/g_muldiv.u_md/q_21" BEL
+        "u_soc/u_core/g_muldiv.u_md/q_20" BEL
+        "u_soc/u_core/g_muldiv.u_md/q_19" BEL
+        "u_soc/u_core/g_muldiv.u_md/q_18" BEL
+        "u_soc/u_core/g_muldiv.u_md/q_17" BEL
+        "u_soc/u_core/g_muldiv.u_md/q_16" BEL
+        "u_soc/u_core/g_muldiv.u_md/q_15" BEL
+        "u_soc/u_core/g_muldiv.u_md/q_14" BEL
+        "u_soc/u_core/g_muldiv.u_md/q_13" BEL
+        "u_soc/u_core/g_muldiv.u_md/q_12" BEL
+        "u_soc/u_core/g_muldiv.u_md/q_11" BEL
+        "u_soc/u_core/g_muldiv.u_md/q_10" BEL "u_soc/u_core/g_muldiv.u_md/q_9"
+        BEL "u_soc/u_core/g_muldiv.u_md/q_8" BEL
+        "u_soc/u_core/g_muldiv.u_md/q_7" BEL "u_soc/u_core/g_muldiv.u_md/q_6"
+        BEL "u_soc/u_core/g_muldiv.u_md/q_5" BEL
+        "u_soc/u_core/g_muldiv.u_md/q_4" BEL "u_soc/u_core/g_muldiv.u_md/q_3"
+        BEL "u_soc/u_core/g_muldiv.u_md/q_2" BEL
+        "u_soc/u_core/g_muldiv.u_md/q_1" BEL "u_soc/u_core/g_muldiv.u_md/q_0"
+        BEL "u_soc/u_core/g_muldiv.u_md/m_32" BEL
+        "u_soc/u_core/g_muldiv.u_md/m_31" BEL
+        "u_soc/u_core/g_muldiv.u_md/m_30" BEL
+        "u_soc/u_core/g_muldiv.u_md/m_29" BEL
+        "u_soc/u_core/g_muldiv.u_md/m_28" BEL
+        "u_soc/u_core/g_muldiv.u_md/m_27" BEL
+        "u_soc/u_core/g_muldiv.u_md/m_26" BEL
+        "u_soc/u_core/g_muldiv.u_md/m_25" BEL
+        "u_soc/u_core/g_muldiv.u_md/m_24" BEL
+        "u_soc/u_core/g_muldiv.u_md/m_23" BEL
+        "u_soc/u_core/g_muldiv.u_md/m_22" BEL
+        "u_soc/u_core/g_muldiv.u_md/m_21" BEL
+        "u_soc/u_core/g_muldiv.u_md/m_20" BEL
+        "u_soc/u_core/g_muldiv.u_md/m_19" BEL
+        "u_soc/u_core/g_muldiv.u_md/m_18" BEL
+        "u_soc/u_core/g_muldiv.u_md/m_17" BEL
+        "u_soc/u_core/g_muldiv.u_md/m_16" BEL
+        "u_soc/u_core/g_muldiv.u_md/m_15" BEL
+        "u_soc/u_core/g_muldiv.u_md/m_14" BEL
+        "u_soc/u_core/g_muldiv.u_md/m_13" BEL
+        "u_soc/u_core/g_muldiv.u_md/m_12" BEL
+        "u_soc/u_core/g_muldiv.u_md/m_11" BEL
+        "u_soc/u_core/g_muldiv.u_md/m_10" BEL "u_soc/u_core/g_muldiv.u_md/m_9"
+        BEL "u_soc/u_core/g_muldiv.u_md/m_8" BEL
+        "u_soc/u_core/g_muldiv.u_md/m_7" BEL "u_soc/u_core/g_muldiv.u_md/m_6"
+        BEL "u_soc/u_core/g_muldiv.u_md/m_5" BEL
+        "u_soc/u_core/g_muldiv.u_md/m_4" BEL "u_soc/u_core/g_muldiv.u_md/m_3"
+        BEL "u_soc/u_core/g_muldiv.u_md/m_2" BEL
+        "u_soc/u_core/g_muldiv.u_md/m_1" BEL "u_soc/u_core/g_muldiv.u_md/m_0"
+        BEL "u_soc/u_core/g_muldiv.u_md/qneg_q" BEL
+        "u_soc/u_core/g_muldiv.u_md/shortcut" BEL
+        "u_soc/u_core/g_muldiv.u_md/rneg_q" BEL
+        "u_soc/u_core/g_muldiv.u_md/msign_q" BEL
+        "u_soc/u_core/g_muldiv.u_md/op_q_2" BEL
+        "u_soc/u_core/g_muldiv.u_md/op_q_1" BEL
+        "u_soc/u_core/g_muldiv.u_md/op_q_0" BEL "u_soc/u_uart/rdata_19" BEL
+        "u_soc/u_uart/rdata_18" BEL "u_soc/u_uart/rdata_17" BEL
+        "u_soc/u_uart/rdata_16" BEL "u_soc/u_uart/rdata_15" BEL
+        "u_soc/u_uart/rdata_14" BEL "u_soc/u_uart/rdata_13" BEL
+        "u_soc/u_uart/rdata_12" BEL "u_soc/u_uart/rdata_11" BEL
+        "u_soc/u_uart/rdata_10" BEL "u_soc/u_uart/rdata_9" BEL
+        "u_soc/u_uart/rdata_8" BEL "u_soc/u_uart/rdata_7" BEL
+        "u_soc/u_uart/rdata_6" BEL "u_soc/u_uart/rdata_5" BEL
+        "u_soc/u_uart/rdata_4" BEL "u_soc/u_uart/rdata_3" BEL
+        "u_soc/u_uart/rdata_2" BEL "u_soc/u_uart/rdata_1" BEL
+        "u_soc/u_uart/rdata_0" BEL "u_soc/u_uart/acc_19" BEL
+        "u_soc/u_uart/acc_18" BEL "u_soc/u_uart/acc_17" BEL
+        "u_soc/u_uart/acc_16" BEL "u_soc/u_uart/acc_15" BEL
+        "u_soc/u_uart/acc_14" BEL "u_soc/u_uart/acc_13" BEL
+        "u_soc/u_uart/acc_12" BEL "u_soc/u_uart/acc_11" BEL
+        "u_soc/u_uart/acc_10" BEL "u_soc/u_uart/acc_9" BEL
+        "u_soc/u_uart/acc_8" BEL "u_soc/u_uart/acc_7" BEL "u_soc/u_uart/acc_6"
+        BEL "u_soc/u_uart/acc_5" BEL "u_soc/u_uart/acc_4" BEL
+        "u_soc/u_uart/acc_3" BEL "u_soc/u_uart/acc_2" BEL "u_soc/u_uart/acc_1"
+        BEL "u_soc/u_uart/acc_0" BEL "u_soc/u_uart/c_dbits_3" BEL
+        "u_soc/u_uart/c_dbits_2" BEL "u_soc/u_uart/c_dbits_1" BEL
+        "u_soc/u_uart/c_dbits_0" BEL "u_soc/u_uart/idle_cfg_4" BEL
+        "u_soc/u_uart/idle_cfg_3" BEL "u_soc/u_uart/idle_cfg_2" BEL
+        "u_soc/u_uart/idle_cfg_1" BEL "u_soc/u_uart/idle_cfg_0" BEL
+        "u_soc/u_uart/wm_rx_3" BEL "u_soc/u_uart/wm_rx_2" BEL
+        "u_soc/u_uart/wm_rx_1" BEL "u_soc/u_uart/wm_rx_0" BEL
+        "u_soc/u_uart/bauddiv_19" BEL "u_soc/u_uart/bauddiv_18" BEL
+        "u_soc/u_uart/bauddiv_17" BEL "u_soc/u_uart/bauddiv_16" BEL
+        "u_soc/u_uart/bauddiv_15" BEL "u_soc/u_uart/bauddiv_14" BEL
+        "u_soc/u_uart/bauddiv_13" BEL "u_soc/u_uart/bauddiv_12" BEL
+        "u_soc/u_uart/bauddiv_11" BEL "u_soc/u_uart/bauddiv_10" BEL
+        "u_soc/u_uart/bauddiv_9" BEL "u_soc/u_uart/bauddiv_8" BEL
+        "u_soc/u_uart/bauddiv_7" BEL "u_soc/u_uart/bauddiv_6" BEL
+        "u_soc/u_uart/bauddiv_5" BEL "u_soc/u_uart/bauddiv_4" BEL
+        "u_soc/u_uart/bauddiv_3" BEL "u_soc/u_uart/bauddiv_2" BEL
+        "u_soc/u_uart/bauddiv_1" BEL "u_soc/u_uart/bauddiv_0" BEL
+        "u_soc/u_uart/c_rx_en" BEL "u_soc/u_uart/c_tx_en" BEL
+        "u_soc/u_uart/wm_tx_3" BEL "u_soc/u_uart/wm_tx_2" BEL
+        "u_soc/u_uart/wm_tx_1" BEL "u_soc/u_uart/wm_tx_0" BEL
+        "u_soc/u_uart/ien_5" BEL "u_soc/u_uart/ien_4" BEL "u_soc/u_uart/ien_3"
+        BEL "u_soc/u_uart/ien_2" BEL "u_soc/u_uart/ien_1" BEL
+        "u_soc/u_uart/ien_0" BEL "u_soc/u_uart/c_stop2" BEL
+        "u_soc/u_uart/c_cts_en" BEL "u_soc/u_uart/c_parity_1" BEL
+        "u_soc/u_uart/c_parity_0" BEL "u_soc/u_uart/c_loop" BEL
+        "u_soc/u_uart/c_rts_en" BEL "u_soc/u_uart/rd_ack" BEL
+        "u_soc/u_uart/tx_start_q" BEL "u_soc/u_uart/os_tick" BEL
+        "u_soc/u_uart/u_rxf/rptr_4" BEL "u_soc/u_uart/u_rxf/rptr_3" BEL
+        "u_soc/u_uart/u_rxf/rptr_2" BEL "u_soc/u_uart/u_rxf/rptr_1" BEL
+        "u_soc/u_uart/u_rxf/rptr_0" BEL "u_soc/u_uart/u_rxf/wptr_4" BEL
+        "u_soc/u_uart/u_rxf/wptr_3" BEL "u_soc/u_uart/u_rxf/wptr_2" BEL
+        "u_soc/u_uart/u_rxf/wptr_1" BEL "u_soc/u_uart/u_rxf/wptr_0" BEL
+        "u_soc/u_uart/u_txf/rptr_4" BEL "u_soc/u_uart/u_txf/rptr_3" BEL
+        "u_soc/u_uart/u_txf/rptr_2" BEL "u_soc/u_uart/u_txf/rptr_1" BEL
+        "u_soc/u_uart/u_txf/rptr_0" BEL "u_soc/u_uart/u_txf/wptr_4" BEL
+        "u_soc/u_uart/u_txf/wptr_3" BEL "u_soc/u_uart/u_txf/wptr_2" BEL
+        "u_soc/u_uart/u_txf/wptr_1" BEL "u_soc/u_uart/u_txf/wptr_0" BEL
+        "u_soc/u_uart/u_tx/st_FSM_FFd2" BEL "u_soc/u_uart/u_tx/st_FSM_FFd3"
+        BEL "u_soc/u_uart/u_tx/st_FSM_FFd1" BEL "u_soc/u_uart/u_tx/bidx_2" BEL
+        "u_soc/u_uart/u_tx/bidx_1" BEL "u_soc/u_uart/u_tx/bidx_0" BEL
+        "u_soc/u_uart/u_tx/tx" BEL "u_soc/u_uart/u_tx/tcnt_3" BEL
+        "u_soc/u_uart/u_tx/tcnt_2" BEL "u_soc/u_uart/u_tx/tcnt_1" BEL
+        "u_soc/u_uart/u_tx/tcnt_0" BEL "u_soc/u_uart/u_tx/par_r" BEL
+        "u_soc/u_uart/u_tx/stop_second" BEL "u_soc/u_uart/u_tx/sh_7" BEL
+        "u_soc/u_uart/u_tx/sh_6" BEL "u_soc/u_uart/u_tx/sh_5" BEL
+        "u_soc/u_uart/u_tx/sh_4" BEL "u_soc/u_uart/u_tx/sh_3" BEL
+        "u_soc/u_uart/u_tx/sh_2" BEL "u_soc/u_uart/u_tx/sh_1" BEL
+        "u_soc/u_uart/u_tx/sh_0" BEL "u_soc/u_uart/u_rx/smpl_1" BEL
+        "u_soc/u_uart/u_rx/smpl_0" BEL "u_soc/u_uart/u_rx/st_FSM_FFd2" BEL
+        "u_soc/u_uart/u_rx/st_FSM_FFd3" BEL "u_soc/u_uart/u_rx/st_FSM_FFd1"
+        BEL "u_soc/u_uart/u_rx/bidx_2" BEL "u_soc/u_uart/u_rx/bidx_1" BEL
+        "u_soc/u_uart/u_rx/bidx_0" BEL "u_soc/u_uart/u_rx/data_7" BEL
+        "u_soc/u_uart/u_rx/data_6" BEL "u_soc/u_uart/u_rx/data_5" BEL
+        "u_soc/u_uart/u_rx/data_4" BEL "u_soc/u_uart/u_rx/data_3" BEL
+        "u_soc/u_uart/u_rx/data_2" BEL "u_soc/u_uart/u_rx/data_1" BEL
+        "u_soc/u_uart/u_rx/data_0" BEL "u_soc/u_uart/u_rx/parity_err" BEL
+        "u_soc/u_uart/u_rx/par_acc" BEL "u_soc/u_uart/u_rx/sh_7" BEL
+        "u_soc/u_uart/u_rx/sh_6" BEL "u_soc/u_uart/u_rx/sh_5" BEL
+        "u_soc/u_uart/u_rx/sh_4" BEL "u_soc/u_uart/u_rx/sh_3" BEL
+        "u_soc/u_uart/u_rx/sh_2" BEL "u_soc/u_uart/u_rx/sh_1" BEL
+        "u_soc/u_uart/u_rx/sh_0" BEL "u_soc/u_uart/u_rx/tcnt_3" BEL
+        "u_soc/u_uart/u_rx/tcnt_2" BEL "u_soc/u_uart/u_rx/tcnt_1" BEL
+        "u_soc/u_uart/u_rx/tcnt_0" BEL "u_soc/u_uart/u_rx/idle_cnt_8" BEL
+        "u_soc/u_uart/u_rx/idle_cnt_7" BEL "u_soc/u_uart/u_rx/idle_cnt_6" BEL
+        "u_soc/u_uart/u_rx/idle_cnt_5" BEL "u_soc/u_uart/u_rx/idle_cnt_4" BEL
+        "u_soc/u_uart/u_rx/idle_cnt_3" BEL "u_soc/u_uart/u_rx/idle_cnt_2" BEL
+        "u_soc/u_uart/u_rx/idle_cnt_1" BEL "u_soc/u_uart/u_rx/idle_cnt_0" BEL
+        "u_soc/u_uart/u_rx/idle" BEL "u_soc/u_uart/u_rx/valid" BEL
+        "u_soc/u_uart/u_rx/frame_err" BEL "u_soc/u_uart/u_rx/sync_1" BEL
+        "u_soc/u_clint/divcnt_31" BEL "u_soc/u_clint/divcnt_30" BEL
+        "u_soc/u_clint/divcnt_29" BEL "u_soc/u_clint/divcnt_28" BEL
+        "u_soc/u_clint/divcnt_27" BEL "u_soc/u_clint/divcnt_26" BEL
+        "u_soc/u_clint/divcnt_25" BEL "u_soc/u_clint/divcnt_24" BEL
+        "u_soc/u_clint/divcnt_23" BEL "u_soc/u_clint/divcnt_22" BEL
+        "u_soc/u_clint/divcnt_21" BEL "u_soc/u_clint/divcnt_20" BEL
+        "u_soc/u_clint/divcnt_19" BEL "u_soc/u_clint/divcnt_18" BEL
+        "u_soc/u_clint/divcnt_17" BEL "u_soc/u_clint/divcnt_16" BEL
+        "u_soc/u_clint/divcnt_15" BEL "u_soc/u_clint/divcnt_14" BEL
+        "u_soc/u_clint/divcnt_13" BEL "u_soc/u_clint/divcnt_12" BEL
+        "u_soc/u_clint/divcnt_11" BEL "u_soc/u_clint/divcnt_10" BEL
+        "u_soc/u_clint/divcnt_9" BEL "u_soc/u_clint/divcnt_8" BEL
+        "u_soc/u_clint/divcnt_7" BEL "u_soc/u_clint/divcnt_6" BEL
+        "u_soc/u_clint/divcnt_5" BEL "u_soc/u_clint/divcnt_4" BEL
+        "u_soc/u_clint/divcnt_3" BEL "u_soc/u_clint/divcnt_2" BEL
+        "u_soc/u_clint/divcnt_1" BEL "u_soc/u_clint/divcnt_0" BEL
+        "u_soc/u_clint/mtime_r_63" BEL "u_soc/u_clint/mtime_r_62" BEL
+        "u_soc/u_clint/mtime_r_61" BEL "u_soc/u_clint/mtime_r_60" BEL
+        "u_soc/u_clint/mtime_r_59" BEL "u_soc/u_clint/mtime_r_58" BEL
+        "u_soc/u_clint/mtime_r_57" BEL "u_soc/u_clint/mtime_r_56" BEL
+        "u_soc/u_clint/mtime_r_55" BEL "u_soc/u_clint/mtime_r_54" BEL
+        "u_soc/u_clint/mtime_r_53" BEL "u_soc/u_clint/mtime_r_52" BEL
+        "u_soc/u_clint/mtime_r_51" BEL "u_soc/u_clint/mtime_r_50" BEL
+        "u_soc/u_clint/mtime_r_49" BEL "u_soc/u_clint/mtime_r_48" BEL
+        "u_soc/u_clint/mtime_r_47" BEL "u_soc/u_clint/mtime_r_46" BEL
+        "u_soc/u_clint/mtime_r_45" BEL "u_soc/u_clint/mtime_r_44" BEL
+        "u_soc/u_clint/mtime_r_43" BEL "u_soc/u_clint/mtime_r_42" BEL
+        "u_soc/u_clint/mtime_r_41" BEL "u_soc/u_clint/mtime_r_40" BEL
+        "u_soc/u_clint/mtime_r_39" BEL "u_soc/u_clint/mtime_r_38" BEL
+        "u_soc/u_clint/mtime_r_37" BEL "u_soc/u_clint/mtime_r_36" BEL
+        "u_soc/u_clint/mtime_r_35" BEL "u_soc/u_clint/mtime_r_34" BEL
+        "u_soc/u_clint/mtime_r_33" BEL "u_soc/u_clint/mtime_r_32" BEL
+        "u_soc/u_clint/mtime_r_31" BEL "u_soc/u_clint/mtime_r_30" BEL
+        "u_soc/u_clint/mtime_r_29" BEL "u_soc/u_clint/mtime_r_28" BEL
+        "u_soc/u_clint/mtime_r_27" BEL "u_soc/u_clint/mtime_r_26" BEL
+        "u_soc/u_clint/mtime_r_25" BEL "u_soc/u_clint/mtime_r_24" BEL
+        "u_soc/u_clint/mtime_r_23" BEL "u_soc/u_clint/mtime_r_22" BEL
+        "u_soc/u_clint/mtime_r_21" BEL "u_soc/u_clint/mtime_r_20" BEL
+        "u_soc/u_clint/mtime_r_19" BEL "u_soc/u_clint/mtime_r_18" BEL
+        "u_soc/u_clint/mtime_r_17" BEL "u_soc/u_clint/mtime_r_16" BEL
+        "u_soc/u_clint/mtime_r_15" BEL "u_soc/u_clint/mtime_r_14" BEL
+        "u_soc/u_clint/mtime_r_13" BEL "u_soc/u_clint/mtime_r_12" BEL
+        "u_soc/u_clint/mtime_r_11" BEL "u_soc/u_clint/mtime_r_10" BEL
+        "u_soc/u_clint/mtime_r_9" BEL "u_soc/u_clint/mtime_r_8" BEL
+        "u_soc/u_clint/mtime_r_7" BEL "u_soc/u_clint/mtime_r_6" BEL
+        "u_soc/u_clint/mtime_r_5" BEL "u_soc/u_clint/mtime_r_4" BEL
+        "u_soc/u_clint/mtime_r_3" BEL "u_soc/u_clint/mtime_r_2" BEL
+        "u_soc/u_clint/mtime_r_1" BEL "u_soc/u_clint/mtime_r_0" BEL
+        "u_soc/u_clint/mtimecmp_r_63" BEL "u_soc/u_clint/mtimecmp_r_62" BEL
+        "u_soc/u_clint/mtimecmp_r_61" BEL "u_soc/u_clint/mtimecmp_r_60" BEL
+        "u_soc/u_clint/mtimecmp_r_59" BEL "u_soc/u_clint/mtimecmp_r_58" BEL
+        "u_soc/u_clint/mtimecmp_r_57" BEL "u_soc/u_clint/mtimecmp_r_56" BEL
+        "u_soc/u_clint/mtimecmp_r_55" BEL "u_soc/u_clint/mtimecmp_r_54" BEL
+        "u_soc/u_clint/mtimecmp_r_53" BEL "u_soc/u_clint/mtimecmp_r_52" BEL
+        "u_soc/u_clint/mtimecmp_r_51" BEL "u_soc/u_clint/mtimecmp_r_50" BEL
+        "u_soc/u_clint/mtimecmp_r_49" BEL "u_soc/u_clint/mtimecmp_r_48" BEL
+        "u_soc/u_clint/mtimecmp_r_47" BEL "u_soc/u_clint/mtimecmp_r_46" BEL
+        "u_soc/u_clint/mtimecmp_r_45" BEL "u_soc/u_clint/mtimecmp_r_44" BEL
+        "u_soc/u_clint/mtimecmp_r_43" BEL "u_soc/u_clint/mtimecmp_r_42" BEL
+        "u_soc/u_clint/mtimecmp_r_41" BEL "u_soc/u_clint/mtimecmp_r_40" BEL
+        "u_soc/u_clint/mtimecmp_r_39" BEL "u_soc/u_clint/mtimecmp_r_38" BEL
+        "u_soc/u_clint/mtimecmp_r_37" BEL "u_soc/u_clint/mtimecmp_r_36" BEL
+        "u_soc/u_clint/mtimecmp_r_35" BEL "u_soc/u_clint/mtimecmp_r_34" BEL
+        "u_soc/u_clint/mtimecmp_r_33" BEL "u_soc/u_clint/mtimecmp_r_32" BEL
+        "u_soc/u_clint/mtimecmp_r_31" BEL "u_soc/u_clint/mtimecmp_r_30" BEL
+        "u_soc/u_clint/mtimecmp_r_29" BEL "u_soc/u_clint/mtimecmp_r_28" BEL
+        "u_soc/u_clint/mtimecmp_r_27" BEL "u_soc/u_clint/mtimecmp_r_26" BEL
+        "u_soc/u_clint/mtimecmp_r_25" BEL "u_soc/u_clint/mtimecmp_r_24" BEL
+        "u_soc/u_clint/mtimecmp_r_23" BEL "u_soc/u_clint/mtimecmp_r_22" BEL
+        "u_soc/u_clint/mtimecmp_r_21" BEL "u_soc/u_clint/mtimecmp_r_20" BEL
+        "u_soc/u_clint/mtimecmp_r_19" BEL "u_soc/u_clint/mtimecmp_r_18" BEL
+        "u_soc/u_clint/mtimecmp_r_17" BEL "u_soc/u_clint/mtimecmp_r_16" BEL
+        "u_soc/u_clint/mtimecmp_r_15" BEL "u_soc/u_clint/mtimecmp_r_14" BEL
+        "u_soc/u_clint/mtimecmp_r_13" BEL "u_soc/u_clint/mtimecmp_r_12" BEL
+        "u_soc/u_clint/mtimecmp_r_11" BEL "u_soc/u_clint/mtimecmp_r_10" BEL
+        "u_soc/u_clint/mtimecmp_r_9" BEL "u_soc/u_clint/mtimecmp_r_8" BEL
+        "u_soc/u_clint/mtimecmp_r_7" BEL "u_soc/u_clint/mtimecmp_r_6" BEL
+        "u_soc/u_clint/mtimecmp_r_5" BEL "u_soc/u_clint/mtimecmp_r_4" BEL
+        "u_soc/u_clint/mtimecmp_r_3" BEL "u_soc/u_clint/mtimecmp_r_2" BEL
+        "u_soc/u_clint/mtimecmp_r_1" BEL "u_soc/u_clint/mtimecmp_r_0" BEL
+        "u_soc/u_clint/msip_r" BEL "u_soc/u_clint/rd_ack" BEL
+        "u_soc/u_clint/rdata_31" BEL "u_soc/u_clint/rdata_30" BEL
+        "u_soc/u_clint/rdata_29" BEL "u_soc/u_clint/rdata_28" BEL
+        "u_soc/u_clint/rdata_27" BEL "u_soc/u_clint/rdata_26" BEL
+        "u_soc/u_clint/rdata_25" BEL "u_soc/u_clint/rdata_24" BEL
+        "u_soc/u_clint/rdata_23" BEL "u_soc/u_clint/rdata_22" BEL
+        "u_soc/u_clint/rdata_21" BEL "u_soc/u_clint/rdata_20" BEL
+        "u_soc/u_clint/rdata_19" BEL "u_soc/u_clint/rdata_18" BEL
+        "u_soc/u_clint/rdata_17" BEL "u_soc/u_clint/rdata_16" BEL
+        "u_soc/u_clint/rdata_15" BEL "u_soc/u_clint/rdata_14" BEL
+        "u_soc/u_clint/rdata_13" BEL "u_soc/u_clint/rdata_12" BEL
+        "u_soc/u_clint/rdata_11" BEL "u_soc/u_clint/rdata_10" BEL
+        "u_soc/u_clint/rdata_9" BEL "u_soc/u_clint/rdata_8" BEL
+        "u_soc/u_clint/rdata_7" BEL "u_soc/u_clint/rdata_6" BEL
+        "u_soc/u_clint/rdata_5" BEL "u_soc/u_clint/rdata_4" BEL
+        "u_soc/u_clint/rdata_3" BEL "u_soc/u_clint/rdata_2" BEL
+        "u_soc/u_clint/rdata_1" BEL "u_soc/u_clint/rdata_0" BEL "u_soc/halt_q"
+        BEL "u_soc/u_core/res_valid" BEL "u_soc/u_core/u_csr/st_mpie" BEL
+        "u_soc/u_core/u_csr/st_mpp_1" BEL "u_soc/u_core/u_csr/st_mpp_0" BEL
+        "u_soc/u_uart/st_idle" BEL "u_soc/u_uart/st_frame" BEL
+        "u_soc/u_uart/st_over" BEL "u_soc/u_uart/st_parity" BEL
+        "u_soc/u_uart/u_rx/armed" BEL
+        "u_soc/u_core/g_muldiv.u_md/state_FSM_FFd2_BRB0" BEL
+        "u_soc/u_core/g_muldiv.u_md/state_FSM_FFd2_BRB1" BEL
+        "u_soc/u_core/g_muldiv.u_md/state_FSM_FFd2_BRB2" BEL
+        "u_soc/g_sram.u_sram/bebuf_0_BRB0" BEL
+        "u_soc/g_sram.u_sram/bebuf_0_BRB1" BEL
+        "u_soc/g_sram.u_sram/bebuf_0_BRB2" BEL
+        "u_soc/g_sram.u_sram/bebuf_0_BRB3" BEL
+        "u_soc/g_sram.u_sram/bebuf_0_BRB4" BEL
+        "u_soc/g_sram.u_sram/cnt_0_BRB0" BEL "u_soc/g_sram.u_sram/cnt_0_BRB1"
+        BEL "u_soc/g_sram.u_sram/cnt_0_BRB2" BEL
+        "u_soc/g_sram.u_sram/cnt_0_BRB3" BEL "u_soc/g_sram.u_sram/cnt_0_BRB4"
+        BEL "u_soc/g_sram.u_sram/bi_0_BRB1" BEL
+        "u_soc/g_sram.u_sram/bi_0_BRB2" BEL "u_soc/g_sram.u_sram/bi_0_BRB3"
+        BEL "u_soc/g_sram.u_sram/bi_0_BRB4" BEL
+        "u_soc/g_sram.u_sram/bi_1_BRB0" BEL "u_soc/g_sram.u_sram/bi_1_BRB1"
+        BEL "u_soc/g_sram.u_sram/bi_1_BRB3" BEL
+        "u_soc/g_sram.u_sram/bi_1_BRB4" BEL
+        "u_soc/g_sram.u_sram/st_FSM_FFd2_BRB0" BEL
+        "u_soc/g_sram.u_sram/st_FSM_FFd2_BRB1" BEL
+        "u_soc/g_sram.u_sram/st_FSM_FFd2_BRB2" BEL
+        "u_soc/g_sram.u_sram/st_FSM_FFd2_BRB3" BEL
+        "u_soc/g_sram.u_sram/st_FSM_FFd2_BRB4" BEL
+        "u_soc/g_sram.u_sram/st_FSM_FFd2_BRB5" BEL
+        "u_soc/g_sram.u_sram/bebuf_3_BRB0" BEL
+        "u_soc/g_sram.u_sram/bebuf_3_BRB1" BEL
+        "u_soc/g_sram.u_sram/bebuf_3_BRB3" BEL "u_soc/u_uart/u_rx/sync_0_BRB0"
+        BEL "u_soc/u_uart/u_rx/sync_0_BRB1" BEL
+        "u_soc/u_uart/u_rx/sync_0_BRB2" BEL "u_soc/inst_LPM_FF1_1_1" BEL
+        "u_soc/inst_LPM_FF1_1_2" BEL "u_soc/inst_LPM_FF1_2_1" BEL
+        "u_soc/inst_LPM_FF1_2_2" BEL "u_soc/inst_LPM_FF1_0_1" PIN
+        "u_soc/u_ram/Mram_mem7_pins<18>" PIN "u_soc/u_ram/Mram_mem7_pins<19>"
+        PIN "u_soc/u_ram/Mram_mem6_pins<18>" PIN
+        "u_soc/u_ram/Mram_mem6_pins<19>" PIN "u_soc/u_ram/Mram_mem8_pins<18>"
+        PIN "u_soc/u_ram/Mram_mem8_pins<19>" PIN
+        "u_soc/u_ram/Mram_mem4_pins<18>" PIN "u_soc/u_ram/Mram_mem4_pins<19>"
+        PIN "u_soc/u_ram/Mram_mem3_pins<18>" PIN
+        "u_soc/u_ram/Mram_mem3_pins<19>" PIN "u_soc/u_ram/Mram_mem5_pins<18>"
+        PIN "u_soc/u_ram/Mram_mem5_pins<19>" PIN
+        "u_soc/u_ram/Mram_mem1_pins<18>" PIN "u_soc/u_ram/Mram_mem1_pins<19>"
+        PIN "u_soc/u_ram/Mram_mem2_pins<18>" PIN
+        "u_soc/u_ram/Mram_mem2_pins<19>" BEL
+        "u_soc/u_core/u_rf/Mram_regs141/SP" BEL
+        "u_soc/u_core/u_rf/Mram_regs141/DP" BEL
+        "u_soc/u_core/u_rf/Mram_regs140/SP" BEL
+        "u_soc/u_core/u_rf/Mram_regs140/DP" BEL
+        "u_soc/u_core/u_rf/Mram_regs139/SP" BEL
+        "u_soc/u_core/u_rf/Mram_regs139/DP" BEL
+        "u_soc/u_core/u_rf/Mram_regs138/SP" BEL
+        "u_soc/u_core/u_rf/Mram_regs138/DP" BEL
+        "u_soc/u_core/u_rf/Mram_regs137/SP" BEL
+        "u_soc/u_core/u_rf/Mram_regs137/DP" BEL
+        "u_soc/u_core/u_rf/Mram_regs136/SP" BEL
+        "u_soc/u_core/u_rf/Mram_regs136/DP" BEL
+        "u_soc/u_core/u_rf/Mram_regs135/SP" BEL
+        "u_soc/u_core/u_rf/Mram_regs135/DP" BEL
+        "u_soc/u_core/u_rf/Mram_regs134/SP" BEL
+        "u_soc/u_core/u_rf/Mram_regs134/DP" BEL
+        "u_soc/u_core/u_rf/Mram_regs133/SP" BEL
+        "u_soc/u_core/u_rf/Mram_regs133/DP" BEL
+        "u_soc/u_core/u_rf/Mram_regs132/SP" BEL
+        "u_soc/u_core/u_rf/Mram_regs132/DP" BEL
+        "u_soc/u_core/u_rf/Mram_regs131/SP" BEL
+        "u_soc/u_core/u_rf/Mram_regs131/DP" BEL
+        "u_soc/u_core/u_rf/Mram_regs130/SP" BEL
+        "u_soc/u_core/u_rf/Mram_regs130/DP" BEL
+        "u_soc/u_core/u_rf/Mram_regs129/SP" BEL
+        "u_soc/u_core/u_rf/Mram_regs129/DP" BEL
+        "u_soc/u_core/u_rf/Mram_regs128/SP" BEL
+        "u_soc/u_core/u_rf/Mram_regs128/DP" BEL
+        "u_soc/u_core/u_rf/Mram_regs127/SP" BEL
+        "u_soc/u_core/u_rf/Mram_regs127/DP" BEL
+        "u_soc/u_core/u_rf/Mram_regs126/SP" BEL
+        "u_soc/u_core/u_rf/Mram_regs126/DP" BEL
+        "u_soc/u_core/u_rf/Mram_regs125/SP" BEL
+        "u_soc/u_core/u_rf/Mram_regs125/DP" BEL
+        "u_soc/u_core/u_rf/Mram_regs124/SP" BEL
+        "u_soc/u_core/u_rf/Mram_regs124/DP" BEL
+        "u_soc/u_core/u_rf/Mram_regs123/SP" BEL
+        "u_soc/u_core/u_rf/Mram_regs123/DP" BEL
+        "u_soc/u_core/u_rf/Mram_regs122/SP" BEL
+        "u_soc/u_core/u_rf/Mram_regs122/DP" BEL
+        "u_soc/u_core/u_rf/Mram_regs121/SP" BEL
+        "u_soc/u_core/u_rf/Mram_regs121/DP" BEL
+        "u_soc/u_core/u_rf/Mram_regs120/SP" BEL
+        "u_soc/u_core/u_rf/Mram_regs120/DP" BEL
+        "u_soc/u_core/u_rf/Mram_regs119/SP" BEL
+        "u_soc/u_core/u_rf/Mram_regs119/DP" BEL
+        "u_soc/u_core/u_rf/Mram_regs118/SP" BEL
+        "u_soc/u_core/u_rf/Mram_regs118/DP" BEL
+        "u_soc/u_core/u_rf/Mram_regs117/SP" BEL
+        "u_soc/u_core/u_rf/Mram_regs117/DP" BEL
+        "u_soc/u_core/u_rf/Mram_regs116/SP" BEL
+        "u_soc/u_core/u_rf/Mram_regs116/DP" BEL
+        "u_soc/u_core/u_rf/Mram_regs115/SP" BEL
+        "u_soc/u_core/u_rf/Mram_regs115/DP" BEL
+        "u_soc/u_core/u_rf/Mram_regs114/SP" BEL
+        "u_soc/u_core/u_rf/Mram_regs114/DP" BEL
+        "u_soc/u_core/u_rf/Mram_regs113/SP" BEL
+        "u_soc/u_core/u_rf/Mram_regs113/DP" BEL
+        "u_soc/u_core/u_rf/Mram_regs112/SP" BEL
+        "u_soc/u_core/u_rf/Mram_regs112/DP" BEL
+        "u_soc/u_core/u_rf/Mram_regs110/SP" BEL
+        "u_soc/u_core/u_rf/Mram_regs110/DP" BEL
+        "u_soc/u_core/u_rf/Mram_regs33/SP" BEL
+        "u_soc/u_core/u_rf/Mram_regs33/DP" BEL
+        "u_soc/u_core/u_rf/Mram_regs111/SP" BEL
+        "u_soc/u_core/u_rf/Mram_regs111/DP" BEL
+        "u_soc/u_core/u_rf/Mram_regs32/SP" BEL
+        "u_soc/u_core/u_rf/Mram_regs32/DP" BEL
+        "u_soc/u_core/u_rf/Mram_regs31/SP" BEL
+        "u_soc/u_core/u_rf/Mram_regs31/DP" BEL
+        "u_soc/u_core/u_rf/Mram_regs30/SP" BEL
+        "u_soc/u_core/u_rf/Mram_regs30/DP" BEL
+        "u_soc/u_core/u_rf/Mram_regs29/SP" BEL
+        "u_soc/u_core/u_rf/Mram_regs29/DP" BEL
+        "u_soc/u_core/u_rf/Mram_regs28/SP" BEL
+        "u_soc/u_core/u_rf/Mram_regs28/DP" BEL
+        "u_soc/u_core/u_rf/Mram_regs27/SP" BEL
+        "u_soc/u_core/u_rf/Mram_regs27/DP" BEL
+        "u_soc/u_core/u_rf/Mram_regs26/SP" BEL
+        "u_soc/u_core/u_rf/Mram_regs26/DP" BEL
+        "u_soc/u_core/u_rf/Mram_regs25/SP" BEL
+        "u_soc/u_core/u_rf/Mram_regs25/DP" BEL
+        "u_soc/u_core/u_rf/Mram_regs24/SP" BEL
+        "u_soc/u_core/u_rf/Mram_regs24/DP" BEL
+        "u_soc/u_core/u_rf/Mram_regs23/SP" BEL
+        "u_soc/u_core/u_rf/Mram_regs23/DP" BEL
+        "u_soc/u_core/u_rf/Mram_regs22/SP" BEL
+        "u_soc/u_core/u_rf/Mram_regs22/DP" BEL
+        "u_soc/u_core/u_rf/Mram_regs21/SP" BEL
+        "u_soc/u_core/u_rf/Mram_regs21/DP" BEL
+        "u_soc/u_core/u_rf/Mram_regs20/SP" BEL
+        "u_soc/u_core/u_rf/Mram_regs20/DP" BEL
+        "u_soc/u_core/u_rf/Mram_regs19/SP" BEL
+        "u_soc/u_core/u_rf/Mram_regs19/DP" BEL
+        "u_soc/u_core/u_rf/Mram_regs18/SP" BEL
+        "u_soc/u_core/u_rf/Mram_regs18/DP" BEL
+        "u_soc/u_core/u_rf/Mram_regs17/SP" BEL
+        "u_soc/u_core/u_rf/Mram_regs17/DP" BEL
+        "u_soc/u_core/u_rf/Mram_regs16/SP" BEL
+        "u_soc/u_core/u_rf/Mram_regs16/DP" BEL
+        "u_soc/u_core/u_rf/Mram_regs15/SP" BEL
+        "u_soc/u_core/u_rf/Mram_regs15/DP" BEL
+        "u_soc/u_core/u_rf/Mram_regs14/SP" BEL
+        "u_soc/u_core/u_rf/Mram_regs14/DP" BEL
+        "u_soc/u_core/u_rf/Mram_regs13/SP" BEL
+        "u_soc/u_core/u_rf/Mram_regs13/DP" BEL
+        "u_soc/u_core/u_rf/Mram_regs12/SP" BEL
+        "u_soc/u_core/u_rf/Mram_regs12/DP" BEL
+        "u_soc/u_core/u_rf/Mram_regs11/SP" BEL
+        "u_soc/u_core/u_rf/Mram_regs11/DP" BEL
+        "u_soc/u_core/u_rf/Mram_regs10/SP" BEL
+        "u_soc/u_core/u_rf/Mram_regs10/DP" BEL
+        "u_soc/u_core/u_rf/Mram_regs9/SP" BEL
+        "u_soc/u_core/u_rf/Mram_regs9/DP" BEL
+        "u_soc/u_core/u_rf/Mram_regs8/SP" BEL
+        "u_soc/u_core/u_rf/Mram_regs8/DP" BEL
+        "u_soc/u_core/u_rf/Mram_regs7/SP" BEL
+        "u_soc/u_core/u_rf/Mram_regs7/DP" BEL
+        "u_soc/u_core/u_rf/Mram_regs6/SP" BEL
+        "u_soc/u_core/u_rf/Mram_regs6/DP" BEL
+        "u_soc/u_core/u_rf/Mram_regs5/SP" BEL
+        "u_soc/u_core/u_rf/Mram_regs5/DP" BEL
+        "u_soc/u_core/u_rf/Mram_regs4/SP" BEL
+        "u_soc/u_core/u_rf/Mram_regs4/DP" BEL
+        "u_soc/u_core/u_rf/Mram_regs3/SP" BEL
+        "u_soc/u_core/u_rf/Mram_regs3/DP" BEL
+        "u_soc/u_core/u_rf/Mram_regs2/SP" BEL
+        "u_soc/u_core/u_rf/Mram_regs2/DP" BEL
+        "u_soc/u_uart/u_rxf/Mram_mem8/SP" BEL
+        "u_soc/u_uart/u_rxf/Mram_mem8/DP" BEL
+        "u_soc/u_uart/u_rxf/Mram_mem7/SP" BEL
+        "u_soc/u_uart/u_rxf/Mram_mem7/DP" BEL
+        "u_soc/u_uart/u_rxf/Mram_mem6/SP" BEL
+        "u_soc/u_uart/u_rxf/Mram_mem6/DP" BEL
+        "u_soc/u_uart/u_rxf/Mram_mem5/SP" BEL
+        "u_soc/u_uart/u_rxf/Mram_mem5/DP" BEL
+        "u_soc/u_uart/u_rxf/Mram_mem4/SP" BEL
+        "u_soc/u_uart/u_rxf/Mram_mem4/DP" BEL
+        "u_soc/u_uart/u_rxf/Mram_mem3/SP" BEL
+        "u_soc/u_uart/u_rxf/Mram_mem3/DP" BEL
+        "u_soc/u_uart/u_rxf/Mram_mem2/SP" BEL
+        "u_soc/u_uart/u_rxf/Mram_mem2/DP" BEL
+        "u_soc/u_uart/u_rxf/Mram_mem1/SP" BEL
+        "u_soc/u_uart/u_rxf/Mram_mem1/DP" BEL
+        "u_soc/u_uart/u_txf/Mram_mem8/SP" BEL
+        "u_soc/u_uart/u_txf/Mram_mem8/DP" BEL
+        "u_soc/u_uart/u_txf/Mram_mem7/SP" BEL
+        "u_soc/u_uart/u_txf/Mram_mem7/DP" BEL
+        "u_soc/u_uart/u_txf/Mram_mem6/SP" BEL
+        "u_soc/u_uart/u_txf/Mram_mem6/DP" BEL
+        "u_soc/u_uart/u_txf/Mram_mem5/SP" BEL
+        "u_soc/u_uart/u_txf/Mram_mem5/DP" BEL
+        "u_soc/u_uart/u_txf/Mram_mem4/SP" BEL
+        "u_soc/u_uart/u_txf/Mram_mem4/DP" BEL
+        "u_soc/u_uart/u_txf/Mram_mem3/SP" BEL
+        "u_soc/u_uart/u_txf/Mram_mem3/DP" BEL
+        "u_soc/u_uart/u_txf/Mram_mem2/SP" BEL
+        "u_soc/u_uart/u_txf/Mram_mem2/DP" BEL
+        "u_soc/u_uart/u_txf/Mram_mem1/SP" BEL
+        "u_soc/u_uart/u_txf/Mram_mem1/DP";
+PIN SP6_BUFIO2_INSERT_PLL1_ML_BUFIO2_0_pins<0> = BEL
+        "SP6_BUFIO2_INSERT_PLL1_ML_BUFIO2_0" PINNAME DIVCLK;
+PIN u_clk/u_pll/PLL_ADV_pins<2> = BEL "u_clk/u_pll/PLL_ADV" PINNAME CLKIN1;
+TIMEGRP clk_24 = PIN "SP6_BUFIO2_INSERT_PLL1_ML_BUFIO2_0_pins<0>" PIN
+        "u_clk/u_pll/PLL_ADV_pins<2>";
+TS_clk_24 = PERIOD TIMEGRP "clk_24" 41.667 ns HIGH 50%;
+TS_u_clk_clk_out_raw = PERIOD TIMEGRP "u_clk_clk_out_raw" TS_clk_24 /
+        0.666666667 HIGH 50%;
+PIN rst_n_pins<0> = BEL "rst_n" PINNAME PAD;
+PIN "rst_n_pins<0>" TIG;
+SCHEMATIC END;
+

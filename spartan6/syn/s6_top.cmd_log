@@ -1,0 +1,7 @@
+xst -intstyle ise -ifn "/code/riscv-from-scratch/spartan6/syn/s6_top.xst" -ofn "/code/riscv-from-scratch/spartan6/syn/s6_top.syr" 
+xst -intstyle ise -ifn "/code/riscv-from-scratch/spartan6/syn/s6_top.xst" -ofn "/code/riscv-from-scratch/spartan6/syn/s6_top.syr" 
+ngdbuild -intstyle ise -dd _ngo -nt timestamp -uc /code/riscv-from-scratch/spartan6/constraints/posedge_one_lx9.ucf -p xc6slx9-tqg144-2 s6_top.ngc s6_top.ngd  
+map -intstyle ise -p xc6slx9-tqg144-2 -w -logic_opt off -ol high -t 1 -xt 0 -register_duplication off -r 4 -global_opt off -mt off -ir off -pr off -lc off -power off -o s6_top_map.ncd s6_top.ngd s6_top.pcf 
+par -w -intstyle ise -ol high -xe n -mt off s6_top_map.ncd s6_top.ncd s6_top.pcf 
+trce -intstyle ise -v 3 -s 2 -n 3 -fastpaths -xml s6_top.twx s6_top.ncd -o s6_top.twr s6_top.pcf 
+bitgen -intstyle ise -f s6_top.ut s6_top.ncd 

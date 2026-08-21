@@ -14,7 +14,13 @@
 
 module s6_fifo #(
     parameter WIDTH = 8,
-    parameter DEPTH = 16
+    parameter DEPTH = 16,
+    // AW = log2(DEPTH), derived from it -- never override at instantiation.
+    // ISE's XST rejects $clog2 in declarations, so the ladder below does
+    // the same job as a constant expression every Verilog-2001 tool takes.
+    parameter AW    = (DEPTH<=2)   ? 1 : (DEPTH<=4)   ? 2 : (DEPTH<=8)   ? 3 :
+                      (DEPTH<=16)  ? 4 : (DEPTH<=32)  ? 5 : (DEPTH<=64)  ? 6 :
+                      (DEPTH<=128) ? 7 : (DEPTH<=256) ? 8 : 9
 ) (
     input  wire                    clk,
     input  wire                    rst,
@@ -25,10 +31,8 @@ module s6_fifo #(
     output wire [WIDTH-1:0]        rdata,
     output wire                    full,
     output wire                    empty,
-    output wire [$clog2(DEPTH):0]  level
+    output wire [AW:0]             level
 );
-    localparam AW = $clog2(DEPTH);
-
     reg [WIDTH-1:0] mem [0:DEPTH-1];
     reg [AW:0]      wptr, rptr;
 

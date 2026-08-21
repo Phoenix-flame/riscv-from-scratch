@@ -35,7 +35,13 @@ if [ ! -f ../sw/firmware.hex ]; then
     exit 1
 fi
 
-rm -rf xst _ngo netlist.lst
+# On a shared folder (the repo mounted from a Windows host, say) the
+# directories themselves can be held open -- 'Text file busy' -- while
+# their contents still delete fine. That is enough for a clean run.
+if ! rm -rf xst _ngo netlist.lst 2>/dev/null; then
+    echo "note: could not remove xst/ _ngo/ -- emptying them instead"
+    rm -rf xst/* xst/.[!.]* _ngo/* _ngo/.[!.]* netlist.lst 2>/dev/null || true
+fi
 mkdir -p xst/projnav.tmp
 
 echo "== synthesise =="

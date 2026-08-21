@@ -7,10 +7,19 @@
 //     f_vco = 24 MHz * MULT / DIVCLK      (must land in 400..1080 MHz)
 //     f_out = f_vco / DIV
 //
-// The defaults are MULT=32, DIVCLK=1, DIV=16 -> VCO 768 MHz, out 48 MHz.
-// For 60 MHz use DIV=13 (59.08 MHz) or MULT=30/DIV=12 (60.0 MHz exactly);
-// remember to change CLK_HZ on s6_soc to match, or the UART baud divisor
-// and the CLINT microsecond tick will both be wrong.
+// The defaults are MULT=32, DIVCLK=1, DIV=48 -> VCO 768 MHz, out 16 MHz.
+//
+// 16 MHz because that is what the design actually closes at. The EXEC
+// path runs from the block RAM's data output, through the RVC
+// decompressor, the decoder, the ALU and the address compare, and back
+// into the block RAM's address port -- all in one cycle, 47.1 ns of it
+// (see syn/s6_top.twr, "Minimum period"). At the old DIV=16 (48 MHz)
+// that path missed its 20.8 ns requirement by -26 ns on 3916 endpoints,
+// and the SoC did not run at all: no boot banner, no UART, nothing.
+// Raise the clock only once that path is split across two cycles.
+//
+// Whatever you pick, change CLK_HZ on s6_soc to match, or the UART baud
+// divisor and the CLINT microsecond tick will both be wrong.
 //
 // `locked` holds the SoC in reset until the PLL has settled.
 //
@@ -24,7 +33,7 @@ module s6_clkgen #(
     parameter real    CLKIN_PERIOD_NS = 41.667,   // 24 MHz
     parameter integer MULT            = 32,
     parameter integer DIVCLK          = 1,
-    parameter integer DIV             = 16
+    parameter integer DIV             = 48
 ) (
     input  wire clk_in,
     output wire clk_out,
