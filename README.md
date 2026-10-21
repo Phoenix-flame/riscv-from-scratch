@@ -66,6 +66,7 @@ sequence) and we will watch the registers change in the waveform viewer.
 | 38 | `docs/38-isolated-processes.md` | Bonus: memory-isolated processes — merge the Sv32 MMU (22/24) with the preemptive scheduler (25): a page table per task, `satp` reloaded on each context switch; two tasks share VA `0x1000` but land in different physical pages | **done & tested (sim)** |
 | 39 | `docs/39-supervisor-delegation.md` | Bonus: supervisor mode + trap delegation — add S-mode (`cpu_mc_s`, `csr_s`) with `medeleg`/`mideleg`; a user `ecall`, an illegal instruction, and a software interrupt are delivered straight to an S-mode kernel, while an `ecall` from S still reaches M | **done & tested (sim)** |
 | 40 | `docs/40-riscv-tests.md` | Bonus: the official **riscv-tests** suite — the reference per-instruction tests (rv32ui/um/ua/uc/uf) run against five cores through our own target environment; 272 test programs, and the two FPU bugs they found | **done & tested (sim)** |
+| 41 | `docs/41-instruction-fetch-tlb.md` | Bonus: translated instruction fetch + TLBs — the PC becomes a virtual address (execute-only pages, instruction page faults), split 4-entry I/D TLBs make a hit cost zero cycles, and `sfence.vma` invalidates them; 2.36x fewer cycles than walking every access, and the whole rv32ui/um suite passes with translation on | **done & tested (sim)** |
 
 ## Directory layout
 
@@ -224,6 +225,7 @@ tools/rvtests --list                   # what would run
 | `mc_c` | `cpu_mc_c.v` — multi-cycle RV32IMC | ui, um, uc | 49/49 |
 | `mc_f` | `cpu_mc_f.v` — multi-cycle RV32IMF | ui, um, uf | 58/58 |
 | `pipe` | `cpu_pipe_trap.v` — 5-stage pipeline | ui, um | 49/49 |
+| `mc_tlb` | `cpu_mc_tlb.v` — multi-cycle RV32IM, run with Sv32 **on** (identity map, U-mode) through the I/D TLBs | ui, um | 48/48 |
 
 Tests that cannot pass on this hardware (`fence_i`, `ma_data` on the word-RAM
 cores, `fmadd`) are still run and reported as documented gaps rather than
@@ -251,7 +253,7 @@ A menu of where this project can go next, grouped by goal. Rough difficulty:
 ### Deeper OS
 - ✅ **Memory-isolated processes** — per-task page tables with `satp` reloaded on every context switch (Step 38). Two preempted user tasks share the same virtual addresses (private page at VA `0x1000`, stack at `0x2000`) yet map to different physical pages, so neither can touch the other's memory; the MMU enforces it, the kernel just hands each task its own address space. Built on the unmodified synthesizable MMU SoC. A TLB (and the `sfence.vma` it would require) is the natural next step.
 - ✅ **Supervisor mode + `medeleg`/`mideleg`** — a third privilege level (S) with per-cause trap delegation (Step 39). Two bit-masks route traps taken below machine mode: a delegated cause vectors straight to the S-mode handler at `stvec`, updates the supervisor trap CSRs, and enters S — machine mode never runs. The demo delegates a user `ecall`, an illegal instruction, and a supervisor software interrupt to an S-mode kernel, while a non-delegated `ecall` from S still reaches M. `sstatus`/`sie`/`sip` are masked views of the machine registers; built on a fresh `cpu_mc_s`/`csr_s` so the rest of the regression is untouched. Delivering the MMU core's page faults to S the same way is the next step.
-- 🟡 **Instruction-fetch translation + TLB** — translate fetch (today only data is), cache translations.
+- ✅ **Instruction-fetch translation + TLB** — a new core, `cpu_mc_tlb` (Step 41), translates the PC as well as data: user code runs at a virtual address, execute-only pages work, and a leaf without `X` raises an instruction page fault (cause 12). Split fully-associative I/D TLBs (`tlb.v`, 4 entries each) cache finished walks, so a hit costs no cycles, and `sfence.vma` (all entries, or by address) invalidates them. The demo shows a stale translation surviving a PTE change until the fence; against a walk-every-access build it takes 2.36x fewer cycles, and rv32ui/um pass 48/48 with every fetch and access translated. ASID-tagged entries (so a `satp` switch needs no flush) are the natural next step.
 - 🔴 **Port xv6-riscv, then Linux** — xv6 is the realistic next OS; Linux needs S-mode, full MMU+TLB, atomics, device tree.
 
 ### Make it fast (microarchitecture)

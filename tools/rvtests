@@ -51,6 +51,8 @@ OBJDUMP = "riscv64-unknown-elf-objdump"
 #   march    : how the tests are built for this core -- note that mc_c
 #              builds the WHOLE suite compressed, so every base-ISA test
 #              also exercises the RVC expander and the straddling fetch
+#   cflags   : (optional) extra build flags -- mc_tlb builds with
+#              -DRVTEST_VM, so the suite runs with Sv32 translation on
 #   suites   : which riscv-tests directories this core can be asked to run
 #   ram      : "word" (bram_ram, word array) or "byte" (dmem.v, byte array)
 # ---------------------------------------------------------------------
@@ -86,6 +88,17 @@ CORES = {
         "march": "rv32imf_zicsr_zifencei",
         "abi": "ilp32f",
         "suites": ["rv32ui", "rv32um", "rv32uf"],
+        "ram": "word",
+    },
+    "mc_tlb": {
+        "desc": "multi-cycle RV32IM + Sv32 I/D TLBs (rtl/cpu_mc_tlb.v)",
+        "rtl": COMMON_RTL + ["tlb", "cpu_mc_tlb", "bram_rom", "bram_ram"],
+        "tb": "tb/rvtest_mc_tb.v",
+        "define": "RVT_CORE_TLB",
+        "march": "rv32im_zicsr_zifencei",
+        "cflags": ["-DRVTEST_VM"],
+        "abi": "ilp32",
+        "suites": ["rv32ui", "rv32um"],
         "ram": "word",
     },
     "sc": {
@@ -149,11 +162,11 @@ RAM_BYTES = 65536         # 64 KB data RAM, as a byte array (dmem.v)
 # ---------------------------------------------------------------------
 KNOWN_GAPS = {
     # test            cores it applies to (None = all)
-    "rv32ui-fence_i": ({"mc", "mc_c", "mc_f", "sc", "pipe"},
+    "rv32ui-fence_i": ({"mc", "mc_c", "mc_f", "mc_tlb", "sc", "pipe"},
         "self-modifying code. The instruction ROM is written once, at time "
         "zero; no store can ever become an instruction. (The s6 core has one "
         "unified dual-port memory, so it passes.)"),
-    "rv32ui-ma_data": ({"mc", "mc_c", "mc_f", "s6", "s6_sf"},
+    "rv32ui-ma_data": ({"mc", "mc_c", "mc_f", "mc_tlb", "s6", "s6_sf"},
         "misaligned load/store. The mc cores select a sub-word inside one RAM "
         "word, so any access not aligned to its own width reads or writes the "
         "wrong bytes -- silently, with no trap. The s6 core instead raises the "
@@ -294,13 +307,14 @@ def build_test(core, suite, name):
     if not src.exists():
         die(f"no such test: {suite}/{name}.S")
 
-    out = BUILD / cfg["march"]
+    flags = cfg.get("cflags", [])
+    out = BUILD / "_".join([cfg["march"]] + [f.lstrip("-") for f in flags])
     out.mkdir(parents=True, exist_ok=True)
     elf = out / f"{suite}-{name}.elf"
 
     r = run([GCC,
              f"-march={cfg['march']}", f"-mabi={cfg['abi']}",
-             "-nostdlib", "-nostartfiles", "-ffreestanding",
+             "-nostdlib", "-nostartfiles", "-ffreestanding", *flags,
              "-I", str(ENV),
              "-I", str(SUITE / "isa" / "macros" / "scalar"),
              "-T", str(ENV / "link.ld"),

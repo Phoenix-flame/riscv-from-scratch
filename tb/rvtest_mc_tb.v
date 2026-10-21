@@ -8,6 +8,7 @@
 //   (default)      cpu_mc     RV32IM  + Zicsr
 //   -DRVT_CORE_C   cpu_mc_c   RV32IMC + Zicsr
 //   -DRVT_CORE_F   cpu_mc_f   RV32IMF + Zicsr
+//   -DRVT_CORE_TLB cpu_mc_tlb RV32IM  + Zicsr, Sv32 fetch+data, I/D TLBs
 //
 // The system around the core is deliberately the minimum the suite
 // needs: a 32 KB instruction ROM at 0x0, a 64 KB data RAM at 0x0 (the
@@ -30,6 +31,16 @@ module rvtest_mc_tb;
     wire [3:0]  dwe;
     wire [31:0] rvt_pc;
 
+`ifdef RVT_CORE_TLB
+    // no ext_irq / dmem_re ports on the MMU cores
+    cpu_mc_tlb u_core (
+        .clk(clk), .rst(rst), .timer_irq(1'b0), .halt(1'b0),
+        .imem_addr(iaddr), .imem_rdata(irdata),
+        .dmem_addr(daddr), .dmem_we(dwe),
+        .dmem_wdata(dwdata), .dmem_rdata(drdata),
+        .pc_out(rvt_pc)
+    );
+`else
 `ifdef RVT_CORE_C
     cpu_mc_c u_core (
 `elsif RVT_CORE_F
@@ -43,6 +54,7 @@ module rvtest_mc_tb;
         .dmem_wdata(dwdata), .dmem_rdata(drdata),
         .pc_out(rvt_pc)
     );
+`endif
 
     bram_rom #(.WORDS(ROM_WORDS)) u_rom (
         .clk(clk), .addr_word(iaddr[$clog2(ROM_WORDS)+1:2]), .rdata(irdata)

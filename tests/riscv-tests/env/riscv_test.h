@@ -13,7 +13,8 @@
 //  * `tohost` is the SYSCON halt register at 0x2000_0000 (see link.ld),
 //    not a memory word polled by a host. The store that reports the
 //    result is the store that stops the core.
-//  * The test body runs in MACHINE mode. Upstream drops to user mode
+//  * The test body runs in MACHINE mode (except under -DRVTEST_VM, see
+//    INIT_SATP). Upstream drops to user mode
 //    after installing a PMP entry that grants U full access; these cores
 //    have no PMP, and their U mode forbids every CSR access -- which the
 //    F tests need for `fcsr`. The instructions under test behave
@@ -50,9 +51,16 @@
 // Per-ISA init. RVTEST_CODE_BEGIN calls `init`; each RVTEST_RV*_ macro
 // below defines what that means for its ISA.
 //-----------------------------------------------------------------------
+#ifndef RVTEST_VM
 #define RVTEST_ENABLE_MACHINE                                           \
   li a0, MSTATUS_MPP;                                                   \
   csrs mstatus, a0;
+#else
+// -DRVTEST_VM: leave MPP = U, so the mret into the body really lands in
+// user mode -- the only mode the MMU translates. (Integer tests only;
+// the F tests need fcsr, which U cannot touch here.)
+#define RVTEST_ENABLE_MACHINE
+#endif
 
 #define RVTEST_FP_ENABLE                                                \
   li a0, MSTATUS_FS;                                                    \
@@ -98,12 +106,34 @@
 // not implement skips the block instead of dying. (These cores read such
 // CSRs as zero and swallow the write, so the guard never fires here -- but
 // it costs two instructions and keeps the sequence upstream's.)
+#ifndef RVTEST_VM
 #define INIT_SATP                                                       \
   la t0, 1f;                                                            \
   csrw mtvec, t0;                                                       \
   csrwi satp, 0;                                                        \
   .align 2;                                                             \
 1:
+#else
+// -DRVTEST_VM (the mc_tlb core): the test body runs in U-mode with Sv32
+// ON through an identity map, so every fetch and every load / store of
+// the suite is translated and goes through the TLBs. One 4 MiB superpage,
+// VA 0x0 -> PA 0x0 (ROM + RAM, V R W X U), in a zeroed root table in
+// .bss. tohost needs no mapping: it is written from the M-mode trap
+// vector, untranslated.
+#define INIT_SATP                                                       \
+  .pushsection .bss;                                                    \
+  .balign 4096;                                                         \
+rvtest_pt: .skip 4096;                                                  \
+  .popsection;                                                          \
+  la t0, rvtest_pt;                                                     \
+  li t1, 0x0000001f;                                                    \
+  sw t1, 0(t0);                                                         \
+  srli t0, t0, 12;                                                      \
+  li t1, 0x80000000;                                                    \
+  or t0, t0, t1;                                                        \
+  csrw satp, t0;                                                        \
+  sfence.vma;
+#endif
 
 #define DELEGATE_NO_TRAPS                                               \
   la t0, 1f;                                                            \
