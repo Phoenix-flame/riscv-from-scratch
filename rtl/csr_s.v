@@ -12,7 +12,8 @@
 //
 // sstatus / sie / sip are restricted *views* of mstatus / mie / mip -- the
 // same underlying bits, masked to those an S-mode kernel may see and set:
-//   mstatus:  SIE=1  MIE=3  SPIE=5  MPIE=7  SPP=8  MPP=12:11
+//   mstatus:  SIE=1  MIE=3  SPIE=5  MPIE=7  SPP=8  MPP=12:11  SUM=18  MXR=19
+//   (SUM / MXR only matter to a core with an MMU -- cpu_pipe_u, Step 44)
 //   mie/mip:  SSI=1  MSI=3  STI=5   MTI=7   SEI=9  MEI=11
 //
 // Trap entry to S:  sepc<-pc  scause<-cause  SPIE<-SIE  SIE<-0  SPP<-(priv==S)
@@ -20,10 +21,19 @@
 // Trap entry to M:  (the existing M behavior)            pc<-mtvec
 // sret:  SIE<-SPIE  SPIE<-1  priv<-SPP?S:U  SPP<-U   pc<-sepc
 // mret:  MIE<-MPIE  MPIE<-1  priv<-MPP      MPP<-U   pc<-mepc
+//
+// Configurable (Step 45). HAS_S / HAS_U / HAS_SATP drop supervisor mode,
+// user mode or the satp register: medeleg/mideleg then read 0 and ignore
+// writes, MPP only ever holds a mode that exists (WARL), and satp reads 0.
+// All default to 1 -- exactly the Step 39 behaviour.
 // =====================================================================
 `default_nettype none
 
-module csr_s (
+module csr_s #(
+    parameter HAS_S    = 1,
+    parameter HAS_U    = 1,
+    parameter HAS_SATP = 1
+) (
     input  wire        clk,
     input  wire        rst,
 
@@ -48,6 +58,8 @@ module csr_s (
     output wire        irq_pending,     // an interrupt is ready to fire
     output wire [31:0] irq_cause,       // its cause (bit31 set)
     output wire        deleg_now,       // the trap being taken routes to S
+    output wire        status_sum,      // mstatus.SUM: S may touch U pages
+    output wire        status_mxr,      // mstatus.MXR: loads may read X pages
     output wire [1:0]  cur_priv,
     output wire [31:0] satp_out
 );
@@ -60,7 +72,7 @@ module csr_s (
     localparam PRIV_M=2'b11, PRIV_S=2'b01, PRIV_U=2'b00;
 
     // sstatus/sie/sip visibility masks
-    localparam [31:0] SSTATUS_MASK = (1<<1)|(1<<5)|(1<<8);          // SIE,SPIE,SPP
+    localparam [31:0] SSTATUS_MASK = (1<<1)|(1<<5)|(1<<8)|(1<<18)|(1<<19); // SIE,SPIE,SPP,SUM,MXR
     localparam [31:0] S_INT_MASK   = (1<<1)|(1<<5)|(1<<9);          // SSI,STI,SEI
 
     reg [31:0] mstatus, medeleg, mideleg, mie, mtvec, mscratch, mepc, mcause, mtval;
@@ -69,7 +81,9 @@ module csr_s (
     reg [1:0]  priv;
 
     assign cur_priv = priv;
-    assign satp_out = satp;
+    assign status_sum = mstatus[18];
+    assign status_mxr = mstatus[19];
+    assign satp_out = HAS_SATP ? satp : 32'd0;
     assign mret_target = mepc;
     assign sret_target = sepc;
 
@@ -105,7 +119,7 @@ module csr_s (
     // ---- delegation decision for the trap being taken this cycle ----
     wire        is_int   = trap_cause[31];
     wire [4:0]  cidx     = trap_cause[4:0];
-    wire        deleg    = (priv != PRIV_M) &
+    wire        deleg    = (HAS_S != 0) & (priv != PRIV_M) &
                            (is_int ? mideleg[cidx] : medeleg[cidx]);
     assign deleg_now    = deleg;
     assign trap_vector  = deleg ? stvec : mtvec;
@@ -131,10 +145,19 @@ module csr_s (
             SCAUSE  : csr_rdata = scause;
             STVAL   : csr_rdata = stval;
             SIP     : csr_rdata = mip & S_INT_MASK;
-            SATP    : csr_rdata = satp;
+            SATP    : csr_rdata = HAS_SATP ? satp : 32'd0;
             default : csr_rdata = 32'd0;
         endcase
     end
+
+    // MPP is WARL: it only ever holds a privilege level this hart has
+    function [1:0] legal_mpp; input [1:0] m;
+        legal_mpp = (m == PRIV_M)                 ? PRIV_M :
+                    (m == PRIV_S && HAS_S)        ? PRIV_S :
+                    (m == PRIV_U && HAS_U)        ? PRIV_U :
+                    HAS_U                         ? PRIV_U : PRIV_M;
+    endfunction
+    localparam [1:0] LEAST = HAS_U ? PRIV_U : PRIV_M;
 
     function [31:0] nx;
         input [31:0] old; input [31:0] src; input [2:0] f3;
@@ -148,7 +171,7 @@ module csr_s (
     integer i;
     always @(posedge clk) begin
         if (rst) begin
-            mstatus<=0; medeleg<=0; mideleg<=0; mie<=0; mtvec<=0; mscratch<=0;
+            mstatus<={19'b0, LEAST, 11'b0}; medeleg<=0; mideleg<=0; mie<=0; mtvec<=0; mscratch<=0;
             mepc<=0; mcause<=0; mtval<=0; stvec<=0; sscratch<=0; sepc<=0;
             scause<=0; stval<=0; satp<=0; mip_sw<=0; priv<=PRIV_M;
         end else if (take_trap) begin
@@ -173,17 +196,20 @@ module csr_s (
             mstatus[3]     <= mstatus[7];
             mstatus[7]     <= 1'b1;
             priv           <= mstatus[12:11];
-            mstatus[12:11] <= PRIV_U;
+            mstatus[12:11] <= LEAST;
         end else if (instr_is_sret) begin
             mstatus[1]     <= mstatus[5];
             mstatus[5]     <= 1'b1;
-            priv           <= mstatus[8] ? PRIV_S : PRIV_U;
+            priv           <= mstatus[8] ? PRIV_S : LEAST;
             mstatus[8]     <= 1'b0;
         end else if (csr_we) begin
             case (csr_addr)
-                MSTATUS : mstatus  <= nx(mstatus, csr_wsrc, csr_funct3);
-                MEDELEG : medeleg  <= nx(medeleg, csr_wsrc, csr_funct3);
-                MIDELEG : mideleg  <= nx(mideleg, csr_wsrc, csr_funct3);
+                MSTATUS : begin
+                    mstatus        <= nx(mstatus, csr_wsrc, csr_funct3);
+                    mstatus[12:11] <= legal_mpp(nx(mstatus, csr_wsrc, csr_funct3) >> 11);
+                end
+                MEDELEG : if (HAS_S) medeleg <= nx(medeleg, csr_wsrc, csr_funct3);
+                MIDELEG : if (HAS_S) mideleg <= nx(mideleg, csr_wsrc, csr_funct3);
                 MIE_A   : mie      <= nx(mie,     csr_wsrc, csr_funct3);
                 MTVEC   : mtvec    <= nx(mtvec,   csr_wsrc, csr_funct3);
                 MSCRATCH: mscratch <= nx(mscratch,csr_wsrc, csr_funct3);
@@ -196,7 +222,7 @@ module csr_s (
                 SEPC    : sepc     <= nx(sepc,    csr_wsrc, csr_funct3);
                 SCAUSE  : scause   <= nx(scause,  csr_wsrc, csr_funct3);
                 STVAL   : stval    <= nx(stval,   csr_wsrc, csr_funct3);
-                SATP    : satp     <= nx(satp,    csr_wsrc, csr_funct3);
+                SATP    : if (HAS_SATP) satp <= nx(satp, csr_wsrc, csr_funct3);
                 // sstatus / sie / sip write only their masked bits of the master
                 SSTATUS : mstatus  <= (mstatus & ~SSTATUS_MASK) |
                                       (nx(mstatus & SSTATUS_MASK, csr_wsrc, csr_funct3) & SSTATUS_MASK);

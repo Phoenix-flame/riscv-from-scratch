@@ -1,0 +1,4 @@
+# Pipeline with M/S/U and delegation but no MMU, PS-attached.
+CONFIG_PROJECT_NAME="riscv_msu_ps"
+CONFIG_SYS_PS=y
+# CONFIG_MMU is not set

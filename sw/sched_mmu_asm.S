@@ -78,6 +78,9 @@ trap_entry:
 3:  csrw mscratch, sp               # mscratch = next ctx base (for its next trap)
     lw   t0, 128(sp)               # ctx[32] = next task's satp ...
     csrw satp, t0                  # ... SWITCH ADDRESS SPACE (no TLB => immediate)
+#ifdef SCHED_VM
+    sfence.vma                     # a core WITH TLBs must drop the old space
+#endif
     lw   t0, 0(sp)                  # restore mepc
     csrw mepc, t0
     lw x1, 4(sp)

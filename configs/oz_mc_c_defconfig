@@ -1,0 +1,4 @@
+# Multi-cycle RV32IMC (cpu_mc_c): the whole image is compressed.
+CONFIG_PROJECT_NAME="riscv_mc_c"
+CONFIG_CORE_MC=y
+CONFIG_ISA_C=y

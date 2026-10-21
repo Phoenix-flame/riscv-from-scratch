@@ -1,0 +1,4 @@
+reuse  : 297442008
+sort   : 1166402793
+stream : 3657216
+CACHE BENCH OK

@@ -1,0 +1,5 @@
+# Multi-cycle RV32IMF (cpu_mc_f), PS-attached.
+CONFIG_PROJECT_NAME="riscv_mc_f_ps"
+CONFIG_SYS_PS=y
+CONFIG_CORE_MC=y
+CONFIG_ISA_F=y

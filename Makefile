@@ -285,6 +285,97 @@ sw/tlb.hex: sw/tlb_demo.c sw/tlb_asm.S sw/crt0.s sw/link_tlb.ld sw/bin2hex.py
 tlb: sw/tlb.hex ## translated fetch + I/D TLBs + sfence.vma, vs a walk-every-access core
 	$(IV) -o $(B)/tlb_tb.vvp $(RTL_FPGA_TLB) tb/tlb_tb.v && $(VVP) $(B)/tlb_tb.vvp
 
+# ---- Step 42: the unified pipeline (RV32IMA + M/U + Sv32 + TLBs) ------
+RTL_PIPE_U = rtl/alu.v rtl/regfile.v rtl/immgen.v rtl/control.v rtl/csr_s.v rtl/branch_predictor.v \
+             rtl/timer.v rtl/uart_tx.v rtl/uart_hw.v rtl/tlb.v rtl/ptw.v \
+             rtl/cpu_pipe_u.v rtl/soc_pipe_u.v
+
+# Step 38's scheduler with the code page mapped X and sfence.vma on each switch
+sw/smmu_vm.hex: sw/sched_mmu.c sw/sched_mmu_asm.S sw/firmware.h sw/crt0.s sw/link.ld sw/bin2hex.py
+	riscv64-unknown-elf-gcc -march=rv32im_zicsr -mabi=ilp32 -nostdlib -nostartfiles \
+	  -ffreestanding -O1 -DSCHED_VM -I sw -T sw/link.ld sw/crt0.s sw/sched_mmu_asm.S sw/sched_mmu.c \
+	  -o $(B)/smmu_vm.elf -lgcc
+	riscv64-unknown-elf-objcopy -O binary $(B)/smmu_vm.elf $(B)/smmu_vm.bin
+	python3 sw/bin2hex.py $(B)/smmu_vm.bin > sw/smmu_vm.hex
+
+pipe-u: sw/tlb.hex sw/at.hex sw/smmu_vm.hex ## unified pipeline: TLB demo + atomics + isolated processes + riscv-tests (M and U/Sv32)
+	$(IV) -o $(B)/pipe_u_tlb_tb.vvp $(RTL_PIPE_U) tb/pipe_u_tlb_tb.v && $(VVP) $(B)/pipe_u_tlb_tb.vvp
+	$(IV) -o $(B)/pipe_u_prog_tb.vvp $(RTL_PIPE_U) tb/pipe_u_prog_tb.v && \
+	  $(VVP) $(B)/pipe_u_prog_tb.vvp +ROM=sw/at.hex +RAM=sw/at.hex +EXPECT=tb/atomic_expected.txt
+	$(IV) -o $(B)/pipe_u_sched_tb.vvp $(RTL_PIPE_U) tb/pipe_u_sched_tb.v && $(VVP) $(B)/pipe_u_sched_tb.vvp
+	python3 tools/rvtests --core pipe_u
+	python3 tools/rvtests --core pipe_u_vm
+
+# ---- Step 43: I-cache / D-cache in front of slow (DDR-like) memory -----
+RTL_PIPE_C = rtl/alu.v rtl/regfile.v rtl/immgen.v rtl/control.v rtl/csr_s.v rtl/branch_predictor.v \
+             rtl/timer.v rtl/uart_tx.v rtl/uart_hw.v rtl/tlb.v rtl/ptw.v \
+             rtl/cpu_pipe_u.v rtl/mem_slow.v rtl/icache.v rtl/dcache.v \
+             rtl/mem_bridge.v rtl/soc_pipe_c.v
+
+sw/cb.hex: sw/cache_bench.c sw/firmware.c sw/firmware.h sw/crt0.s sw/link.ld sw/bin2hex.py
+	riscv64-unknown-elf-gcc -march=rv32im_zicsr -mabi=ilp32 -nostdlib -nostartfiles \
+	  -ffreestanding -O1 -I sw -T sw/link.ld sw/crt0.s sw/firmware.c sw/cache_bench.c \
+	  -o $(B)/cb.elf -lgcc
+	riscv64-unknown-elf-objcopy -O binary $(B)/cb.elf $(B)/cb.bin
+	python3 sw/bin2hex.py $(B)/cb.bin > sw/cb.hex
+
+CACHE_LATS ?= 1 5 10 20 40
+cache-unit: ## D-cache vs a reference model: random reads/writes/byte masks, evictions, slow memory
+	$(IV) -o $(B)/dcache_tb.vvp rtl/mem_slow.v rtl/dcache.v tb/dcache_tb.v && $(VVP) $(B)/dcache_tb.vvp
+
+cache: sw/cb.hex sw/tlb.hex sw/smmu_vm.hex sw/sv.hex ## I/D caches vs no caches on slow memory, across latencies; + MMU programs and riscv-tests through the caches
+	@for L in $(CACHE_LATS); do \
+	  $(IV) -Pcache_tb.LAT=$$L -o $(B)/cache_tb_$$L.vvp $(RTL_PIPE_C) rtl/soc_pipe_u.v tb/cache_tb.v && \
+	  $(VVP) $(B)/cache_tb_$$L.vvp | grep -v '\$$finish' || exit 1; done
+	$(IV) -o $(B)/cache_sys_tb.vvp $(RTL_PIPE_C) tb/cache_sys_tb.v && $(VVP) $(B)/cache_sys_tb.vvp
+	python3 tools/rvtests --core pipe_c
+	python3 tools/rvtests --core pipe_c_vm
+
+# ---- Step 44: S-mode + branch predictor folded into the unified pipeline -
+sw/sv.hex: sw/sv_demo.c sw/sv_asm.S sw/crt0.s sw/link_tlb.ld sw/bin2hex.py
+	riscv64-unknown-elf-gcc -march=rv32ima_zicsr -mabi=ilp32 -nostdlib -nostartfiles \
+	  -ffreestanding -O1 -I sw -T sw/link_tlb.ld sw/crt0.s sw/sv_asm.S sw/sv_demo.c \
+	  -o $(B)/sv.elf -lgcc
+	riscv64-unknown-elf-objcopy -O binary $(B)/sv.elf $(B)/sv.bin
+	python3 sw/bin2hex.py $(B)/sv.bin > sw/sv.hex
+
+pipe-u-sv: sw/sv.hex sw/smode.hex sw/bpred_bench.hex sw/cb.hex ## unified pipeline: S-mode kernel with paging, Step 39 delegation demo, branch predictor on/off
+	$(IV) -o $(B)/pipe_u_sv_tb.vvp $(RTL_PIPE_U) tb/pipe_u_sv_tb.v && $(VVP) $(B)/pipe_u_sv_tb.vvp
+	$(IV) -o $(B)/pipe_u_smode_tb.vvp $(RTL_PIPE_U) tb/pipe_u_smode_tb.v && $(VVP) $(B)/pipe_u_smode_tb.vvp
+	$(IV) -o $(B)/pipe_u_bp_tb.vvp $(RTL_PIPE_U) tb/pipe_u_bp_tb.v && $(VVP) $(B)/pipe_u_bp_tb.vvp
+
+# ---- Step 45: menuconfig -> a generated RISC-V project for OpenZynq ------
+# make menuconfig                         edit .config (curses menu, Kconfig)
+# make defconfig DEFCONFIG=configs/...    start from a preset
+# make savedefconfig                      write the minimal form to ./defconfig
+# make rvgen                              .config -> build/oz/projects/<name>/, simulated
+# make oz-export OZ=../OpenZynq           ... and copy it into an OpenZynq checkout
+# make rvgen-all                          every configs/oz_*_defconfig, generated + simulated
+KCONFIG_CONFIG ?= .config
+export KCONFIG_CONFIG
+DEFCONFIG ?= configs/oz_full_defconfig
+.PHONY: menuconfig defconfig savedefconfig olddefconfig rvgen oz-export rvgen-all
+menuconfig: ## edit the RISC-V configuration for OpenZynq (writes .config)
+	python3 tools/kconfig/menuconfig.py Kconfig
+defconfig: ## load a preset: make defconfig DEFCONFIG=configs/oz_mc_defconfig
+	python3 tools/kconfig/defconfig.py --kconfig Kconfig $(DEFCONFIG)
+savedefconfig:
+	python3 tools/kconfig/savedefconfig.py --kconfig Kconfig --out defconfig
+olddefconfig:
+	python3 tools/kconfig/olddefconfig.py Kconfig
+rvgen: ## generate (and simulate) the OpenZynq project for .config
+	python3 tools/rvgen/rvgen.py --config $(KCONFIG_CONFIG) --sim
+oz-export: ## ... and copy it into an OpenZynq checkout: make oz-export OZ=../OpenZynq
+	@test -n "$(OZ)" || { echo "usage: make oz-export OZ=/path/to/OpenZynq"; exit 1; }
+	python3 tools/rvgen/rvgen.py --config $(KCONFIG_CONFIG) --sim --oz $(OZ)
+rvgen-all: ## generate + simulate every configs/oz_*_defconfig
+	@fail=0; for c in configs/oz_*_defconfig; do \
+	  echo "=== $$c"; \
+	  python3 tools/rvgen/rvgen.py --config $$c --sim > $(B)/rvgen_$$(basename $$c).log 2>&1 \
+	    && grep -E '^rvgen: rv32|^PASS:' $(B)/rvgen_$$(basename $$c).log \
+	    || { fail=1; tail -30 $(B)/rvgen_$$(basename $$c).log; }; \
+	done; exit $$fail
+
 # ---- Preemptive multitasking (two tasks, timer-driven scheduler) ------
 RTL_SOC = rtl/alu.v rtl/regfile.v rtl/immgen.v rtl/control.v rtl/csr.v rtl/imem.v \
           rtl/dmem.v rtl/uart.v rtl/timer.v rtl/syscon.v rtl/cpu_core.v rtl/soc.v
@@ -560,6 +651,8 @@ smode: sw/smode.hex ## supervisor mode: medeleg/mideleg delegate U/S traps to an
 #   make riscv-tests ARGS=--list
 #
 # Cores: mc (cpu_mc) · mc_c (cpu_mc_c) · mc_f (cpu_mc_f) · mc_tlb (cpu_mc_tlb, Sv32 on)
+#        pipe_u / pipe_u_vm (cpu_pipe_u: body in M / in U with Sv32 on)
+#        pipe_c / pipe_c_vm (cpu_pipe_u behind small I/D caches on slow memory)
 #        sc (cpu_core) · pipe (cpu_pipe_trap) · all
 riscv-tests: ## official riscv-tests: rv32ui/um/ua/uc/uf per-instruction suite
 	python3 tools/rvtests --core $(or $(CORE),mc) $(ARGS)

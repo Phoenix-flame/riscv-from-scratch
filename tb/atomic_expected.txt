@@ -1,0 +1,11 @@
+amoadd : old=10 now=15   (want 10,15)
+amoswap: old=15 now=99   (want 15,99)
+amoor  : now=ff       (want ff)
+amoand : now=f        (want f)
+amoxor : now=55       (want 55)
+amomax : now=3        (want 3)
+amomin : now=-5       (want -5)
+lr/sc  : loaded=42 sc=0 now=43  (want 42,0,43)
+sc again: sc=1 now=43          (want 1,43)
+lock   : prev=0 held=1        (want 0,1)
+RV32A OK

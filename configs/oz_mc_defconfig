@@ -1,0 +1,3 @@
+# Multi-cycle RV32IM (cpu_mc), machine mode, standalone.
+CONFIG_PROJECT_NAME="riscv_mc"
+CONFIG_CORE_MC=y
