@@ -61,6 +61,12 @@ static void build_pt(unsigned root, unsigned l0, unsigned priv, unsigned stk)
 {
     /* root[0] -> level-0 table (a pointer PTE: V set, R=W=X clear) */
     PTW(root)[0]    = ((l0 >> 12) << 10) | PV;
+#ifdef SCHED_VM
+    /* -DSCHED_VM (cores that translate FETCH too, Steps 41/42): map the
+     * shared code page VA 0x0 -> PA 0x0, execute-only. Without it the
+     * tasks' very first fetch is an instruction page fault. */
+    PTW(l0)[0]      = (0u << 10) | PV|PX|PU;
+#endif
     /* root[0x40] -> 4 MiB superpage mapping VA 0x10000000 -> PA 0x10000000
      * (the UART), so a user task can print. Shared by both tasks. */
     PTW(root)[0x40] = (0x40u << 20) | PV|PR|PW|PU;

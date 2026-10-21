@@ -285,6 +285,27 @@ sw/tlb.hex: sw/tlb_demo.c sw/tlb_asm.S sw/crt0.s sw/link_tlb.ld sw/bin2hex.py
 tlb: sw/tlb.hex ## translated fetch + I/D TLBs + sfence.vma, vs a walk-every-access core
 	$(IV) -o $(B)/tlb_tb.vvp $(RTL_FPGA_TLB) tb/tlb_tb.v && $(VVP) $(B)/tlb_tb.vvp
 
+# ---- Step 42: the unified pipeline (RV32IMA + M/U + Sv32 + TLBs) ------
+RTL_PIPE_U = rtl/alu.v rtl/regfile.v rtl/immgen.v rtl/control.v rtl/csr.v \
+             rtl/timer.v rtl/uart_tx.v rtl/uart_hw.v rtl/tlb.v rtl/ptw.v \
+             rtl/cpu_pipe_u.v rtl/soc_pipe_u.v
+
+# Step 38's scheduler with the code page mapped X and sfence.vma on each switch
+sw/smmu_vm.hex: sw/sched_mmu.c sw/sched_mmu_asm.S sw/firmware.h sw/crt0.s sw/link.ld sw/bin2hex.py
+	riscv64-unknown-elf-gcc -march=rv32im_zicsr -mabi=ilp32 -nostdlib -nostartfiles \
+	  -ffreestanding -O1 -DSCHED_VM -I sw -T sw/link.ld sw/crt0.s sw/sched_mmu_asm.S sw/sched_mmu.c \
+	  -o $(B)/smmu_vm.elf -lgcc
+	riscv64-unknown-elf-objcopy -O binary $(B)/smmu_vm.elf $(B)/smmu_vm.bin
+	python3 sw/bin2hex.py $(B)/smmu_vm.bin > sw/smmu_vm.hex
+
+pipe-u: sw/tlb.hex sw/at.hex sw/smmu_vm.hex ## unified pipeline: TLB demo + atomics + isolated processes + riscv-tests (M and U/Sv32)
+	$(IV) -o $(B)/pipe_u_tlb_tb.vvp $(RTL_PIPE_U) tb/pipe_u_tlb_tb.v && $(VVP) $(B)/pipe_u_tlb_tb.vvp
+	$(IV) -o $(B)/pipe_u_prog_tb.vvp $(RTL_PIPE_U) tb/pipe_u_prog_tb.v && \
+	  $(VVP) $(B)/pipe_u_prog_tb.vvp +ROM=sw/at.hex +RAM=sw/at.hex +EXPECT=tb/atomic_expected.txt
+	$(IV) -o $(B)/pipe_u_sched_tb.vvp $(RTL_PIPE_U) tb/pipe_u_sched_tb.v && $(VVP) $(B)/pipe_u_sched_tb.vvp
+	python3 tools/rvtests --core pipe_u
+	python3 tools/rvtests --core pipe_u_vm
+
 # ---- Preemptive multitasking (two tasks, timer-driven scheduler) ------
 RTL_SOC = rtl/alu.v rtl/regfile.v rtl/immgen.v rtl/control.v rtl/csr.v rtl/imem.v \
           rtl/dmem.v rtl/uart.v rtl/timer.v rtl/syscon.v rtl/cpu_core.v rtl/soc.v
@@ -560,6 +581,7 @@ smode: sw/smode.hex ## supervisor mode: medeleg/mideleg delegate U/S traps to an
 #   make riscv-tests ARGS=--list
 #
 # Cores: mc (cpu_mc) · mc_c (cpu_mc_c) · mc_f (cpu_mc_f) · mc_tlb (cpu_mc_tlb, Sv32 on)
+#        pipe_u / pipe_u_vm (cpu_pipe_u: body in M / in U with Sv32 on)
 #        sc (cpu_core) · pipe (cpu_pipe_trap) · all
 riscv-tests: ## official riscv-tests: rv32ui/um/ua/uc/uf per-instruction suite
 	python3 tools/rvtests --core $(or $(CORE),mc) $(ARGS)

@@ -67,6 +67,7 @@ sequence) and we will watch the registers change in the waveform viewer.
 | 39 | `docs/39-supervisor-delegation.md` | Bonus: supervisor mode + trap delegation — add S-mode (`cpu_mc_s`, `csr_s`) with `medeleg`/`mideleg`; a user `ecall`, an illegal instruction, and a software interrupt are delivered straight to an S-mode kernel, while an `ecall` from S still reaches M | **done & tested (sim)** |
 | 40 | `docs/40-riscv-tests.md` | Bonus: the official **riscv-tests** suite — the reference per-instruction tests (rv32ui/um/ua/uc/uf) run against five cores through our own target environment; 272 test programs, and the two FPU bugs they found | **done & tested (sim)** |
 | 41 | `docs/41-instruction-fetch-tlb.md` | Bonus: translated instruction fetch + TLBs — the PC becomes a virtual address (execute-only pages, instruction page faults), split 4-entry I/D TLBs make a hit cost zero cycles, and `sfence.vma` invalidates them; 2.36x fewer cycles than walking every access, and the whole rv32ui/um suite passes with translation on | **done & tested (sim)** |
+| 42 | `docs/42-unified-pipeline.md` | Bonus: unify the cores — one 5-stage pipeline (`cpu_pipe_u`) with RV32IMA, M/U privilege, Sv32 fetch + data translation and I/D TLBs, and stall-capable ready/valid memory ports; precise page faults committed in EX, AMOs as two MEM requests, a shared walker borrowing the D-port; riscv-tests 58/58 in M and with Sv32 on in U | **done & tested (sim)** |
 
 ## Directory layout
 
@@ -226,6 +227,8 @@ tools/rvtests --list                   # what would run
 | `mc_f` | `cpu_mc_f.v` — multi-cycle RV32IMF | ui, um, uf | 58/58 |
 | `pipe` | `cpu_pipe_trap.v` — 5-stage pipeline | ui, um | 49/49 |
 | `mc_tlb` | `cpu_mc_tlb.v` — multi-cycle RV32IM, run with Sv32 **on** (identity map, U-mode) through the I/D TLBs | ui, um | 48/48 |
+| `pipe_u` | `cpu_pipe_u.v` — unified pipeline RV32IMA + MMU (body in M) | ui, um, ua | 58/58 |
+| `pipe_u_vm` | `cpu_pipe_u.v` — same, body in U with Sv32 **on** | ui, um, ua | 58/58 |
 
 Tests that cannot pass on this hardware (`fence_i`, `ma_data` on the word-RAM
 cores, `fmadd`) are still run and reported as documented gaps rather than
@@ -259,7 +262,7 @@ A menu of where this project can go next, grouped by goal. Rough difficulty:
 ### Make it fast (microarchitecture)
 - ✅ **Branch predictor** — BTB + 2-bit saturating counters on the pipelined core (Step 32): 3544 flushes → 879 mispredictions on the demo, ~1.3x fewer cycles. Return-address stack is the natural follow-up.
 - 🟡 **I-cache / D-cache** — the payoff of understanding BRAM latency; prerequisite for DDR.
-- 🟡 **Unify the cores** — fold atomics + MMU into the pipelined core so the fast path has every feature.
+- ✅ **Unify the cores** — `cpu_pipe_u` (Step 42): the 5-stage pipeline now has atomics (RV32A), user mode, and the Sv32 MMU with translated fetch and I/D TLBs, behind stall-capable ready/valid memory ports. Data translation sits in EX so page faults are precise for free; fetch faults ride down the pipe as tokens; AMOs are two MEM requests; one walker borrows the D-port. The Step 41 TLB demo runs unchanged (1339 vs 2050 cycles on `cpu_mc_tlb`), Step 38's isolated processes run with fetch translated (and fail without the `sfence.vma`), and riscv-tests pass 58/58 both in M and with Sv32 on in U. S-mode/delegation (Step 39) and the branch predictor (Step 32) are the parts not yet folded in.
 - 🔴 **Superscalar / out-of-order** — Tomasulo, register renaming, reorder buffer.
 
 ### Broaden the ISA
