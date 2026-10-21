@@ -124,6 +124,28 @@ CORES = {
         "suites": ["rv32ui", "rv32um", "rv32ua"],
         "ram": "word",
     },
+    # ... and behind small I/D caches on slow memory (Step 43).
+    "pipe_c": {
+        "desc": "unified pipeline + 512 B I$/D$ on slow memory",
+        "rtl": COMMON_RTL + ["tlb", "ptw", "cpu_pipe_u", "icache", "dcache", "mem_slow"],
+        "tb": "tb/rvtest_pc_tb.v",
+        "define": None,
+        "march": "rv32ima_zicsr_zifencei",
+        "abi": "ilp32",
+        "suites": ["rv32ui", "rv32um", "rv32ua"],
+        "ram": "word",
+    },
+    "pipe_c_vm": {
+        "desc": "... same, test body in U with Sv32 on (identity map)",
+        "rtl": COMMON_RTL + ["tlb", "ptw", "cpu_pipe_u", "icache", "dcache", "mem_slow"],
+        "tb": "tb/rvtest_pc_tb.v",
+        "define": None,
+        "march": "rv32ima_zicsr_zifencei",
+        "cflags": ["-DRVTEST_VM"],
+        "abi": "ilp32",
+        "suites": ["rv32ui", "rv32um", "rv32ua"],
+        "ram": "word",
+    },
     "sc": {
         "desc": "single-cycle RV32IMA + Zicsr (rtl/cpu_core.v)",
         "rtl": COMMON_RTL + ["imem", "dmem", "cpu_core"],
@@ -186,12 +208,12 @@ RAM_BYTES = 65536         # 64 KB data RAM, as a byte array (dmem.v)
 KNOWN_GAPS = {
     # test            cores it applies to (None = all)
     "rv32ui-fence_i": ({"mc", "mc_c", "mc_f", "mc_tlb", "sc", "pipe",
-                        "pipe_u", "pipe_u_vm"},
+                        "pipe_u", "pipe_u_vm", "pipe_c", "pipe_c_vm"},
         "self-modifying code. The instruction ROM is written once, at time "
         "zero; no store can ever become an instruction. (The s6 core has one "
         "unified dual-port memory, so it passes.)"),
     "rv32ui-ma_data": ({"mc", "mc_c", "mc_f", "mc_tlb", "s6", "s6_sf",
-                        "pipe_u", "pipe_u_vm"},
+                        "pipe_u", "pipe_u_vm", "pipe_c", "pipe_c_vm"},
         "misaligned load/store. The mc cores select a sub-word inside one RAM "
         "word, so any access not aligned to its own width reads or writes the "
         "wrong bytes -- silently, with no trap. The s6 core instead raises the "

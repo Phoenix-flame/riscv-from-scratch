@@ -306,6 +306,31 @@ pipe-u: sw/tlb.hex sw/at.hex sw/smmu_vm.hex ## unified pipeline: TLB demo + atom
 	python3 tools/rvtests --core pipe_u
 	python3 tools/rvtests --core pipe_u_vm
 
+# ---- Step 43: I-cache / D-cache in front of slow (DDR-like) memory -----
+RTL_PIPE_C = rtl/alu.v rtl/regfile.v rtl/immgen.v rtl/control.v rtl/csr.v \
+             rtl/timer.v rtl/uart_tx.v rtl/uart_hw.v rtl/tlb.v rtl/ptw.v \
+             rtl/cpu_pipe_u.v rtl/mem_slow.v rtl/icache.v rtl/dcache.v \
+             rtl/mem_bridge.v rtl/soc_pipe_c.v
+
+sw/cb.hex: sw/cache_bench.c sw/firmware.c sw/firmware.h sw/crt0.s sw/link.ld sw/bin2hex.py
+	riscv64-unknown-elf-gcc -march=rv32im_zicsr -mabi=ilp32 -nostdlib -nostartfiles \
+	  -ffreestanding -O1 -I sw -T sw/link.ld sw/crt0.s sw/firmware.c sw/cache_bench.c \
+	  -o $(B)/cb.elf -lgcc
+	riscv64-unknown-elf-objcopy -O binary $(B)/cb.elf $(B)/cb.bin
+	python3 sw/bin2hex.py $(B)/cb.bin > sw/cb.hex
+
+CACHE_LATS ?= 1 5 10 20 40
+cache-unit: ## D-cache vs a reference model: random reads/writes/byte masks, evictions, slow memory
+	$(IV) -o $(B)/dcache_tb.vvp rtl/mem_slow.v rtl/dcache.v tb/dcache_tb.v && $(VVP) $(B)/dcache_tb.vvp
+
+cache: sw/cb.hex sw/tlb.hex sw/smmu_vm.hex ## I/D caches vs no caches on slow memory, across latencies; + MMU programs and riscv-tests through the caches
+	@for L in $(CACHE_LATS); do \
+	  $(IV) -Pcache_tb.LAT=$$L -o $(B)/cache_tb_$$L.vvp $(RTL_PIPE_C) rtl/soc_pipe_u.v tb/cache_tb.v && \
+	  $(VVP) $(B)/cache_tb_$$L.vvp | grep -v '\$$finish' || exit 1; done
+	$(IV) -o $(B)/cache_sys_tb.vvp $(RTL_PIPE_C) tb/cache_sys_tb.v && $(VVP) $(B)/cache_sys_tb.vvp
+	python3 tools/rvtests --core pipe_c
+	python3 tools/rvtests --core pipe_c_vm
+
 # ---- Preemptive multitasking (two tasks, timer-driven scheduler) ------
 RTL_SOC = rtl/alu.v rtl/regfile.v rtl/immgen.v rtl/control.v rtl/csr.v rtl/imem.v \
           rtl/dmem.v rtl/uart.v rtl/timer.v rtl/syscon.v rtl/cpu_core.v rtl/soc.v
@@ -582,6 +607,7 @@ smode: sw/smode.hex ## supervisor mode: medeleg/mideleg delegate U/S traps to an
 #
 # Cores: mc (cpu_mc) · mc_c (cpu_mc_c) · mc_f (cpu_mc_f) · mc_tlb (cpu_mc_tlb, Sv32 on)
 #        pipe_u / pipe_u_vm (cpu_pipe_u: body in M / in U with Sv32 on)
+#        pipe_c / pipe_c_vm (cpu_pipe_u behind small I/D caches on slow memory)
 #        sc (cpu_core) · pipe (cpu_pipe_trap) · all
 riscv-tests: ## official riscv-tests: rv32ui/um/ua/uc/uf per-instruction suite
 	python3 tools/rvtests --core $(or $(CORE),mc) $(ARGS)

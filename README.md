@@ -68,6 +68,7 @@ sequence) and we will watch the registers change in the waveform viewer.
 | 40 | `docs/40-riscv-tests.md` | Bonus: the official **riscv-tests** suite — the reference per-instruction tests (rv32ui/um/ua/uc/uf) run against five cores through our own target environment; 272 test programs, and the two FPU bugs they found | **done & tested (sim)** |
 | 41 | `docs/41-instruction-fetch-tlb.md` | Bonus: translated instruction fetch + TLBs — the PC becomes a virtual address (execute-only pages, instruction page faults), split 4-entry I/D TLBs make a hit cost zero cycles, and `sfence.vma` invalidates them; 2.36x fewer cycles than walking every access, and the whole rv32ui/um suite passes with translation on | **done & tested (sim)** |
 | 42 | `docs/42-unified-pipeline.md` | Bonus: unify the cores — one 5-stage pipeline (`cpu_pipe_u`) with RV32IMA, M/U privilege, Sv32 fetch + data translation and I/D TLBs, and stall-capable ready/valid memory ports; precise page faults committed in EX, AMOs as two MEM requests, a shared walker borrowing the D-port; riscv-tests 58/58 in M and with Sv32 on in U | **done & tested (sim)** |
+| 43 | `docs/43-caches.md` | Bonus: I-cache + write-back D-cache in front of a slow, burst-oriented (DDR-like) memory, on the unchanged unified pipeline; hits cost zero cycles, misses one line burst; 11× faster than no caches at latency 10 and 25× at 40 (CPI 2.0 / 2.7 vs 22.5 / 67.6), byte-exact vs the host compiler; D-cache vs a random reference model; MMU programs and riscv-tests through tiny caches | **done & tested (sim)** |
 
 ## Directory layout
 
@@ -229,6 +230,8 @@ tools/rvtests --list                   # what would run
 | `mc_tlb` | `cpu_mc_tlb.v` — multi-cycle RV32IM, run with Sv32 **on** (identity map, U-mode) through the I/D TLBs | ui, um | 48/48 |
 | `pipe_u` | `cpu_pipe_u.v` — unified pipeline RV32IMA + MMU (body in M) | ui, um, ua | 58/58 |
 | `pipe_u_vm` | `cpu_pipe_u.v` — same, body in U with Sv32 **on** | ui, um, ua | 58/58 |
+| `pipe_c` | `cpu_pipe_u.v` behind 512 B I$/D$ on slow memory (latency 5) | ui, um, ua | 58/58 |
+| `pipe_c_vm` | same, body in U with Sv32 **on** (PTEs read through the D$) | ui, um, ua | 58/58 |
 
 Tests that cannot pass on this hardware (`fence_i`, `ma_data` on the word-RAM
 cores, `fmadd`) are still run and reported as documented gaps rather than
@@ -261,7 +264,7 @@ A menu of where this project can go next, grouped by goal. Rough difficulty:
 
 ### Make it fast (microarchitecture)
 - ✅ **Branch predictor** — BTB + 2-bit saturating counters on the pipelined core (Step 32): 3544 flushes → 879 mispredictions on the demo, ~1.3x fewer cycles. Return-address stack is the natural follow-up.
-- 🟡 **I-cache / D-cache** — the payoff of understanding BRAM latency; prerequisite for DDR.
+- ✅ **I-cache / D-cache** — direct-mapped I-cache and write-back, write-allocate D-cache (Step 43) on the unified pipeline's ready/valid ports, in front of `mem_slow`, a DDR-like memory (first-word latency, then one word per cycle). Hits cost nothing; a miss is one line burst. On a mixed benchmark the caches give 4.9× / 11× / 25× over no caches at latency 1 / 10 / 40 (CPI 1.8 / 2.0 / 2.7 vs ideal 1.55), and the remaining cost is exactly misses × latency. Verified against a random reference model, byte-exact vs the host compiler, and with the MMU programs and riscv-tests through 256–512-byte caches. A single-port DDR arbiter, AXI4 bursts and a registered (BRAM-sized) lookup are the next steps.
 - ✅ **Unify the cores** — `cpu_pipe_u` (Step 42): the 5-stage pipeline now has atomics (RV32A), user mode, and the Sv32 MMU with translated fetch and I/D TLBs, behind stall-capable ready/valid memory ports. Data translation sits in EX so page faults are precise for free; fetch faults ride down the pipe as tokens; AMOs are two MEM requests; one walker borrows the D-port. The Step 41 TLB demo runs unchanged (1339 vs 2050 cycles on `cpu_mc_tlb`), Step 38's isolated processes run with fetch translated (and fail without the `sfence.vma`), and riscv-tests pass 58/58 both in M and with Sv32 on in U. S-mode/delegation (Step 39) and the branch predictor (Step 32) are the parts not yet folded in.
 - 🔴 **Superscalar / out-of-order** — Tomasulo, register renaming, reorder buffer.
 
