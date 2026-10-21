@@ -104,8 +104,8 @@ CORES = {
     # The unified pipeline (Step 42): run twice -- once as every other core
     # sees the suite (body in M), once with the body in U and Sv32 on.
     "pipe_u": {
-        "desc": "unified pipeline RV32IMA + MMU (rtl/cpu_pipe_u.v)",
-        "rtl": COMMON_RTL + ["tlb", "ptw", "cpu_pipe_u"],
+        "desc": "unified pipeline RV32IMA M/S/U+MMU+BP (cpu_pipe_u.v)",
+        "rtl": COMMON_RTL + ["csr_s", "branch_predictor", "tlb", "ptw", "cpu_pipe_u"],
         "tb": "tb/rvtest_pu_tb.v",
         "define": None,
         "march": "rv32ima_zicsr_zifencei",
@@ -115,7 +115,7 @@ CORES = {
     },
     "pipe_u_vm": {
         "desc": "... same, test body in U with Sv32 on (identity map)",
-        "rtl": COMMON_RTL + ["tlb", "ptw", "cpu_pipe_u"],
+        "rtl": COMMON_RTL + ["csr_s", "branch_predictor", "tlb", "ptw", "cpu_pipe_u"],
         "tb": "tb/rvtest_pu_tb.v",
         "define": None,
         "march": "rv32ima_zicsr_zifencei",
@@ -127,7 +127,7 @@ CORES = {
     # ... and behind small I/D caches on slow memory (Step 43).
     "pipe_c": {
         "desc": "unified pipeline + 512 B I$/D$ on slow memory",
-        "rtl": COMMON_RTL + ["tlb", "ptw", "cpu_pipe_u", "icache", "dcache", "mem_slow"],
+        "rtl": COMMON_RTL + ["csr_s", "branch_predictor", "tlb", "ptw", "cpu_pipe_u", "icache", "dcache", "mem_slow"],
         "tb": "tb/rvtest_pc_tb.v",
         "define": None,
         "march": "rv32ima_zicsr_zifencei",
@@ -137,7 +137,7 @@ CORES = {
     },
     "pipe_c_vm": {
         "desc": "... same, test body in U with Sv32 on (identity map)",
-        "rtl": COMMON_RTL + ["tlb", "ptw", "cpu_pipe_u", "icache", "dcache", "mem_slow"],
+        "rtl": COMMON_RTL + ["csr_s", "branch_predictor", "tlb", "ptw", "cpu_pipe_u", "icache", "dcache", "mem_slow"],
         "tb": "tb/rvtest_pc_tb.v",
         "define": None,
         "march": "rv32ima_zicsr_zifencei",

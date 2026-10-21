@@ -1,16 +1,19 @@
 // =====================================================================
 // cpu_pipe_u.v  -  the UNIFIED pipelined core
-//                  5-stage RV32IMA + Zicsr, M/U privilege, Sv32 MMU with
-//                  translated fetch + I/D TLBs, stall-capable buses
+//                  5-stage RV32IMA + Zicsr, M/S/U privilege with trap
+//                  delegation, Sv32 MMU with translated fetch + I/D TLBs,
+//                  BTB + 2-bit branch predictor, stall-capable buses
 // ---------------------------------------------------------------------
 // cpu_pipe_trap (Step 20) is the fast core, but it only had RV32IM, machine
 // mode and two ideal combinational memories. The features added since
 // lived on the multi-cycle cores: atomics (Step 26, single-cycle), user
-// mode (21), the MMU (22/24) and the TLBs with fetch translation (41).
-// This core folds them all into the pipeline:
+// mode (21), the MMU (22/24) and the TLBs with fetch translation (41) --
+// and, folded in by Step 44, supervisor mode with medeleg/mideleg (39) and
+// the branch predictor (32). This core puts them all in the pipeline:
 //
-//   IF   translate the PC (I-TLB), fetch through a ready/valid I-port
-//   ID   decode (+ AMO / LR / SC / sfence.vma)
+//   IF   predict the next PC (BTB + BHT), translate the PC (I-TLB),
+//        fetch through a ready/valid I-port
+//   ID   decode (+ AMO / LR / SC / sfence.vma / sret)
 //   EX   ALU, branches, CSRs, translate the data address (D-TLB) and
 //        COMMIT every trap -- so page faults are as precise as ecall
 //   MEM  one request on a ready/valid D-port (two for an AMO:
@@ -24,7 +27,20 @@
 //   * I-port not ready -> IF inserts a bubble, the rest of the pipe moves
 //   * D-port not ready -> the whole pipe freezes until it is
 //
-// Translation. In U-mode with satp.MODE=1, IF looks up the I-TLB with
+// Privilege (Step 44). csr_s supplies M/S/U, sstatus/sie/sip/stvec/sepc/
+// scause/stval, and the delegation decision: a trap taken below M whose
+// cause is set in medeleg (exceptions) or mideleg (interrupts) vectors to
+// stvec in S-mode instead of mtvec. mtval/stval get the faulting address
+// (page faults), the instruction (illegal) or the PC (ebreak, fetch fault).
+//
+// Branch prediction (Step 44, BPRED=1). IF steers the next PC with the
+// branch_predictor of Step 32; the guess rides down the pipe and EX
+// checks it: a wrong direction, a wrong target, or a "taken" guess on an
+// instruction that is not a branch at all redirects to the true next PC.
+// Only mispredictions flush. The predictor is indexed by VIRTUAL PC; a
+// stale entry after an address-space switch is just a misprediction.
+//
+// Translation. With satp.MODE=1 in S- or U-mode, IF looks up the I-TLB with
 // the PC and EX looks up the D-TLB with the effective address; a hit
 // costs nothing. A miss asks the shared walker (ptw.v), which borrows
 // the D-port: a data miss holds EX (bubbles go into MEM) until the fill
@@ -43,7 +59,9 @@
 
 module cpu_pipe_u #(
     parameter RESET_PC    = 32'h0,
-    parameter TLB_ENTRIES = 4         // per TLB
+    parameter TLB_ENTRIES = 4,        // per TLB
+    parameter BPRED       = 1,        // 1 = BTB + 2-bit predictor, 0 = not-taken
+    parameter BP_IDX_BITS = 6         // predictor tables: 2**BP_IDX_BITS entries
 ) (
     input  wire        clk,
     input  wire        rst,
@@ -82,8 +100,10 @@ module cpu_pipe_u #(
 
     wire [1:0]  cur_priv;
     wire [31:0] satp_val;
+    wire        st_sum, st_mxr;            // mstatus.SUM / MXR
     wire        in_user = (cur_priv == 2'b00);
-    wire        vm_on   = in_user & satp_val[31];
+    wire        in_m    = (cur_priv == 2'b11);
+    wire        vm_on   = ~in_m & satp_val[31];   // S and U are translated
 
     // ---- walker <-> TLB plumbing (driven further down) ----
     wire        ptw_busy, ptw_fill, ptw_fault, ptw_side_i, ptw_super;
@@ -113,8 +133,10 @@ module cpu_pipe_u #(
         .flush_all(tlb_flush_all), .flush_one(tlb_flush_one), .flush_va(tlb_flush_va)
     );
     wire if_wres_fault = wres_valid & wres_i & (wres_vpn == pc[31:12]);
-    // fetch needs {U, X}
-    wire if_fault = vm_on & (itlb_hit ? ~(itlb_perm[3] & itlb_perm[2]) : if_wres_fault);
+    // fetch needs X, and U must match the mode: U runs only U pages, S never
+    // executes a U page (SUM does not apply to fetch)
+    wire fetch_ok = itlb_perm[2] & (in_user ? itlb_perm[3] : ~itlb_perm[3]);
+    wire if_fault = vm_on & (itlb_hit ? ~fetch_ok : if_wres_fault);
     wire if_walk  = vm_on & ~itlb_hit & ~if_wres_fault;
 
     assign i_addr = vm_on ? itlb_pa : pc;
@@ -122,20 +144,38 @@ module cpu_pipe_u #(
     // an instruction -- or a fault token -- is ready to enter ID
     wire if_ok = if_fault | (i_req & i_ready);
 
-    reg [31:0] ifid_pc, ifid_instr;
-    reg        ifid_valid, ifid_ifault;
+    reg [31:0] ifid_pc, ifid_instr, ifid_pred_target;
+    reg        ifid_valid, ifid_ifault, ifid_pred_taken;
     wire       front_hold = ex_hold | load_use;
+
+    // ---- branch prediction (combinational on the IF PC) ----
+    wire        bp_taken;
+    wire [31:0] bp_target;
+    wire        bp_upd_en, bp_upd_taken, bp_upd_jump;
+    wire [31:0] bp_upd_pc, bp_upd_target;
+    generate if (BPRED) begin : g_bp
+        branch_predictor #(.IDX_BITS(BP_IDX_BITS)) u_bp (
+            .clk(clk), .rst(rst),
+            .pc_if(pc), .predict_taken(bp_taken), .predict_target(bp_target),
+            .upd_en(bp_upd_en), .upd_pc(bp_upd_pc), .upd_taken(bp_upd_taken),
+            .upd_is_jump(bp_upd_jump), .upd_target(bp_upd_target)
+        );
+    end else begin : g_nobp
+        assign bp_taken = 1'b0; assign bp_target = 32'd0;
+    end endgenerate
+    wire [31:0] pc_next = bp_taken ? bp_target : pc + 32'd4;
 
     always @(posedge clk) begin
         if (rst) pc <= RESET_PC;
         else if (freeze)               pc <= pc;
         else if (flush)                pc <= redirect_pc;
         else if (front_hold | ~if_ok)  pc <= pc;
-        else                           pc <= pc + 32'd4;
+        else                           pc <= pc_next;
     end
     always @(posedge clk) begin
         if (rst || (flush && !freeze)) begin
             ifid_instr <= NOP; ifid_pc <= 32'd0; ifid_valid <= 1'b0; ifid_ifault <= 1'b0;
+            ifid_pred_taken <= 1'b0; ifid_pred_target <= 32'd0;
         end else if (freeze || front_hold) begin
             // hold
         end else if (if_ok) begin
@@ -143,8 +183,10 @@ module cpu_pipe_u #(
             ifid_pc     <= pc;
             ifid_valid  <= 1'b1;
             ifid_ifault <= if_fault;
+            ifid_pred_taken <= bp_taken; ifid_pred_target <= bp_target;
         end else begin                                    // I-port busy: bubble
             ifid_instr <= NOP; ifid_valid <= 1'b0; ifid_ifault <= 1'b0;
+            ifid_pred_taken <= 1'b0;
         end
     end
 
@@ -179,6 +221,7 @@ module cpu_pipe_u #(
     wire id_is_mret= is_system && (funct3_id==3'b000) && (ifid_instr[31:20]==12'h302);
     wire id_ecall  = is_system && (funct3_id==3'b000) && (ifid_instr[31:20]==12'h000);
     wire id_ebreak = is_system && (funct3_id==3'b000) && (ifid_instr[31:20]==12'h001);
+    wire id_sret   = is_system && (funct3_id==3'b000) && (ifid_instr[31:20]==12'h102);
     wire id_sfence = is_system && (funct3_id==3'b000) && (funct7==7'b0001001);
     wire id_is_amo = (opcode == 7'b0101111) && (funct3_id == 3'b010);   // .w only
     wire [4:0] id_amo_f5 = funct7[6:2];
@@ -204,7 +247,7 @@ module cpu_pipe_u #(
     wire [31:0] rs2_data_id = (wb_reg_write && wb_rd!=0 && wb_rd==rs2_id) ? wb_data : rf_rs2;
 
     // ID/EX register
-    reg [31:0] idex_pc, idex_imm, idex_rs1d, idex_rs2d;
+    reg [31:0] idex_pc, idex_imm, idex_rs1d, idex_rs2d, idex_instr, idex_pred_target;
     reg [4:0]  idex_rs1, idex_rs2, idex_rd, idex_alu_op, idex_amo_f5;
     reg [2:0]  idex_funct3;
     reg [1:0]  idex_wb_sel;
@@ -212,7 +255,8 @@ module cpu_pipe_u #(
     reg        idex_reg_write, idex_alu_src_a, idex_alu_src_b,
                idex_mem_read, idex_mem_write, idex_branch, idex_jump, idex_jalr,
                idex_is_csr, idex_is_mret, idex_ecall, idex_ebreak, idex_illegal,
-               idex_sfence, idex_lr, idex_sc, idex_rmw, idex_ifault, idex_valid;
+               idex_sfence, idex_lr, idex_sc, idex_rmw, idex_ifault, idex_valid,
+               idex_sret, idex_pred_taken;
     wire [31:0] opA, opB;               // forwarded operands (EX)
 
     always @(posedge clk) begin
@@ -225,6 +269,7 @@ module cpu_pipe_u #(
             idex_is_csr<=0; idex_is_mret<=0; idex_ecall<=0; idex_ebreak<=0;
             idex_illegal<=0; idex_csr_addr<=0; idex_sfence<=0; idex_amo_f5<=0;
             idex_lr<=0; idex_sc<=0; idex_rmw<=0; idex_ifault<=0; idex_valid<=0;
+            idex_sret<=0; idex_instr<=0; idex_pred_taken<=0; idex_pred_target<=0;
         end else if (freeze || ex_hold) begin
             // hold, but keep the operands current: a producer that leaves
             // WB while we wait must not take its forwarded value with it
@@ -243,6 +288,8 @@ module cpu_pipe_u #(
             idex_csr_addr<=ifid_instr[31:20]; idex_sfence<=id_sfence;
             idex_amo_f5<=id_amo_f5; idex_lr<=id_lr; idex_sc<=id_sc; idex_rmw<=id_rmw;
             idex_ifault<=ifid_ifault; idex_valid<=ifid_valid;
+            idex_sret<=id_sret; idex_instr<=ifid_instr;
+            idex_pred_taken<=ifid_pred_taken; idex_pred_target<=ifid_pred_target;
         end
     end
 
@@ -298,15 +345,22 @@ module cpu_pipe_u #(
     );
     wire ex_xlate      = ex_mem & vm_on;
     wire ex_wres_fault = wres_valid & ~wres_i & (wres_vpn == ex_va[31:12]);
-    wire perm_ok       = dtlb_perm[3] & (~need_r | dtlb_perm[0]) & (~need_w | dtlb_perm[1]);
+    // {U,X,W,R}: U-mode needs a U page; S may use a U page only with SUM;
+    // MXR lets loads read execute-only pages
+    wire user_ok       = in_user ? dtlb_perm[3] : (~dtlb_perm[3] | st_sum);
+    wire readable      = dtlb_perm[0] | (st_mxr & dtlb_perm[2]);
+    wire perm_ok       = user_ok & (~need_r | readable) & (~need_w | dtlb_perm[1]);
     wire ex_dfault     = ex_xlate & (dtlb_hit ? ~perm_ok : ex_wres_fault);
     wire ex_dwalk      = ex_xlate & ~dtlb_hit & ~ex_wres_fault;
     wire [31:0] ex_pa  = ex_xlate ? dtlb_pa : ex_va;
 
     // ---- privilege / exceptions ----
-    wire ex_illegal = idex_illegal |
-                      (in_user & (idex_is_csr | idex_is_mret | idex_sfence));
-    wire [31:0] csr_rdata, mtvec_out, mepc_out;
+    // a CSR's address bits [9:8] are the lowest privilege that may touch it
+    wire csr_bad    = idex_is_csr & (idex_csr_addr[9:8] > cur_priv);
+    wire ex_illegal = idex_illegal | csr_bad |
+                      (idex_is_mret & ~in_m) |
+                      (in_user & (idex_sret | idex_sfence));
+    wire [31:0] csr_rdata, trap_vector, mepc_out, sepc_out, irq_cause;
     wire        irq_pending;
     wire [31:0] csr_wsrc = idex_funct3[2] ? {27'b0, idex_rs1} : opA;
 
@@ -314,36 +368,58 @@ module cpu_pipe_u #(
     assign ex_go   = idex_valid & ~freeze & ~ex_hold;
 
     wire exception = idex_ifault | ex_illegal | idex_ecall | idex_ebreak | ex_dfault;
-    wire irq_take  = irq_pending & ~exception & ~idex_is_mret & ~idex_is_csr;
+    wire irq_take  = irq_pending & ~exception & ~idex_is_mret & ~idex_sret & ~idex_is_csr;
     assign take_trap = ex_go & (exception | irq_take);
     wire mret_ex   = ex_go & idex_is_mret & ~take_trap;
+    wire sret_ex   = ex_go & idex_sret    & ~take_trap;
     wire csr_commit= ex_go & idex_is_csr  & ~take_trap;
     wire sfence_ex = ex_go & idex_sfence  & ~take_trap;
 
     wire [31:0] trap_cause = idex_ifault ? 32'd12 :
                              ex_illegal  ? 32'd2  :
-                             idex_ecall  ? (in_user ? 32'd8 : 32'd11) :
+                             idex_ecall  ? (in_user ? 32'd8 : in_m ? 32'd11 : 32'd9) :
                              idex_ebreak ? 32'd3  :
                              ex_dfault   ? (need_w ? 32'd15 : 32'd13) :
-                                           32'h8000_0007;
+                                           irq_cause;
+    // mtval / stval: the faulting VA, the bad instruction, or the PC
+    wire [31:0] trap_val   = idex_ifault ? idex_pc    :
+                             ex_illegal  ? idex_instr :
+                             idex_ebreak ? idex_pc    :
+                             ex_dfault   ? ex_va      : 32'd0;
 
-    csr u_csr (
+    csr_s u_csr (
         .clk(clk), .rst(rst),
         .csr_addr(idex_csr_addr), .csr_funct3(idex_funct3), .csr_wsrc(csr_wsrc),
         .csr_we(csr_commit), .csr_rdata(csr_rdata),
         .pc(idex_pc), .timer_irq(timer_irq), .ext_irq(1'b0),
-        .instr_is_mret(mret_ex), .take_trap(take_trap), .trap_cause(trap_cause),
-        .mtvec_out(mtvec_out), .mepc_out(mepc_out), .irq_pending(irq_pending),
-        .irq_cause(), .cur_priv(cur_priv), .satp_out(satp_val)
+        .instr_is_mret(mret_ex), .instr_is_sret(sret_ex),
+        .take_trap(take_trap), .trap_cause(trap_cause), .trap_val(trap_val),
+        .trap_vector(trap_vector), .mret_target(mepc_out), .sret_target(sepc_out),
+        .irq_pending(irq_pending), .irq_cause(irq_cause), .deleg_now(),
+        .status_sum(st_sum), .status_mxr(st_mxr),
+        .cur_priv(cur_priv), .satp_out(satp_val)
     );
 
     assign tlb_flush_all = sfence_ex & (idex_rs1 == 5'd0);
     assign tlb_flush_one = sfence_ex & (idex_rs1 != 5'd0);
     assign tlb_flush_va  = opA;
 
-    assign redirect    = take_trap | mret_ex | (ex_go & ex_taken);
-    assign redirect_pc = take_trap ? mtvec_out :
-                         mret_ex   ? mepc_out  : ex_target;
+    // ---- check the IF-stage prediction against what EX resolved ----
+    wire ex_ctrl   = idex_branch | idex_jump | idex_jalr;
+    wire mispred   = ex_ctrl ? ((ex_taken != idex_pred_taken) |
+                                (ex_taken & (ex_target != idex_pred_target)))
+                             : idex_pred_taken;          // "taken" on a non-branch
+    assign bp_upd_en     = ex_go & ex_ctrl & ~take_trap;
+    assign bp_upd_pc     = idex_pc;
+    assign bp_upd_taken  = ex_taken;
+    assign bp_upd_jump   = idex_jump | idex_jalr;
+    assign bp_upd_target = ex_target;
+
+    assign redirect    = take_trap | mret_ex | sret_ex | (ex_go & mispred);
+    assign redirect_pc = take_trap ? trap_vector :
+                         mret_ex   ? mepc_out    :
+                         sret_ex   ? sepc_out    :
+                         ex_taken  ? ex_target   : pc4_ex;
 
     wire [31:0] ex_result = idex_is_csr           ? csr_rdata :
                             (idex_wb_sel==WB_PC4)  ? pc4_ex    :

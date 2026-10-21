@@ -243,10 +243,8 @@ TLB, so nothing to invalidate", and that argument is gone.
   caches in front of slow memory, with no change to the core.
 - No ASIDs, no `G` bit, no `mtval`, A/D bits ignored, no misaligned-superpage
   check. All of these are as in Step 41.
-- No supervisor mode. That remains `cpu_mc_s` (Step 39); folding S-mode and
-  delegation in is the remaining unification.
-- No branch predictor. `cpu_pipe_bp` (Step 32) still predicts not-taken
-  separately. Its BTB would slot into IF here unchanged, but it is not merged.
+- No supervisor mode, and no branch predictor. Both were folded in later, by
+  Step 44.
 - Misaligned loads and stores are silently wrong (word RAM), as on the
   multi-cycle cores. `aq`/`rl` are ignored: with one hart and in-order memory,
   every AMO is already sequentially consistent.

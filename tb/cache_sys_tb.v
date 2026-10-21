@@ -7,11 +7,14 @@
 // their PTEs through the D-cache, and kernel PTE stores sit dirty in it.
 //   t : the Step 41 TLB demo (sw/tlb.hex), same pass criteria as before
 //   s : Step 38's isolated processes, -DSCHED_VM build (sw/smmu_vm.hex)
+//   v : Step 44's S-mode kernel serving user page faults (sw/sv.hex)
 // RAM is checked through soc_pipe_c's peek(): the newest copy of a word may
-// still be in the write-back cache rather than in main memory.
+// still be in the write-back cache rather than in main memory. In v the S
+// kernel's PTE store (demand paging) sits dirty in the D-cache when the
+// walker re-reads it.
 module cache_sys_tb;
     reg clk=0, rst=1; always #5 clk = ~clk;
-    wire tx_t, tx_s, h_t, h_s;
+    wire tx_t, tx_s, tx_v, h_t, h_s, h_v;
 
     soc_pipe_c #(.CACHE_EN(1), .LATENCY(7), .I_LINES(8), .D_LINES(8),
                  .ROM_WORDS(4096), .RAM_WORDS(8192), .CLKS_PER_BIT(4),
@@ -21,6 +24,10 @@ module cache_sys_tb;
                  .ROM_WORDS(2048), .RAM_WORDS(16384), .CLKS_PER_BIT(4),
                  .IMEM_INIT("sw/smmu_vm.hex")) s (
         .clk(clk), .rst(rst), .uart_tx_pin(tx_s), .halted(h_s));
+    soc_pipe_c #(.CACHE_EN(1), .LATENCY(7), .I_LINES(8), .D_LINES(8),
+                 .ROM_WORDS(4096), .RAM_WORDS(16384), .CLKS_PER_BIT(4),
+                 .IMEM_INIT("sw/sv.hex")) v (
+        .clk(clk), .rst(rst), .uart_tx_pin(tx_v), .halted(h_v));
 
     integer na = 0, nb = 0, cyc = 0, fails = 0;
     always @(posedge clk) if (!rst) begin
@@ -34,6 +41,7 @@ module cache_sys_tb;
 
     function [31:0] rt; input [31:0] pa; rt = t.g_cache.peek(pa); endfunction
     function [31:0] rs; input [31:0] pa; rs = s.g_cache.peek(pa); endfunction
+    function [31:0] rv; input [31:0] pa; rv = v.g_cache.peek(pa); endfunction
 
     task want_eq; input [8*24:1] what; input [31:0] got, want;
         if (got !== want) begin $write("FAIL: %0s = %h, want %h\n", what, got, want); fails = fails + 1; end
@@ -43,10 +51,11 @@ module cache_sys_tb;
     initial begin
         $write("---- Step 43: MMU programs through 256-byte caches on slow memory ----\n");
         repeat(3) @(posedge clk); #1; rst=0;
-        while (!(h_t && h_s) && cyc < 3000000) @(posedge clk);
+        while (!(h_t && h_s && h_v) && cyc < 3000000) @(posedge clk);
         #1;
         if (!h_t) begin $write("FAIL: TLB demo did not halt\n"); fails = fails + 1; end
         if (!h_s) begin $write("FAIL: scheduler did not halt\n"); fails = fails + 1; end
+        if (!h_v) begin $write("FAIL: S-mode kernel did not halt\n"); fails = fails + 1; end
 
         // ---- TLB demo (as tb/tlb_tb.v) ----
         want_eq("tlb: closing marker", rt(32'h7F10), 32'h600D);
@@ -65,11 +74,23 @@ module cache_sys_tb;
         if (va[31:28] !== 4'hA) begin $write("FAIL: task A page = %h\n", va); fails = fails + 1; end
         if (vb[31:28] !== 4'hB) begin $write("FAIL: task B page = %h\n", vb); fails = fails + 1; end
 
+        // ---- S-mode kernel (as tb/pipe_u_sv_tb.v) ----
+        want_eq("sv: SUM=0 read",        rv(32'h7F00), 32'h0);
+        want_eq("sv: SUM=1 read",        rv(32'h7F04), 32'h5A5A5A5A);
+        want_eq("sv: S->S faults",       rv(32'h7F08), 32'd1);
+        want_eq("sv: demand faults",     rv(32'h7F10), 32'd1);
+        want_eq("sv: demand stval",      rv(32'h7F14), 32'h5008);
+        want_eq("sv: fetch fault stval", rv(32'h7F1C), 32'h6000);
+        want_eq("sv: M shutdowns",       rv(32'h7F24), 32'd1);
+        want_eq("sv: M saw other",       rv(32'h7F28), 32'd0);
+        want_eq("sv: demand page",       rv(32'h5008), 32'hD00D);
+        want_eq("sv: readback",          rv(32'h4008), 32'hD00D);
+
         $write("  tlb demo : I$ %0d misses, D$ %0d misses, %0d writebacks\n",
                t.g_cache.u_icache.n_miss, t.g_cache.u_dcache.n_miss, t.g_cache.u_dcache.n_wb);
         $write("  scheduler: A-runs=%0d b-runs=%0d  A page %h  B page %h  D$ %0d writebacks\n",
                na, nb, va, vb, s.g_cache.u_dcache.n_wb);
-        if (fails == 0) $write("CACHE-SYS: ALL PASS (TLB demo + isolated processes through the caches)\n");
+        if (fails == 0) $write("CACHE-SYS: ALL PASS (TLB demo + isolated processes + S-mode kernel through the caches)\n");
         else            $write("CACHE-SYS: %0d FAIL\n", fails);
         $finish;
     end

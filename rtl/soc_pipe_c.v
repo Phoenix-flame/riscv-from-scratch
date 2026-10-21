@@ -30,6 +30,7 @@ module soc_pipe_c #(
     parameter IMEM_INIT    = "",
     parameter DMEM_INIT    = "",
     parameter TLB_ENTRIES  = 4,
+    parameter BPRED        = 1,
     parameter CLKS_PER_BIT = 1085
 ) (
     input  wire clk,
@@ -44,7 +45,7 @@ module soc_pipe_c #(
     wire [3:0]  dwe;
     wire        timer_irq, halt_q, retire;
 
-    cpu_pipe_u #(.TLB_ENTRIES(TLB_ENTRIES)) u_core (
+    cpu_pipe_u #(.TLB_ENTRIES(TLB_ENTRIES), .BPRED(BPRED)) u_core (
         .clk(clk), .rst(rst), .timer_irq(timer_irq), .halt(halt_q),
         .i_addr(iaddr), .i_req(ireq), .i_rdata(irdata), .i_ready(iready),
         .d_addr(daddr), .d_req(dreq), .d_we(dwe), .d_wdata(dwdata),

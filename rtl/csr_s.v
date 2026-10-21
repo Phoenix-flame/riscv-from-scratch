@@ -12,7 +12,8 @@
 //
 // sstatus / sie / sip are restricted *views* of mstatus / mie / mip -- the
 // same underlying bits, masked to those an S-mode kernel may see and set:
-//   mstatus:  SIE=1  MIE=3  SPIE=5  MPIE=7  SPP=8  MPP=12:11
+//   mstatus:  SIE=1  MIE=3  SPIE=5  MPIE=7  SPP=8  MPP=12:11  SUM=18  MXR=19
+//   (SUM / MXR only matter to a core with an MMU -- cpu_pipe_u, Step 44)
 //   mie/mip:  SSI=1  MSI=3  STI=5   MTI=7   SEI=9  MEI=11
 //
 // Trap entry to S:  sepc<-pc  scause<-cause  SPIE<-SIE  SIE<-0  SPP<-(priv==S)
@@ -48,6 +49,8 @@ module csr_s (
     output wire        irq_pending,     // an interrupt is ready to fire
     output wire [31:0] irq_cause,       // its cause (bit31 set)
     output wire        deleg_now,       // the trap being taken routes to S
+    output wire        status_sum,      // mstatus.SUM: S may touch U pages
+    output wire        status_mxr,      // mstatus.MXR: loads may read X pages
     output wire [1:0]  cur_priv,
     output wire [31:0] satp_out
 );
@@ -60,7 +63,7 @@ module csr_s (
     localparam PRIV_M=2'b11, PRIV_S=2'b01, PRIV_U=2'b00;
 
     // sstatus/sie/sip visibility masks
-    localparam [31:0] SSTATUS_MASK = (1<<1)|(1<<5)|(1<<8);          // SIE,SPIE,SPP
+    localparam [31:0] SSTATUS_MASK = (1<<1)|(1<<5)|(1<<8)|(1<<18)|(1<<19); // SIE,SPIE,SPP,SUM,MXR
     localparam [31:0] S_INT_MASK   = (1<<1)|(1<<5)|(1<<9);          // SSI,STI,SEI
 
     reg [31:0] mstatus, medeleg, mideleg, mie, mtvec, mscratch, mepc, mcause, mtval;
@@ -69,6 +72,8 @@ module csr_s (
     reg [1:0]  priv;
 
     assign cur_priv = priv;
+    assign status_sum = mstatus[18];
+    assign status_mxr = mstatus[19];
     assign satp_out = satp;
     assign mret_target = mepc;
     assign sret_target = sepc;
