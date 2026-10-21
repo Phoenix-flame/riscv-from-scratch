@@ -3,3 +3,6 @@ sw/*.hex
 sw/*.o
 sw/*.elf
 third_party/
+.config
+.config.old
+defconfig

@@ -1,0 +1,12 @@
+# The smallest pipeline: RV32I, machine mode only, predict not-taken, no
+# caches (single-word bridges to block RAM), no timer or GPIO.
+CONFIG_PROJECT_NAME="riscv_tiny"
+# CONFIG_ISA_M is not set
+# CONFIG_ISA_A is not set
+# CONFIG_PRIV_U is not set
+# CONFIG_BPRED is not set
+# CONFIG_CACHES is not set
+# CONFIG_TIMER is not set
+# CONFIG_GPIO is not set
+CONFIG_IMEM_KB=8
+CONFIG_DMEM_KB=8

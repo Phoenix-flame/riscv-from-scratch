@@ -1,0 +1,246 @@
+# =============================================================================
+#  Kconfig -- configure a RISC-V core for OpenZynq (Artemis Karia Mitra-7010)
+# -----------------------------------------------------------------------------
+#  make menuconfig        edit .config (curses menu)
+#  make rvgen             .config -> build/oz/projects/<name>/ (+ simulate)
+#  make oz-export OZ=...  copy the generated project into an OpenZynq checkout
+#  configs/*_defconfig    starting points:  make defconfig DEFCONFIG=configs/...
+#
+#  See docs/45-menuconfig-openzynq.md.
+# =============================================================================
+
+mainmenu "RISC-V for OpenZynq (Mitra-7010) -- core configuration"
+
+menu "Project"
+
+config PROJECT_NAME
+	string "OpenZynq project name"
+	default "riscv_soc"
+	help
+	  Directory name under OpenZynq's projects/. Build it there with
+	  `make bit PROJECT=<name>`. Lower-case letters, digits and '_'.
+
+choice SYSTEM
+	prompt "System integration"
+	default SYS_STANDALONE
+	help
+	  How the RISC-V reaches the outside world on the Mitra-7010.
+
+config SYS_STANDALONE
+	bool "Standalone in the PL (UART on a header pin)"
+	help
+	  The RISC-V runs alone in the programmable logic from the 50 MHz PL
+	  oscillator, its firmware baked into block RAM. Console: UART TX on an
+	  expansion-header pin (connect a 3.3 V USB-serial adapter). The PS is
+	  not involved -- `make prog` and the core starts.
+
+config SYS_PS
+	bool "Attached to the Cortex-A9 (program load + console over M_AXI_GP0)"
+	help
+	  The PS loads the RISC-V program into PL block RAM over M_AXI_GP0,
+	  releases the core from reset, and relays its console to the on-board
+	  CH340 USB-UART (UART0). No extra hardware. `make run PROJECT=<name>`.
+	  The core still runs on the 50 MHz PL oscillator; the AXI bridge
+	  crosses into FCLK0.
+
+endchoice
+
+config UART_TX_PIN
+	string "UART TX package pin"
+	depends on SYS_STANDALONE
+	default "J18"
+	help
+	  Default J18 = expansion header JM1 pin 21 (bank 35, 3.3 V). Ground
+	  is on JM1 pins 3/4. See OpenZynq boards/mitra7010/pinout.md before
+	  choosing another pin.
+
+config UART_BAUD
+	int "UART baud rate"
+	depends on SYS_STANDALONE
+	default 115200
+
+endmenu
+
+# -----------------------------------------------------------------------------
+menu "Core"
+
+choice CORE
+	prompt "Microarchitecture"
+	default CORE_PIPE
+
+config CORE_PIPE
+	bool "5-stage pipeline (cpu_pipe_u: RV32I[M][A], M/S/U, MMU, predictor, caches)"
+
+config CORE_MC
+	bool "Multi-cycle (cpu_mc family: RV32IM, optional C or F; machine mode only)"
+
+endchoice
+
+menu "ISA extensions"
+
+config ISA_M
+	bool "M: integer multiply/divide" if CORE_PIPE
+	default y
+	help
+	  Multiply maps to DSP48 slices; divide is a combinational array --
+	  the longest path in the core. The multi-cycle cores always have M.
+
+config ISA_A
+	bool "A: atomics (LR/SC, AMOs)"
+	depends on CORE_PIPE
+	default y
+
+choice MC_EXT
+	prompt "Multi-cycle extension"
+	depends on CORE_MC
+	default MC_EXT_NONE
+
+config MC_EXT_NONE
+	bool "none (RV32IM, cpu_mc)"
+
+config ISA_C
+	bool "C: compressed instructions (RV32IMC, cpu_mc_c)"
+
+config ISA_F
+	bool "F: single-precision floating point (RV32IMF, cpu_mc_f)"
+	help
+	  IEEE-754 single precision with 5 rounding modes; subnormals flush to
+	  zero; no fused multiply-add (fmadd & co. decode as illegal).
+
+endchoice
+
+endmenu
+
+menu "Privilege and memory protection"
+	depends on CORE_PIPE
+
+config PRIV_U
+	bool "User mode"
+	default y
+
+config PRIV_S
+	bool "Supervisor mode + medeleg/mideleg trap delegation"
+	depends on PRIV_U
+	default y
+
+config MMU
+	bool "Sv32 MMU: translated fetch + data, I/D TLBs, sfence.vma"
+	depends on PRIV_U
+	default y
+
+config TLB_ENTRIES
+	int "TLB entries (each of I and D)"
+	depends on MMU
+	range 1 16
+	default 4
+
+endmenu
+
+menu "Branch prediction"
+	depends on CORE_PIPE
+
+config BPRED
+	bool "BTB + 2-bit counters (else predict not-taken)"
+	default y
+
+config BP_IDX_BITS
+	int "Predictor size (log2 entries)"
+	depends on BPRED
+	range 2 8
+	default 5
+	help
+	  2**N BTB entries and counters. They are reset to a known state, so
+	  they map to flip-flops: 64 entries cost ~4k FFs, 32 about half.
+
+endmenu
+
+endmenu
+
+# -----------------------------------------------------------------------------
+menu "Memory"
+
+config IMEM_KB
+	int "Instruction memory (KiB, block RAM)"
+	range 4 128
+	default 16
+
+config DMEM_KB
+	int "Data memory (KiB, block RAM)"
+	range 4 128
+	default 32 if MMU
+	default 16
+	help
+	  The data memory also holds a copy of the program image (read-only
+	  data lives at the same addresses as on the instruction side), the
+	  stack at the top, and -- for the MMU self-test -- 8 KiB of page
+	  tables.
+
+config CACHES
+	bool "I-cache + write-back D-cache"
+	depends on CORE_PIPE
+	default y
+	help
+	  The pipeline needs memory that answers in the same cycle. With the
+	  caches, hits do; without them every fetch and access goes through a
+	  single-word bridge to block RAM (~4 cycles each).
+
+config LINE_WORDS
+	int "Cache line (words)"
+	depends on CACHES
+	range 4 8
+	default 8
+
+config ICACHE_LINES
+	int "I-cache lines (direct-mapped)"
+	depends on CACHES
+	range 4 128
+	default 32
+
+config DCACHE_LINES
+	int "D-cache lines (direct-mapped)"
+	depends on CACHES
+	range 4 128
+	default 32
+
+endmenu
+
+# -----------------------------------------------------------------------------
+menu "Peripherals"
+
+config TIMER
+	bool "Machine timer (mtime / mtimecmp, timer interrupt)"
+	default y
+
+config GPIO
+	bool "GPIO: the two user LEDs and two buttons"
+	default y
+	help
+	  Without it the LEDs show status: LED1 = halted, LED2 = heartbeat.
+
+endmenu
+
+# -----------------------------------------------------------------------------
+menu "Firmware"
+
+choice FIRMWARE
+	prompt "Program in memory"
+	default FW_SELFTEST
+
+config FW_SELFTEST
+	bool "Self-test of the configured features (sw/oz/selftest.c)"
+	help
+	  Prints the configuration, exercises every enabled feature (M, A, F,
+	  timer interrupt, U/S mode, MMU translation, GPIO), prints ALL PASS
+	  and halts with exit code = number of failures. The generated
+	  testbench runs the same image.
+
+config FW_CUSTOM
+	bool "My own image (word-per-line .hex)"
+
+endchoice
+
+config FW_HEX
+	string "Path to the image (.hex)"
+	depends on FW_CUSTOM
+
+endmenu

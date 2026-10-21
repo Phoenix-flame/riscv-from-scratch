@@ -22,7 +22,7 @@ module pipe_u_tlb_tb;
         cyc = cyc + 1;
         if (dut.retire) ret = ret + 1;
         if (dut.u_core.ptw_start_d || dut.u_core.ptw_start_i)
-            if (dut.u_core.u_ptw.state == 0) walks = walks + 1;
+            if (dut.u_core.g_ptw.u_ptw.state == 0) walks = walks + 1;
     end
 
     function [31:0] rd; input [31:0] pa; rd = dut.ram[pa>>2]; endfunction

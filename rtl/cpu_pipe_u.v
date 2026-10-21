@@ -40,6 +40,13 @@
 // Only mispredictions flush. The predictor is indexed by VIRTUAL PC; a
 // stale entry after an address-space switch is just a misprediction.
 //
+// Configurable (Step 45). Every feature is a parameter, and a feature that
+// is off is not built: M_EXT=0 removes the multiplier/divider (MUL/DIV
+// decode as illegal), A_EXT=0 the atomics, MMU=0 the TLBs and the walker
+// (satp reads 0), HAS_S=0 / HAS_U=0 supervisor / user mode, BPRED=0 the
+// predictor. tools/rvgen sets them from a Kconfig .config; all default
+// on, which is the core of Steps 42-44.
+//
 // Translation. With satp.MODE=1 in S- or U-mode, IF looks up the I-TLB with
 // the PC and EX looks up the D-TLB with the effective address; a hit
 // costs nothing. A miss asks the shared walker (ptw.v), which borrows
@@ -61,7 +68,12 @@ module cpu_pipe_u #(
     parameter RESET_PC    = 32'h0,
     parameter TLB_ENTRIES = 4,        // per TLB
     parameter BPRED       = 1,        // 1 = BTB + 2-bit predictor, 0 = not-taken
-    parameter BP_IDX_BITS = 6         // predictor tables: 2**BP_IDX_BITS entries
+    parameter BP_IDX_BITS = 6,        // predictor tables: 2**BP_IDX_BITS entries
+    parameter M_EXT       = 1,        // RV32M multiply/divide
+    parameter A_EXT       = 1,        // RV32A atomics
+    parameter HAS_U       = 1,        // user mode
+    parameter HAS_S       = 1,        // supervisor mode + delegation (needs HAS_U)
+    parameter MMU         = 1         // Sv32 + TLBs + walker (needs HAS_U)
 ) (
     input  wire        clk,
     input  wire        rst,
@@ -103,7 +115,7 @@ module cpu_pipe_u #(
     wire        st_sum, st_mxr;            // mstatus.SUM / MXR
     wire        in_user = (cur_priv == 2'b00);
     wire        in_m    = (cur_priv == 2'b11);
-    wire        vm_on   = ~in_m & satp_val[31];   // S and U are translated
+    wire        vm_on   = (MMU != 0) & ~in_m & satp_val[31];   // S and U are translated
 
     // ---- walker <-> TLB plumbing (driven further down) ----
     wire        ptw_busy, ptw_fill, ptw_fault, ptw_side_i, ptw_super;
@@ -125,13 +137,17 @@ module cpu_pipe_u #(
     assign pc_out = pc;
 
     wire        itlb_hit; wire [31:0] itlb_pa; wire [3:0] itlb_perm;
-    tlb #(.ENTRIES(TLB_ENTRIES)) u_itlb (
-        .clk(clk), .rst(rst),
-        .va(pc), .hit(itlb_hit), .pa(itlb_pa), .perm(itlb_perm),
-        .fill(ptw_fill & ptw_side_i), .fill_va(ptw_va), .fill_ppn(ptw_ppn),
-        .fill_super(ptw_super), .fill_perm(ptw_perm),
-        .flush_all(tlb_flush_all), .flush_one(tlb_flush_one), .flush_va(tlb_flush_va)
-    );
+    generate if (MMU) begin : g_itlb
+        tlb #(.ENTRIES(TLB_ENTRIES)) u_itlb (
+            .clk(clk), .rst(rst),
+            .va(pc), .hit(itlb_hit), .pa(itlb_pa), .perm(itlb_perm),
+            .fill(ptw_fill & ptw_side_i), .fill_va(ptw_va), .fill_ppn(ptw_ppn),
+            .fill_super(ptw_super), .fill_perm(ptw_perm),
+            .flush_all(tlb_flush_all), .flush_one(tlb_flush_one), .flush_va(tlb_flush_va)
+        );
+    end else begin : g_no_itlb
+        assign itlb_hit = 1'b0; assign itlb_pa = pc; assign itlb_perm = 4'b0;
+    end endgenerate
     wire if_wres_fault = wres_valid & wres_i & (wres_vpn == pc[31:12]);
     // fetch needs X, and U must match the mode: U runs only U pages, S never
     // executes a U page (SUM does not apply to fetch)
@@ -223,7 +239,8 @@ module cpu_pipe_u #(
     wire id_ebreak = is_system && (funct3_id==3'b000) && (ifid_instr[31:20]==12'h001);
     wire id_sret   = is_system && (funct3_id==3'b000) && (ifid_instr[31:20]==12'h102);
     wire id_sfence = is_system && (funct3_id==3'b000) && (funct7==7'b0001001);
-    wire id_is_amo = (opcode == 7'b0101111) && (funct3_id == 3'b010);   // .w only
+    wire id_is_amo = (A_EXT != 0) && (opcode == 7'b0101111) && (funct3_id == 3'b010);   // .w only
+    wire id_muldiv = (opcode == 7'b0110011) && (funct7 == 7'b0000001);
     wire [4:0] id_amo_f5 = funct7[6:2];
     wire id_lr  = id_is_amo & (id_amo_f5 == 5'b00010);
     wire id_sc  = id_is_amo & (id_amo_f5 == 5'b00011);
@@ -233,6 +250,7 @@ module cpu_pipe_u #(
         (opcode==7'b0100011)||(opcode==7'b1100011)||(opcode==7'b1101111)||
         (opcode==7'b1100111)||(opcode==7'b0110111)||(opcode==7'b0010111)||
         (opcode==7'b1110011)||(opcode==7'b0001111)||id_is_amo;
+    wire op_ok = op_known & ~(id_muldiv & (M_EXT == 0));     // RV32M absent
 
     // register read with WB->ID bypass
     wire [31:0] rf_rs1, rf_rs2;
@@ -284,7 +302,7 @@ module cpu_pipe_u #(
             idex_funct3<=id_is_amo ? 3'b010 : funct3_id;
             idex_pc<=ifid_pc; idex_imm<=imm_id; idex_rs1d<=rs1_data_id; idex_rs2d<=rs2_data_id;
             idex_is_csr<=id_is_csr; idex_is_mret<=id_is_mret; idex_ecall<=id_ecall;
-            idex_ebreak<=id_ebreak; idex_illegal<=~op_known;
+            idex_ebreak<=id_ebreak; idex_illegal<=~op_ok;
             idex_csr_addr<=ifid_instr[31:20]; idex_sfence<=id_sfence;
             idex_amo_f5<=id_amo_f5; idex_lr<=id_lr; idex_sc<=id_sc; idex_rmw<=id_rmw;
             idex_ifault<=ifid_ifault; idex_valid<=ifid_valid;
@@ -309,7 +327,7 @@ module cpu_pipe_u #(
     wire [31:0] alu_a = idex_alu_src_a ? idex_pc  : opA;
     wire [31:0] alu_b = idex_alu_src_b ? idex_imm : opB;
     wire [31:0] alu_result; wire alu_zero;
-    alu u_alu (.a(alu_a), .b(alu_b), .alu_op(idex_alu_op), .result(alu_result), .zero(alu_zero));
+    alu #(.M_EXT(M_EXT)) u_alu (.a(alu_a), .b(alu_b), .alu_op(idex_alu_op), .result(alu_result), .zero(alu_zero));
 
     reg branch_cond;
     always @(*) case (idex_funct3)
@@ -336,13 +354,17 @@ module cpu_pipe_u #(
     wire        need_w   = idex_mem_write | idex_sc | idex_rmw;
 
     wire        dtlb_hit; wire [31:0] dtlb_pa; wire [3:0] dtlb_perm;
-    tlb #(.ENTRIES(TLB_ENTRIES)) u_dtlb (
-        .clk(clk), .rst(rst),
-        .va(ex_va), .hit(dtlb_hit), .pa(dtlb_pa), .perm(dtlb_perm),
-        .fill(ptw_fill & ~ptw_side_i), .fill_va(ptw_va), .fill_ppn(ptw_ppn),
-        .fill_super(ptw_super), .fill_perm(ptw_perm),
-        .flush_all(tlb_flush_all), .flush_one(tlb_flush_one), .flush_va(tlb_flush_va)
-    );
+    generate if (MMU) begin : g_dtlb
+        tlb #(.ENTRIES(TLB_ENTRIES)) u_dtlb (
+            .clk(clk), .rst(rst),
+            .va(ex_va), .hit(dtlb_hit), .pa(dtlb_pa), .perm(dtlb_perm),
+            .fill(ptw_fill & ~ptw_side_i), .fill_va(ptw_va), .fill_ppn(ptw_ppn),
+            .fill_super(ptw_super), .fill_perm(ptw_perm),
+            .flush_all(tlb_flush_all), .flush_one(tlb_flush_one), .flush_va(tlb_flush_va)
+        );
+    end else begin : g_no_dtlb
+        assign dtlb_hit = 1'b0; assign dtlb_pa = ex_va; assign dtlb_perm = 4'b0;
+    end endgenerate
     wire ex_xlate      = ex_mem & vm_on;
     wire ex_wres_fault = wres_valid & ~wres_i & (wres_vpn == ex_va[31:12]);
     // {U,X,W,R}: U-mode needs a U page; S may use a U page only with SUM;
@@ -356,10 +378,15 @@ module cpu_pipe_u #(
 
     // ---- privilege / exceptions ----
     // a CSR's address bits [9:8] are the lowest privilege that may touch it
-    wire csr_bad    = idex_is_csr & (idex_csr_addr[9:8] > cur_priv);
+    // ... and without S-mode the S-level CSRs do not exist (except satp,
+    // which an MMU with only M/U still needs)
+    wire csr_no_s   = (HAS_S == 0) & (idex_csr_addr[9:8] == 2'b01) &
+                      ~((MMU != 0) & (idex_csr_addr == 12'h180));
+    wire csr_bad    = idex_is_csr & ((idex_csr_addr[9:8] > cur_priv) | csr_no_s);
     wire ex_illegal = idex_illegal | csr_bad |
                       (idex_is_mret & ~in_m) |
-                      (in_user & (idex_sret | idex_sfence));
+                      (idex_sret & ((HAS_S == 0) | in_user)) |
+                      (in_user & idex_sfence);
     wire [31:0] csr_rdata, trap_vector, mepc_out, sepc_out, irq_cause;
     wire        irq_pending;
     wire [31:0] csr_wsrc = idex_funct3[2] ? {27'b0, idex_rs1} : opA;
@@ -387,7 +414,7 @@ module cpu_pipe_u #(
                              idex_ebreak ? idex_pc    :
                              ex_dfault   ? ex_va      : 32'd0;
 
-    csr_s u_csr (
+    csr_s #(.HAS_S(HAS_S), .HAS_U(HAS_U), .HAS_SATP(MMU)) u_csr (
         .clk(clk), .rst(rst),
         .csr_addr(idex_csr_addr), .csr_funct3(idex_funct3), .csr_wsrc(csr_wsrc),
         .csr_we(csr_commit), .csr_rdata(csr_rdata),
@@ -552,15 +579,21 @@ module cpu_pipe_u #(
     // it never cuts into a transfer; once started, MEM waits for it.
     wire ptw_start_d = ex_dwalk & ~m_port & ~halt;
     wire ptw_start_i = if_walk & ~m_port & ~flush & ~halt;
-    ptw u_ptw (
-        .clk(clk), .rst(rst), .satp(satp_val),
-        .start_d(ptw_start_d), .va_d(ex_va),
-        .start_i(ptw_start_i), .va_i(pc),
-        .kill(flush),
-        .busy(ptw_busy), .mem_addr(ptw_addr), .mem_rdata(d_rdata), .mem_ready(d_ready),
-        .done_fill(ptw_fill), .done_fault(ptw_fault), .side_i(ptw_side_i), .va(ptw_va),
-        .leaf_ppn(ptw_ppn), .leaf_super(ptw_super), .leaf_perm(ptw_perm)
-    );
+    generate if (MMU) begin : g_ptw
+        ptw u_ptw (
+            .clk(clk), .rst(rst), .satp(satp_val),
+            .start_d(ptw_start_d), .va_d(ex_va),
+            .start_i(ptw_start_i), .va_i(pc),
+            .kill(flush),
+            .busy(ptw_busy), .mem_addr(ptw_addr), .mem_rdata(d_rdata), .mem_ready(d_ready),
+            .done_fill(ptw_fill), .done_fault(ptw_fault), .side_i(ptw_side_i), .va(ptw_va),
+            .leaf_ppn(ptw_ppn), .leaf_super(ptw_super), .leaf_perm(ptw_perm)
+        );
+    end else begin : g_no_ptw
+        assign ptw_busy = 1'b0; assign ptw_addr = 32'd0; assign ptw_fill = 1'b0;
+        assign ptw_fault = 1'b0; assign ptw_side_i = 1'b0; assign ptw_va = 32'd0;
+        assign ptw_ppn = 22'd0; assign ptw_super = 1'b0; assign ptw_perm = 4'd0;
+    end endgenerate
 
     always @(posedge clk) begin
         if (rst || take_trap || sfence_ex) wres_valid <= 1'b0;

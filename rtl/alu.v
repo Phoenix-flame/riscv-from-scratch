@@ -9,10 +9,16 @@
 // clarity. On an FPGA the multiplier maps to DSP blocks; a combinational
 // divider is large -- a real core uses a multi-cycle divider. Fine here
 // for a teaching/simulation core.
+//
+// M_EXT=0 (the configurable core, Step 45) leaves the multiplier and the
+// divider out entirely: the RV32M ops then read as 0, and the core decodes
+// them as illegal instructions so they never get here.
 // =====================================================================
 `default_nettype none
 
-module alu (
+module alu #(
+    parameter M_EXT = 1
+) (
     input  wire [31:0] a,
     input  wire [31:0] b,
     input  wire [4:0]  alu_op,
@@ -51,7 +57,8 @@ module alu (
     wire signed [31:0] r_s = sa % sb;
 
     always @(*) begin
-        case (alu_op)
+        if (M_EXT == 0 && alu_op >= ALU_MUL) result = 32'd0;
+        else case (alu_op)
             ALU_ADD : result = a + b;
             ALU_SUB : result = a - b;
             ALU_AND : result = a & b;

@@ -1,0 +1,9 @@
+# Pipeline with user mode and the MMU but no supervisor mode (satp written
+# from M, the Step 41/42 shape), small caches, small predictor.
+CONFIG_PROJECT_NAME="riscv_mu_mmu"
+# CONFIG_PRIV_S is not set
+CONFIG_TLB_ENTRIES=2
+CONFIG_BP_IDX_BITS=3
+CONFIG_ICACHE_LINES=8
+CONFIG_DCACHE_LINES=8
+CONFIG_LINE_WORDS=4

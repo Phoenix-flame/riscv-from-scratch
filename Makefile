@@ -344,6 +344,38 @@ pipe-u-sv: sw/sv.hex sw/smode.hex sw/bpred_bench.hex sw/cb.hex ## unified pipeli
 	$(IV) -o $(B)/pipe_u_smode_tb.vvp $(RTL_PIPE_U) tb/pipe_u_smode_tb.v && $(VVP) $(B)/pipe_u_smode_tb.vvp
 	$(IV) -o $(B)/pipe_u_bp_tb.vvp $(RTL_PIPE_U) tb/pipe_u_bp_tb.v && $(VVP) $(B)/pipe_u_bp_tb.vvp
 
+# ---- Step 45: menuconfig -> a generated RISC-V project for OpenZynq ------
+# make menuconfig                         edit .config (curses menu, Kconfig)
+# make defconfig DEFCONFIG=configs/...    start from a preset
+# make savedefconfig                      write the minimal form to ./defconfig
+# make rvgen                              .config -> build/oz/projects/<name>/, simulated
+# make oz-export OZ=../OpenZynq           ... and copy it into an OpenZynq checkout
+# make rvgen-all                          every configs/oz_*_defconfig, generated + simulated
+KCONFIG_CONFIG ?= .config
+export KCONFIG_CONFIG
+DEFCONFIG ?= configs/oz_full_defconfig
+.PHONY: menuconfig defconfig savedefconfig olddefconfig rvgen oz-export rvgen-all
+menuconfig: ## edit the RISC-V configuration for OpenZynq (writes .config)
+	python3 tools/kconfig/menuconfig.py Kconfig
+defconfig: ## load a preset: make defconfig DEFCONFIG=configs/oz_mc_defconfig
+	python3 tools/kconfig/defconfig.py --kconfig Kconfig $(DEFCONFIG)
+savedefconfig:
+	python3 tools/kconfig/savedefconfig.py --kconfig Kconfig --out defconfig
+olddefconfig:
+	python3 tools/kconfig/olddefconfig.py Kconfig
+rvgen: ## generate (and simulate) the OpenZynq project for .config
+	python3 tools/rvgen/rvgen.py --config $(KCONFIG_CONFIG) --sim
+oz-export: ## ... and copy it into an OpenZynq checkout: make oz-export OZ=../OpenZynq
+	@test -n "$(OZ)" || { echo "usage: make oz-export OZ=/path/to/OpenZynq"; exit 1; }
+	python3 tools/rvgen/rvgen.py --config $(KCONFIG_CONFIG) --sim --oz $(OZ)
+rvgen-all: ## generate + simulate every configs/oz_*_defconfig
+	@fail=0; for c in configs/oz_*_defconfig; do \
+	  echo "=== $$c"; \
+	  python3 tools/rvgen/rvgen.py --config $$c --sim > $(B)/rvgen_$$(basename $$c).log 2>&1 \
+	    && grep -E '^rvgen: rv32|^PASS:' $(B)/rvgen_$$(basename $$c).log \
+	    || { fail=1; tail -30 $(B)/rvgen_$$(basename $$c).log; }; \
+	done; exit $$fail
+
 # ---- Preemptive multitasking (two tasks, timer-driven scheduler) ------
 RTL_SOC = rtl/alu.v rtl/regfile.v rtl/immgen.v rtl/control.v rtl/csr.v rtl/imem.v \
           rtl/dmem.v rtl/uart.v rtl/timer.v rtl/syscon.v rtl/cpu_core.v rtl/soc.v
