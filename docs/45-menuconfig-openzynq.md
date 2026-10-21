@@ -225,7 +225,7 @@ DEFCONFIG=configs/...`). `make rvgen-all` generates and simulates every one:
 | `oz_tiny` | 2,264 | 48 | 1,221 | 4 | 0 | 78 |
 | `oz_mc` | 4,521 | 48 | 376 | 8 | 12 | 912 |
 | `oz_mc_c` | 4,849 | 48 | 393 | 8 | 12 | 918 |
-| `oz_mc_f_ps` | *ABC still mapping after 25+ min* | | | | | |
+| `oz_mc_f_ps` | 11,856 | 108 | 837 | 8 | 14 | 2,027 |
 
 LUTs include LUT-RAM (the caches' line arrays, the register files). Every
 pipeline preset is a fraction of the part: the full configuration uses 54 % of
@@ -235,10 +235,12 @@ mostly, the **combinational divider**, which is a long carry ripple. `oz_tiny`,
 without M, has neither.
 
 The F core (`oz_mc_f_ps`) is the outlier. Its FPU computes divide and square
-root as unrolled combinational recurrences (Step 35), and ABC is still mapping
-that logic after more than 25 minutes. It synthesizes, but it is not an FPU
-that belongs on this part as it stands. An iterative divide/square-root
-datapath, one recurrence step per cycle, is the fix.
+root as unrolled combinational recurrences (Step 35). It synthesizes, but those
+two recurrences make it the largest preset: 11,856 LUTs and 2,027 carry chains,
+for a multi-cycle core whose integer side is about 4,500. Mapping them took
+ABC 63 of the run's 68 minutes, against 2–5 minutes for every other preset. As
+it stands it is not an FPU that belongs on this part. An iterative
+divide/square-root datapath, one recurrence step per cycle, is the fix.
 
 Synthesizing every preset found two bugs, both fixed in this step:
 
