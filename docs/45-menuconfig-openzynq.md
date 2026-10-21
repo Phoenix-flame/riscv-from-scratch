@@ -208,15 +208,52 @@ DEFCONFIG=configs/...`). `make rvgen-all` generates and simulates every one:
 | `oz_full_ps` | the same, PS-attached | 10/10 over AXI |
 | `oz_mu_mmu` | pipeline, M/U + MMU, no S; 2-entry TLBs, 8-entry predictor, 8-line caches of 4 words | 9/9 |
 | `oz_msu_nommu_ps` | pipeline, M/S/U, no MMU, PS-attached | 8/8 over AXI |
-| `oz_tiny` | pipeline RV32I, M only, not-taken, no caches, no timer/GPIO, 8+8 KiB | 4/4 (incl. 3 "absent") |
-| `oz_mc` | multi-cycle RV32IM | 5/5 |
-| `oz_mc_c` | multi-cycle RV32IMC (the whole image compressed) | 6/6 |
-| `oz_mc_f_ps` | multi-cycle RV32IMF, PS-attached | 6/6 over AXI |
+| `oz_tiny` | pipeline RV32I, machine mode only, not-taken, no caches, no timer/GPIO, 8+8 KiB | 4/4 (incl. 3 "absent") |
+| `oz_mc` | multi-cycle RV32IM | 5/5 (incl. 1 "absent") |
+| `oz_mc_c` | multi-cycle RV32IMC (the whole image compressed) | 6/6 (incl. 1 "absent") |
+| `oz_mc_f_ps` | multi-cycle RV32IMF, PS-attached | 6/6 over AXI (incl. 1 "absent") |
 
 **Synthesis**, with OpenZynq's own `make synth` and the container's Yosys
 0.68, for the `xc7z010` (17,600 LUTs, 35,200 FFs, 60 RAMB36, 80 DSP48):
 
-*(Results pending: the Yosys 0.68 runs are in progress; this table is filled in by the next commit.)*
+| Preset | LUTs | of which LUTRAM | FFs | RAMB36 | DSP48 | CARRY4 |
+|---|---:|---:|---:|---:|---:|---:|
+| `oz_full` | 9,584 | 376 | 4,502 | 12 | 12 | 958 |
+| `oz_full_ps` | 9,532 | 388 | 4,908 | 12 | 12 | 969 |
+| `oz_mu_mmu` | 6,982 | 236 | 2,372 | 12 | 12 | 948 |
+| `oz_msu_nommu_ps` | 8,312 | 436 | 4,448 | 8 | 12 | 963 |
+| `oz_tiny` | 2,264 | 48 | 1,221 | 4 | 0 | 78 |
+| `oz_mc` | 4,521 | 48 | 376 | 8 | 12 | 912 |
+| `oz_mc_c` | 4,849 | 48 | 393 | 8 | 12 | 918 |
+| `oz_mc_f_ps` | *ABC still mapping after 25+ min* | | | | | |
+
+LUTs include LUT-RAM (the caches' line arrays, the register files). Every
+pipeline preset is a fraction of the part: the full configuration uses 54 % of
+the LUTs and 13 % of the flip-flops, and `oz_tiny` uses 13 % of the LUTs. The
+12 DSPs and ~900 carry chains in every preset with M are the multiplier and,
+mostly, the **combinational divider**, which is a long carry ripple. `oz_tiny`,
+without M, has neither.
+
+The F core (`oz_mc_f_ps`) is the outlier. Its FPU computes divide and square
+root as unrolled combinational recurrences (Step 35), and ABC is still mapping
+that logic after more than 25 minutes. It synthesizes, but it is not an FPU
+that belongs on this part as it stands. An iterative divide/square-root
+datapath, one recurrence step per cycle, is the fix.
+
+Synthesizing every preset found two bugs, both fixed in this step:
+
+- **`M_EXT=0` did not remove M.** `alu` only gated the result mux, and
+  synthesis cannot prove `alu_op` never selects the multiply or divide arms,
+  so `oz_tiny` still built 12 DSPs and the full divider (5,152 LUTs, 930
+  CARRY4). The RV32M units now take constant-zero operands when `M_EXT=0` and
+  fold away: 2,264 LUTs, 0 DSP, 78 CARRY4. `M_EXT=1` is logically unchanged,
+  and all 12 riscv-tests configurations still pass.
+- **`fpu_f` did not synthesize at all.** The square root's two data-dependent
+  `while` loops are not a constant-bound iteration, and Yosys stops with
+  "non-constant expression in constant function". They are now bounded at 28
+  steps each, which is exactly the most the radix-4 recurrence can take from
+  `1 << 54`. The results are identical, and the FPU unit, integration and
+  riscv-tests (`mc_f` 58/58) all pass.
 
 In OpenZynq itself, the two exported reference projects (`riscv_full`,
 `riscv_full_ps`) pass `make sim`, and the PS program builds with
@@ -224,7 +261,7 @@ In OpenZynq itself, the two exported reference projects (`riscv_full`,
 
 ## Honest status
 
-- **Simulation and synthesis only.** No placement and routing has been done,
+- **Simulation and synthesis only** (Yosys 0.68, OpenZynq's `make synth`). No placement and routing has been done,
   so timing is unknown (nextpnr-xilinx and the chip database were not
   available here), and nothing has run on a board. The RV32M divider is a
   combinational array and the likely critical path at 50 MHz. A configuration
