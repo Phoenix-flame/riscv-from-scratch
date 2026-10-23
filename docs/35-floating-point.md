@@ -192,6 +192,9 @@ unchanged, and every prior testbench still passes.
   synthesizable build needs a true iterative datapath that does one recurrence
   step per cycle; the cycle count is honest, the per-cycle logic depth is not yet
   what hardware would use.
+  (Step 45 bounded the square root's two `while` loops at 28 steps each -- the
+  same result, but unrollable -- so the FPU now *synthesizes*; it is still the
+  combinational recurrence, and the area and logic depth show it.)
 - Rounding is fully implemented for all five modes, but the directed (non-RNE)
   modes are exercised far less than round-to-nearest by these tests; the
   rigorous upgrade is a riscv-arch-test style compliance suite that sweeps every

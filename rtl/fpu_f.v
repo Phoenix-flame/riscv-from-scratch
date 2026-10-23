@@ -200,7 +200,7 @@ module fpu_f (
     function [36:0] fsqrt_core;
         input dummy;
         reg signed [9:0] e; reg [55:0] rad; reg [55:0] bit_; reg [55:0] res;
-        reg st; reg [26:0] sig; reg [34:0] rp; reg [24:0] mscaled;
+        reg st; reg [26:0] sig; reg [34:0] rp; reg [24:0] mscaled; integer k2;
         begin
             if (a_nan)        fsqrt_core = {{a_snan,4'b0}, CANON_QNAN};
             else if (a_zero)  fsqrt_core = {5'b0, {sa,31'd0}};
@@ -212,12 +212,17 @@ module fpu_f (
                 rad = {7'd0, mscaled, 24'd0};       // mscaled << 24
                 rad = rad << 5;                     // total << 29
                 res = 0; bit_ = 56'd1 << 54;
-                while (bit_ > rad) bit_ = bit_ >> 2;
-                while (bit_ != 0) begin
-                    if (rad >= res + bit_) begin rad = rad - (res + bit_); res = (res>>1)+bit_; end
-                    else res = res >> 1;
-                    bit_ = bit_ >> 2;
-                end
+                // bounded loops (bit_ starts at 1<<54 and moves 2 places per
+                // step, so 28 steps always suffice) -- the same result as
+                // "while" loops, but unrollable, so Yosys can synthesize it
+                for (k2 = 0; k2 < 28; k2 = k2 + 1)
+                    if (bit_ > rad) bit_ = bit_ >> 2;
+                for (k2 = 0; k2 < 28; k2 = k2 + 1)
+                    if (bit_ != 0) begin
+                        if (rad >= res + bit_) begin rad = rad - (res + bit_); res = (res>>1)+bit_; end
+                        else res = res >> 1;
+                        bit_ = bit_ >> 2;
+                    end
                 st = (rad != 0);
                 e = ($signed({2'b0,ea}) - 127);
                 e = (e >>> 1) + 127;

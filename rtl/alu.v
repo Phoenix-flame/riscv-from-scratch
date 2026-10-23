@@ -36,20 +36,26 @@ module alu #(
 
     wire [4:0] shamt = b[4:0];
 
+    // RV32M operands: constant zero when M_EXT=0, so synthesis folds the
+    // multipliers and dividers away entirely (gating only the result mux
+    // would leave them built -- the tool cannot see alu_op never selects them)
+    wire [31:0] ma = M_EXT ? a : 32'd0;
+    wire [31:0] mb = M_EXT ? b : 32'd0;
+
     // 64-bit products for the high-multiply variants.
-    wire signed [63:0] a_s  = $signed({{32{a[31]}}, a});   // a as signed64
-    wire signed [63:0] b_s  = $signed({{32{b[31]}}, b});   // b as signed64
-    wire        [63:0] a_u  = {32'b0, a};                  // a as unsigned64
-    wire        [63:0] b_u  = {32'b0, b};                  // b as unsigned64
+    wire signed [63:0] a_s  = $signed({{32{ma[31]}}, ma}); // a as signed64
+    wire signed [63:0] b_s  = $signed({{32{mb[31]}}, mb}); // b as signed64
+    wire        [63:0] a_u  = {32'b0, ma};                 // a as unsigned64
+    wire        [63:0] b_u  = {32'b0, mb};                 // b as unsigned64
     wire signed [63:0] p_ss = a_s * b_s;                   // signed   x signed
     wire        [63:0] p_uu = a_u * b_u;                   // unsigned x unsigned
     wire signed [63:0] p_su = a_s * $signed(b_u);          // signed   x unsigned
 
     // Division with RV32M special cases.
-    wire        div0   = (b == 32'd0);
-    wire        ovf    = (a == 32'h8000_0000) && (b == 32'hFFFF_FFFF);
-    wire signed [31:0] sa = $signed(a);
-    wire signed [31:0] sb = $signed(b);
+    wire        div0   = (mb == 32'd0);
+    wire        ovf    = (ma == 32'h8000_0000) && (mb == 32'hFFFF_FFFF);
+    wire signed [31:0] sa = $signed(ma);
+    wire signed [31:0] sb = $signed(mb);
     // Evaluate signed divide/remainder in their own signed context. If
     // mixed with unsigned operands inside a ?: below, Verilog would treat
     // the whole expression as unsigned -- so compute them here first.
@@ -78,11 +84,11 @@ module alu #(
             ALU_DIV : result = div0 ? 32'hFFFF_FFFF
                               : ovf  ? 32'h8000_0000
                               : q_s;
-            ALU_DIVU: result = div0 ? 32'hFFFF_FFFF : (a / b);
+            ALU_DIVU: result = div0 ? 32'hFFFF_FFFF : (ma / mb);
             ALU_REM : result = div0 ? a
                               : ovf  ? 32'd0
                               : r_s;
-            ALU_REMU: result = div0 ? a : (a % b);
+            ALU_REMU: result = div0 ? a : (ma % mb);
 
             default : result = 32'd0;
         endcase
