@@ -1,3 +1,6 @@
-# Everything on: 5-stage pipeline, RV32IMA, M/S/U, Sv32 MMU + TLBs, branch
-# predictor, I/D caches, timer, GPIO. Standalone: UART TX on JM1 pin 21.
+# Everything on: 5-stage pipeline, RV32IMA + Zba/Zbb/Zbc/Zbs + V (Zve32x), M/S/U, Sv32 MMU
+# + TLBs, branch predictor, I/D caches, timer, GPIO. Standalone: UART TX on
+# JM1 pin 21.
 CONFIG_PROJECT_NAME="riscv_full"
+CONFIG_ISA_ZBC=y
+CONFIG_ISA_V=y

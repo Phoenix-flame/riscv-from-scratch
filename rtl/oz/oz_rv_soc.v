@@ -7,7 +7,7 @@
 // the generated top level adds clocks, reset, pins and (in PS-attached
 // builds) the AXI host bridge.
 //
-//   CORE = 0  cpu_pipe_u   5-stage pipeline: M/A/U/S/MMU/predictor are
+//   CORE = 0  cpu_pipe_u   5-stage pipeline: M/A/Zb*/U/S/MMU/predictor are
 //                          individually switchable; memory through the
 //                          I/D caches (CACHES=1) or uncached bridges
 //   CORE = 1  cpu_mc       multi-cycle RV32IM
@@ -48,7 +48,13 @@ module oz_rv_soc #(
     parameter IMEM_INIT   = "",
     parameter DMEM_INIT   = "",
     parameter TIMER       = 1,
-    parameter GPIO        = 1
+    parameter GPIO        = 1,
+    parameter ZBA         = 1,         // bit manipulation (pipeline only)
+    parameter ZBB         = 1,
+    parameter ZBC         = 1,
+    parameter ZBS         = 1,
+    parameter V_EXT       = 0,         // vector unit, Zve32x (pipeline only)
+    parameter VLEN        = 128
 ) (
     input  wire        clk,
     input  wire        rst,
@@ -122,7 +128,9 @@ module oz_rv_soc #(
         wire [31:0] drdata = sel_ram ? ram_rdata : mmio_rdata;
 
         cpu_pipe_u #(.TLB_ENTRIES(TLB_ENTRIES), .BPRED(BPRED), .BP_IDX_BITS(BP_IDX_BITS),
-                     .M_EXT(M_EXT), .A_EXT(A_EXT), .HAS_U(HAS_U), .HAS_S(HAS_S), .MMU(MMU)) u_core (
+                     .M_EXT(M_EXT), .A_EXT(A_EXT), .HAS_U(HAS_U), .HAS_S(HAS_S), .MMU(MMU),
+                     .ZBA(ZBA), .ZBB(ZBB), .ZBC(ZBC), .ZBS(ZBS),
+                     .V_EXT(V_EXT), .VLEN(VLEN)) u_core (
             .clk(clk), .rst(rst), .timer_irq(timer_irq), .halt(halted),
             .i_addr(iaddr), .i_req(ireq), .i_rdata(irdata), .i_ready(iready),
             .d_addr(daddr), .d_req(dreq), .d_we(dwe), .d_wdata(dwdata),

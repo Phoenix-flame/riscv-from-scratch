@@ -90,6 +90,64 @@ config ISA_A
 	depends on CORE_PIPE
 	default y
 
+menu "Bit manipulation (Zb*)"
+	depends on CORE_PIPE
+
+config ISA_ZBA
+	bool "Zba: address generation (sh1add, sh2add, sh3add)"
+	default y
+
+config ISA_ZBB
+	bool "Zbb: basic bit manipulation (andn, clz, cpop, min/max, rev8, rol/ror, ...)"
+	default y
+
+config ISA_ZBC
+	bool "Zbc: carry-less multiply (clmul, clmulh, clmulr)"
+	default n
+	help
+	  A 32x32 carry-less multiplier: an XOR array of about a thousand
+	  LUTs. CRC and GCM code want it; most programs do not.
+
+config ISA_ZBS
+	bool "Zbs: single-bit operations (bclr, bset, binv, bext)"
+	default y
+
+endmenu
+
+config ISA_V
+	bool "V: vector unit (Zve32x: integer vectors, 8/16/32-bit elements)"
+	depends on CORE_PIPE
+	default n
+	help
+	  RVV 1.0 vector instructions, embedded profile Zve32x: vsetvl*,
+	  unit-stride / strided / indexed / fault-only-first / whole-register
+	  loads and stores, integer arithmetic, multiply and multiply-add,
+	  compares, masks, reductions, slides and moves. Element-serial (one
+	  element per clock) and precise: a page fault mid-vector sets vstart
+	  and the instruction resumes there. No fixed-point, divide,
+	  widening/narrowing, segment, vrgather or vcompress -- those decode as
+	  illegal. Software must set mstatus.VS before the first vector
+	  instruction. See docs/47-vector.md.
+
+choice VLEN
+	prompt "VLEN (bits per vector register)"
+	depends on ISA_V
+	default VLEN_128
+	help
+	  32 registers of VLEN bits, kept in LUT RAM: 32 x VLEN / 8 bytes,
+	  read through four ports. Doubling VLEN doubles the register file and
+	  the elements one instruction covers; the unit stays one element per
+	  clock.
+
+config VLEN_64
+	bool "64"
+config VLEN_128
+	bool "128"
+config VLEN_256
+	bool "256"
+
+endchoice
+
 choice MC_EXT
 	prompt "Multi-cycle extension"
 	depends on CORE_MC

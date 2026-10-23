@@ -12,7 +12,7 @@
 //
 // sstatus / sie / sip are restricted *views* of mstatus / mie / mip -- the
 // same underlying bits, masked to those an S-mode kernel may see and set:
-//   mstatus:  SIE=1  MIE=3  SPIE=5  MPIE=7  SPP=8  MPP=12:11  SUM=18  MXR=19
+//   mstatus:  SIE=1  MIE=3  SPIE=5  MPIE=7  SPP=8  VS=10:9  MPP=12:11  SUM=18  MXR=19
 //   (SUM / MXR only matter to a core with an MMU -- cpu_pipe_u, Step 44)
 //   mie/mip:  SSI=1  MSI=3  STI=5   MTI=7   SEI=9  MEI=11
 //
@@ -32,7 +32,8 @@
 module csr_s #(
     parameter HAS_S    = 1,
     parameter HAS_U    = 1,
-    parameter HAS_SATP = 1
+    parameter HAS_SATP = 1,
+    parameter HAS_V    = 1             // mstatus.VS writable (Step 47); else reads 0
 ) (
     input  wire        clk,
     input  wire        rst,
@@ -60,6 +61,8 @@ module csr_s #(
     output wire        deleg_now,       // the trap being taken routes to S
     output wire        status_sum,      // mstatus.SUM: S may touch U pages
     output wire        status_mxr,      // mstatus.MXR: loads may read X pages
+    output wire [1:0]  status_vs,       // mstatus.VS: vector unit Off/Initial/Clean/Dirty
+    input  wire        set_vs_dirty,    // vector state changed: VS <- Dirty (if not Off)
     output wire [1:0]  cur_priv,
     output wire [31:0] satp_out
 );
@@ -72,7 +75,7 @@ module csr_s #(
     localparam PRIV_M=2'b11, PRIV_S=2'b01, PRIV_U=2'b00;
 
     // sstatus/sie/sip visibility masks
-    localparam [31:0] SSTATUS_MASK = (1<<1)|(1<<5)|(1<<8)|(1<<18)|(1<<19); // SIE,SPIE,SPP,SUM,MXR
+    localparam [31:0] SSTATUS_MASK = (1<<1)|(1<<5)|(1<<8)|(3<<9)|(1<<18)|(1<<19); // SIE,SPIE,SPP,VS,SUM,MXR
     localparam [31:0] S_INT_MASK   = (1<<1)|(1<<5)|(1<<9);          // SSI,STI,SEI
 
     reg [31:0] mstatus, medeleg, mideleg, mie, mtvec, mscratch, mepc, mcause, mtval;
@@ -83,6 +86,8 @@ module csr_s #(
     assign cur_priv = priv;
     assign status_sum = mstatus[18];
     assign status_mxr = mstatus[19];
+    assign status_vs  = mstatus[10:9];
+    wire   sd         = (mstatus[10:9] == 2'b11);   // SD: some extension state Dirty
     assign satp_out = HAS_SATP ? satp : 32'd0;
     assign mret_target = mepc;
     assign sret_target = sepc;
@@ -127,7 +132,7 @@ module csr_s #(
     // ---- CSR read (sstatus/sie/sip are masked views) ----
     always @(*) begin
         case (csr_addr)
-            MSTATUS : csr_rdata = mstatus;
+            MSTATUS : csr_rdata = {sd, mstatus[30:0]};
             MEDELEG : csr_rdata = medeleg;
             MIDELEG : csr_rdata = mideleg;
             MIE_A   : csr_rdata = mie;
@@ -137,7 +142,7 @@ module csr_s #(
             MCAUSE  : csr_rdata = mcause;
             MTVAL   : csr_rdata = mtval;
             MIP     : csr_rdata = mip;
-            SSTATUS : csr_rdata = mstatus & SSTATUS_MASK;
+            SSTATUS : csr_rdata = {sd, mstatus[30:0] & SSTATUS_MASK[30:0]};
             SIE_A   : csr_rdata = mie & S_INT_MASK;
             STVEC   : csr_rdata = stvec;
             SSCRATCH: csr_rdata = sscratch;
@@ -233,6 +238,10 @@ module csr_s #(
                 default : ;
             endcase
         end
+        // vector state changed (Step 47): VS Initial/Clean -> Dirty; Off stays Off
+        if (!rst && set_vs_dirty && mstatus[10:9] != 2'b00) mstatus[10:9] <= 2'b11;
+        if (!HAS_V) mstatus[10:9] <= 2'b00;
+        mstatus[31] <= 1'b0;                          // SD is computed, never stored
     end
 endmodule
 
