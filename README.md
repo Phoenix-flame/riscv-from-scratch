@@ -70,7 +70,9 @@ sequence) and we will watch the registers change in the waveform viewer.
 | 42 | `docs/42-unified-pipeline.md` | Bonus: unify the cores — one 5-stage pipeline (`cpu_pipe_u`) with RV32IMA, M/U privilege, Sv32 fetch + data translation and I/D TLBs, and stall-capable ready/valid memory ports; precise page faults committed in EX, AMOs as two MEM requests, a shared walker borrowing the D-port; riscv-tests 58/58 in M and with Sv32 on in U | **done & tested (sim)** |
 | 43 | `docs/43-caches.md` | Bonus: I-cache + write-back D-cache in front of a slow, burst-oriented (DDR-like) memory, on the unchanged unified pipeline; hits cost zero cycles, misses one line burst; 11× faster than no caches at latency 10 and 25× at 40 (CPI 2.0 / 2.7 vs 22.5 / 67.6), byte-exact vs the host compiler; D-cache vs a random reference model; MMU programs and riscv-tests through tiny caches | **done & tested (sim)** |
 | 44 | `docs/44-smode-and-bpred-in-the-pipeline.md` | Bonus: supervisor mode (`medeleg`/`mideleg`, `sret`, `stval`, SUM/MXR, translation in S) and the BTB + 2-bit branch predictor folded into the unified pipeline; an S-mode kernel running translated serves its user's page faults (demand paging, fetch faults), the Step 39 demo runs unchanged, and the predictor reproduces Step 32's 3544 → 879 mispredictions | **done & tested (sim)** |
-| 45 | `docs/45-menuconfig-openzynq.md` | Bonus: `make menuconfig` (Kconfig) generates a RISC-V project for OpenZynq / Mitra-7010 — pipeline or multi-cycle core, every feature a parameter that removes hardware, standalone or PS-attached (AXI loader + console), with a per-configuration self-test and testbench; 8 presets pass in simulation and synthesize with Yosys 0.68 | **done & tested (sim + synth)** |
+| 45 | `docs/45-menuconfig-openzynq.md` | Bonus: `make menuconfig` (Kconfig) generates a RISC-V project for OpenZynq / Mitra-7010 — pipeline or multi-cycle core, every feature a parameter that removes hardware, standalone or PS-attached (AXI loader + console), with a per-configuration self-test and testbench; 9 presets pass in simulation and synthesize with Yosys 0.68 | **done & tested (sim + synth)** |
+| 46 | `docs/46-bitmanip.md` | Bonus: the bit-manipulation extensions Zba/Zbb/Zbc/Zbs in the unified pipeline — a combinational unit beside the ALU, strict OP/OP-IMM decode so an unconfigured extension traps, each group a parameter and a menuconfig option; the official `rv32uzb*` riscv-tests (32) pass on all four pipeline configurations (90/90) | **done & tested (sim + synth)** |
+| 47 | `docs/47-vector.md` | Bonus: the RISC-V vector extension (Zve32x subset, VLEN 64/128/256) — an element-serial unit holding EX, VRF in LUT RAM, vector memory translated by the D-TLB/walker, precise mid-vector page faults with `vstart` resume, fault-only-first, `mstatus.VS`; random differential testing against a Python RVV model (thousands of programs, with and without caches), an Sv32 fault test, a menuconfig option, and a 1.3–2.4× scalar-vs-vector benchmark | **done & tested (sim + synth)** |
 
 ## Directory layout
 
@@ -230,10 +232,10 @@ tools/rvtests --list                   # what would run
 | `mc_f` | `cpu_mc_f.v` — multi-cycle RV32IMF | ui, um, uf | 58/58 |
 | `pipe` | `cpu_pipe_trap.v` — 5-stage pipeline | ui, um | 49/49 |
 | `mc_tlb` | `cpu_mc_tlb.v` — multi-cycle RV32IM, run with Sv32 **on** (identity map, U-mode) through the I/D TLBs | ui, um | 48/48 |
-| `pipe_u` | `cpu_pipe_u.v` — unified pipeline RV32IMA, M/S/U, MMU, branch predictor (body in M) | ui, um, ua | 58/58 |
-| `pipe_u_vm` | `cpu_pipe_u.v` — same, body in U with Sv32 **on** | ui, um, ua | 58/58 |
-| `pipe_c` | `cpu_pipe_u.v` behind 512 B I$/D$ on slow memory (latency 5) | ui, um, ua | 58/58 |
-| `pipe_c_vm` | same, body in U with Sv32 **on** (PTEs read through the D$) | ui, um, ua | 58/58 |
+| `pipe_u` | `cpu_pipe_u.v` — unified pipeline RV32IMA, M/S/U, MMU, branch predictor (body in M) | ui, um, ua, uzba, uzbb, uzbc, uzbs | 90/90 |
+| `pipe_u_vm` | `cpu_pipe_u.v` — same, body in U with Sv32 **on** | ui, um, ua, uzb* | 90/90 |
+| `pipe_c` | `cpu_pipe_u.v` behind 512 B I$/D$ on slow memory (latency 5) | ui, um, ua, uzb* | 90/90 |
+| `pipe_c_vm` | same, body in U with Sv32 **on** (PTEs read through the D$) | ui, um, ua, uzb* | 90/90 |
 
 Tests that cannot pass on this hardware (`fence_i`, `ma_data` on the word-RAM
 cores, `fmadd`) are still run and reported as documented gaps rather than
@@ -273,7 +275,8 @@ A menu of where this project can go next, grouped by goal. Rough difficulty:
 ### Broaden the ISA
 - ✅ **C (compressed)** — RV32IMC core (`cpu_mc_c` + `rvc_expand`, Step 34): 1:1 expansion to base instructions, halfword PCs, straddling fetches resolved in one extra cycle. Same program, 424 → 302 code bytes. A fetch buffer is the natural follow-up.
 - ✅ **F (single-precision floating point)** — single-precision FPU, the `f0`–`f31` float register file, and `fcsr` (Step 35): runs real `-march=rv32imf` gcc output and matches host float32 bit-for-bit across the normal range (367-point unit test + compiled-program integration test). Subnormals are flushed to zero. Double precision (D) and the fused multiply-add family are the natural follow-ups.
-- 🟡 **Zb (bit-manip)** — small, high-value. **V (vector)** — deep and modern.
+- ✅ **Zb (bit-manip)** — Zba/Zbb/Zbc/Zbs in the unified pipeline (Step 46): one combinational unit beside the ALU, strict OP/OP-IMM decode so a group that is configured out traps, each group a menuconfig option; the official `rv32uzb*` riscv-tests pass on all four pipeline configurations.
+- ✅ **V (vector)** — Zve32x subset on the unified pipeline (Step 47): `vsetvl*`, unit/strided/indexed/fault-only-first/whole-register memory ops translated by the MMU, integer arithmetic, multiply-add, compares, masks, reductions, slides; precise mid-vector page faults resume at `vstart`; `mstatus.VS`. Element-serial — the next performance steps are lanes, word-wide unit-stride access and chaining.
 - 🔴 **RV64** — widen to 64-bit; required for Linux.
 
 ### Rigorous correctness

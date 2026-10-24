@@ -44,8 +44,9 @@
 // is off is not built: M_EXT=0 removes the multiplier/divider (MUL/DIV
 // decode as illegal), A_EXT=0 the atomics, MMU=0 the TLBs and the walker
 // (satp reads 0), HAS_S=0 / HAS_U=0 supervisor / user mode, BPRED=0 the
-// predictor. tools/rvgen sets them from a Kconfig .config; all default
-// on, which is the core of Steps 42-44.
+// predictor, ZBA/ZBB/ZBC/ZBS the bit-manipulation groups (Step 46),
+// V_EXT the vector unit (Step 47, rtl/vec_unit.v).
+// tools/rvgen sets them from a Kconfig .config; all default on.
 //
 // Translation. With satp.MODE=1 in S- or U-mode, IF looks up the I-TLB with
 // the PC and EX looks up the D-TLB with the effective address; a hit
@@ -73,7 +74,13 @@ module cpu_pipe_u #(
     parameter A_EXT       = 1,        // RV32A atomics
     parameter HAS_U       = 1,        // user mode
     parameter HAS_S       = 1,        // supervisor mode + delegation (needs HAS_U)
-    parameter MMU         = 1         // Sv32 + TLBs + walker (needs HAS_U)
+    parameter MMU         = 1,        // Sv32 + TLBs + walker (needs HAS_U)
+    parameter ZBA         = 1,        // bit-manip: address generation   (Step 46)
+    parameter ZBB         = 1,        //            basic bit manipulation
+    parameter ZBC         = 1,        //            carry-less multiply
+    parameter ZBS         = 1,        //            single-bit operations
+    parameter V_EXT       = 1,        // vectors: Zve32x subset (Step 47)
+    parameter VLEN        = 128       //          vector register width in bits
 ) (
     input  wire        clk,
     input  wire        rst,
@@ -113,6 +120,8 @@ module cpu_pipe_u #(
     wire [1:0]  cur_priv;
     wire [31:0] satp_val;
     wire        st_sum, st_mxr;            // mstatus.SUM / MXR
+    wire [1:0]  st_vs;                     // mstatus.VS
+    wire        v_vs_dirty;
     wire        in_user = (cur_priv == 2'b00);
     wire        in_m    = (cur_priv == 2'b11);
     wire        vm_on   = (MMU != 0) & ~in_m & satp_val[31];   // S and U are translated
@@ -239,6 +248,10 @@ module cpu_pipe_u #(
     wire id_ebreak = is_system && (funct3_id==3'b000) && (ifid_instr[31:20]==12'h001);
     wire id_sret   = is_system && (funct3_id==3'b000) && (ifid_instr[31:20]==12'h102);
     wire id_sfence = is_system && (funct3_id==3'b000) && (funct7==7'b0001001);
+    // vector encodings (Step 47): OP-V, and LOAD-FP / STORE-FP with a vector width
+    wire id_vec = (V_EXT != 0) &&
+                  ((opcode == 7'b1010111) ||
+                   ((opcode == 7'b0000111 || opcode == 7'b0100111) && (funct3_id == 3'b000 || funct3_id[2])));
     wire id_is_amo = (A_EXT != 0) && (opcode == 7'b0101111) && (funct3_id == 3'b010);   // .w only
     wire id_muldiv = (opcode == 7'b0110011) && (funct7 == 7'b0000001);
     wire [4:0] id_amo_f5 = funct7[6:2];
@@ -249,8 +262,23 @@ module cpu_pipe_u #(
         (opcode==7'b0110011)||(opcode==7'b0010011)||(opcode==7'b0000011)||
         (opcode==7'b0100011)||(opcode==7'b1100011)||(opcode==7'b1101111)||
         (opcode==7'b1100111)||(opcode==7'b0110111)||(opcode==7'b0010111)||
-        (opcode==7'b1110011)||(opcode==7'b0001111)||id_is_amo;
-    wire op_ok = op_known & ~(id_muldiv & (M_EXT == 0));     // RV32M absent
+        (opcode==7'b1110011)||(opcode==7'b0001111)||id_is_amo||id_vec;
+    // Strict decode of OP / OP-IMM (Step 46): besides the base and M
+    // encodings, a funct7 is only legal if it is a configured Zb
+    // instruction -- an unconfigured extension traps instead of quietly
+    // executing as some base op.
+    wire id_zb;
+    zb_unit #(.ZBA(ZBA), .ZBB(ZBB), .ZBC(ZBC), .ZBS(ZBS)) u_zb_dec (
+        .opcode(opcode), .funct3(funct3_id), .funct7(funct7), .rs2f(rs2_id),
+        .a(32'd0), .b(32'd0), .hit(id_zb), .result());
+    wire base_r = (funct7 == 7'b0000000) |
+                  (funct7 == 7'b0100000 && (funct3_id == 3'b000 || funct3_id == 3'b101)) |
+                  (funct7 == 7'b0000001 && M_EXT != 0);
+    wire base_i = (funct3_id == 3'b001) ? (funct7 == 7'b0000000) :           // slli
+                  (funct3_id == 3'b101) ? (funct7 == 7'b0000000 || funct7 == 7'b0100000) : 1'b1;
+    wire enc_ok = (opcode == 7'b0110011) ? (base_r | id_zb) :
+                  (opcode == 7'b0010011) ? (base_i | id_zb) : 1'b1;
+    wire op_ok = op_known & enc_ok;
 
     // register read with WB->ID bypass
     wire [31:0] rf_rs1, rf_rs2;
@@ -268,6 +296,8 @@ module cpu_pipe_u #(
     reg [31:0] idex_pc, idex_imm, idex_rs1d, idex_rs2d, idex_instr, idex_pred_target;
     reg [4:0]  idex_rs1, idex_rs2, idex_rd, idex_alu_op, idex_amo_f5;
     reg [2:0]  idex_funct3;
+    reg [6:0]  idex_opcode, idex_funct7;
+    reg        idex_zb, idex_vec;
     reg [1:0]  idex_wb_sel;
     reg [11:0] idex_csr_addr;
     reg        idex_reg_write, idex_alu_src_a, idex_alu_src_b,
@@ -287,6 +317,7 @@ module cpu_pipe_u #(
             idex_is_csr<=0; idex_is_mret<=0; idex_ecall<=0; idex_ebreak<=0;
             idex_illegal<=0; idex_csr_addr<=0; idex_sfence<=0; idex_amo_f5<=0;
             idex_lr<=0; idex_sc<=0; idex_rmw<=0; idex_ifault<=0; idex_valid<=0;
+            idex_opcode<=0; idex_funct7<=0; idex_zb<=0; idex_vec<=0;
             idex_sret<=0; idex_instr<=0; idex_pred_taken<=0; idex_pred_target<=0;
         end else if (freeze || ex_hold) begin
             // hold, but keep the operands current: a producer that leaves
@@ -307,6 +338,7 @@ module cpu_pipe_u #(
             idex_amo_f5<=id_amo_f5; idex_lr<=id_lr; idex_sc<=id_sc; idex_rmw<=id_rmw;
             idex_ifault<=ifid_ifault; idex_valid<=ifid_valid;
             idex_sret<=id_sret; idex_instr<=ifid_instr;
+            idex_opcode<=opcode; idex_funct7<=funct7; idex_zb<=id_zb; idex_vec<=id_vec;
             idex_pred_taken<=ifid_pred_taken; idex_pred_target<=ifid_pred_target;
         end
     end
@@ -357,7 +389,7 @@ module cpu_pipe_u #(
     generate if (MMU) begin : g_dtlb
         tlb #(.ENTRIES(TLB_ENTRIES)) u_dtlb (
             .clk(clk), .rst(rst),
-            .va(ex_va), .hit(dtlb_hit), .pa(dtlb_pa), .perm(dtlb_perm),
+            .va(dtlb_va), .hit(dtlb_hit), .pa(dtlb_pa), .perm(dtlb_perm),
             .fill(ptw_fill & ~ptw_side_i), .fill_va(ptw_va), .fill_ppn(ptw_ppn),
             .fill_super(ptw_super), .fill_perm(ptw_perm),
             .flush_all(tlb_flush_all), .flush_one(tlb_flush_one), .flush_va(tlb_flush_va)
@@ -367,6 +399,12 @@ module cpu_pipe_u #(
     end endgenerate
     wire ex_xlate      = ex_mem & vm_on;
     wire ex_wres_fault = wres_valid & ~wres_i & (wres_vpn == ex_va[31:12]);
+    // ---- vector element translation (the D-TLB is the vector unit's while it
+    //      runs a memory instruction: the scalar pipe is held, MEM is empty) ----
+    wire v_mem_active, v_mem_store, v_mem_want;
+    wire [31:0] v_mem_va;
+    wire [31:0] dtlb_va = v_mem_active ? v_mem_va : ex_va;
+    wire v_wres_fault  = wres_valid & ~wres_i & (wres_vpn == v_mem_va[31:12]);
     // {U,X,W,R}: U-mode needs a U page; S may use a U page only with SUM;
     // MXR lets loads read execute-only pages
     wire user_ok       = in_user ? dtlb_perm[3] : (~dtlb_perm[3] | st_sum);
@@ -375,6 +413,11 @@ module cpu_pipe_u #(
     wire ex_dfault     = ex_xlate & (dtlb_hit ? ~perm_ok : ex_wres_fault);
     wire ex_dwalk      = ex_xlate & ~dtlb_hit & ~ex_wres_fault;
     wire [31:0] ex_pa  = ex_xlate ? dtlb_pa : ex_va;
+    wire v_perm_ok     = user_ok & (v_mem_store ? dtlb_perm[1] : readable);
+    wire v_xl_fault    = vm_on & (dtlb_hit ? ~v_perm_ok : v_wres_fault);
+    wire v_xl_ok       = ~vm_on | (dtlb_hit & v_perm_ok);
+    wire v_walk        = v_mem_active & v_mem_want & vm_on & ~dtlb_hit & ~v_wres_fault;
+    wire [31:0] v_pa   = vm_on ? dtlb_pa : v_mem_va;
 
     // ---- privilege / exceptions ----
     // a CSR's address bits [9:8] are the lowest privilege that may touch it
@@ -382,20 +425,37 @@ module cpu_pipe_u #(
     // which an MMU with only M/U still needs)
     wire csr_no_s   = (HAS_S == 0) & (idex_csr_addr[9:8] == 2'b01) &
                       ~((MMU != 0) & (idex_csr_addr == 12'h180));
-    wire csr_bad    = idex_is_csr & ((idex_csr_addr[9:8] > cur_priv) | csr_no_s);
-    wire ex_illegal = idex_illegal | csr_bad |
+    wire v_csr_hit, vs_on;
+    // csrrw always writes; csrrs/csrrc[i] only with a nonzero rs1 / uimm
+    wire csr_writes = (idex_funct3[1:0] == 2'b01) | (idex_rs1 != 5'd0);
+    wire csr_bad    = idex_is_csr & ((idex_csr_addr[9:8] > cur_priv) | csr_no_s |
+                                     (idex_csr_addr[11:10] == 2'b11 & csr_writes) |  // read-only (vl, vtype, vlenb, ...)
+                                     (v_csr_hit & (~vs_on | (V_EXT == 0))));
+    wire v_illegal;
+    wire ex_illegal = idex_illegal | csr_bad | (idex_vec & v_illegal) |
                       (idex_is_mret & ~in_m) |
                       (idex_sret & ((HAS_S == 0) | in_user)) |
                       (in_user & idex_sfence);
-    wire [31:0] csr_rdata, trap_vector, mepc_out, sepc_out, irq_cause;
+    wire [31:0] csr_rdata_s, trap_vector, mepc_out, sepc_out, irq_cause;
     wire        irq_pending;
     wire [31:0] csr_wsrc = idex_funct3[2] ? {27'b0, idex_rs1} : opA;
 
-    assign ex_hold = ex_dwalk;                 // (implies idex_valid)
+    // A vector instruction holds EX while the unit runs it. It starts only
+    // when it will not trap anyway (illegal, or a pending interrupt is taken
+    // first); once started it runs to completion, and an interrupt waits
+    // for the next instruction -- it is never taken on a finished vector op.
+    wire v_is_cfg, v_busy, v_done, v_fault, v_writes_rd;
+    wire [3:0]  v_fault_cause;
+    wire [31:0] v_fault_tval, v_scalar, v_cfg_vl;
+    wire v_fault_now = idex_vec & v_done & v_fault;
+    wire exception = idex_ifault | ex_illegal | idex_ecall | idex_ebreak | ex_dfault | v_fault_now;
+    wire v_wait    = idex_valid & idex_vec & ~v_is_cfg & ~v_done &
+                     (v_busy | (~exception & ~irq_pending));
+    assign ex_hold = ex_dwalk | v_wait;          // (implies idex_valid)
     assign ex_go   = idex_valid & ~freeze & ~ex_hold;
 
-    wire exception = idex_ifault | ex_illegal | idex_ecall | idex_ebreak | ex_dfault;
-    wire irq_take  = irq_pending & ~exception & ~idex_is_mret & ~idex_sret & ~idex_is_csr;
+    wire irq_take  = irq_pending & ~exception & ~idex_is_mret & ~idex_sret & ~idex_is_csr &
+                     ~(idex_vec & (v_busy | v_done));
     assign take_trap = ex_go & (exception | irq_take);
     wire mret_ex   = ex_go & idex_is_mret & ~take_trap;
     wire sret_ex   = ex_go & idex_sret    & ~take_trap;
@@ -407,23 +467,26 @@ module cpu_pipe_u #(
                              idex_ecall  ? (in_user ? 32'd8 : in_m ? 32'd11 : 32'd9) :
                              idex_ebreak ? 32'd3  :
                              ex_dfault   ? (need_w ? 32'd15 : 32'd13) :
+                             v_fault_now ? {28'd0, v_fault_cause} :
                                            irq_cause;
     // mtval / stval: the faulting VA, the bad instruction, or the PC
     wire [31:0] trap_val   = idex_ifault ? idex_pc    :
                              ex_illegal  ? idex_instr :
                              idex_ebreak ? idex_pc    :
-                             ex_dfault   ? ex_va      : 32'd0;
+                             ex_dfault   ? ex_va      :
+                             v_fault_now ? v_fault_tval : 32'd0;
 
-    csr_s #(.HAS_S(HAS_S), .HAS_U(HAS_U), .HAS_SATP(MMU)) u_csr (
+    csr_s #(.HAS_S(HAS_S), .HAS_U(HAS_U), .HAS_SATP(MMU), .HAS_V(V_EXT)) u_csr (
         .clk(clk), .rst(rst),
         .csr_addr(idex_csr_addr), .csr_funct3(idex_funct3), .csr_wsrc(csr_wsrc),
-        .csr_we(csr_commit), .csr_rdata(csr_rdata),
+        .csr_we(csr_commit & ~v_csr_hit), .csr_rdata(csr_rdata_s),
         .pc(idex_pc), .timer_irq(timer_irq), .ext_irq(1'b0),
         .instr_is_mret(mret_ex), .instr_is_sret(sret_ex),
         .take_trap(take_trap), .trap_cause(trap_cause), .trap_val(trap_val),
         .trap_vector(trap_vector), .mret_target(mepc_out), .sret_target(sepc_out),
         .irq_pending(irq_pending), .irq_cause(irq_cause), .deleg_now(),
         .status_sum(st_sum), .status_mxr(st_mxr),
+        .status_vs(st_vs), .set_vs_dirty(v_vs_dirty),
         .cur_priv(cur_priv), .satp_out(satp_val)
     );
 
@@ -448,7 +511,51 @@ module cpu_pipe_u #(
                          sret_ex   ? sepc_out    :
                          ex_taken  ? ex_target   : pc4_ex;
 
+    // ---- vector unit (Step 47) ----
+    wire [31:0] v_csr_rdata, v_mem_wdata;
+    wire [3:0]  v_mem_be;
+    wire        v_mem_req, v_mem_done;
+    wire        v_start = v_wait & ~v_busy & ~m_port & ~ptw_busy & ~halt;
+    wire        v_cfg_commit = ex_go & idex_vec & v_is_cfg & ~take_trap;
+    function [31:0] csrnx; input [31:0] old, src; input [2:0] f;
+        csrnx = (f[1:0] == 2'b01) ? src : (f[1:0] == 2'b10) ? (old | src) :
+                (f[1:0] == 2'b11) ? (old & ~src) : old;
+    endfunction
+    assign vs_on = (st_vs != 2'b00);
+    generate if (V_EXT) begin : g_vec
+        vec_unit #(.VLEN(VLEN)) u_vec (
+            .clk(clk), .rst(rst),
+            .instr(idex_instr), .start(v_start), .rs1_val(opA), .rs2_val(opB),
+            .is_vec(), .is_cfg(v_is_cfg), .illegal(v_illegal), .writes_rd(v_writes_rd),
+            .busy(v_busy), .done(v_done), .fault(v_fault), .fault_cause(v_fault_cause),
+            .fault_tval(v_fault_tval), .scalar_out(v_scalar), .vs_dirty(v_vs_dirty),
+            .cfg_new_vl(v_cfg_vl), .cfg_commit(v_cfg_commit), .vs_on(vs_on),
+            .csr_addr(idex_csr_addr), .csr_hit(v_csr_hit), .csr_rdata(v_csr_rdata),
+            .csr_we(csr_commit & v_csr_hit),
+            .csr_wdata(csrnx(v_csr_rdata, csr_wsrc, idex_funct3)),
+            .mem_va(v_mem_va), .mem_store(v_mem_store), .mem_active(v_mem_active),
+            .mem_want(v_mem_want), .mem_req(v_mem_req), .mem_be(v_mem_be), .mem_wdata(v_mem_wdata),
+            .mem_rdata(d_rdata), .mem_done(v_mem_done), .xl_ok(v_xl_ok), .xl_fault(v_xl_fault));
+    end else begin : g_novec
+        assign v_is_cfg = 1'b0; assign v_illegal = 1'b1; assign v_writes_rd = 1'b0;
+        assign v_busy = 1'b0; assign v_done = 1'b0; assign v_fault = 1'b0;
+        assign v_fault_cause = 4'd0; assign v_fault_tval = 32'd0; assign v_scalar = 32'd0;
+        assign v_vs_dirty = 1'b0; assign v_cfg_vl = 32'd0; assign v_csr_hit = 1'b0;
+        assign v_csr_rdata = 32'd0; assign v_mem_va = 32'd0; assign v_mem_store = 1'b0;
+        assign v_mem_active = 1'b0; assign v_mem_want = 1'b0; assign v_mem_req = 1'b0;
+        assign v_mem_be = 4'd0; assign v_mem_wdata = 32'd0;
+    end endgenerate
+    wire [31:0] csr_rdata = v_csr_hit ? v_csr_rdata : csr_rdata_s;
+
+    // ---- bit manipulation (Step 46): beside the ALU, picked when it hit ----
+    wire [31:0] zb_result;
+    zb_unit #(.ZBA(ZBA), .ZBB(ZBB), .ZBC(ZBC), .ZBS(ZBS)) u_zb (
+        .opcode(idex_opcode), .funct3(idex_funct3), .funct7(idex_funct7), .rs2f(idex_rs2),
+        .a(opA), .b(alu_b), .hit(), .result(zb_result));
+
     wire [31:0] ex_result = idex_is_csr           ? csr_rdata :
+                            idex_vec              ? (v_is_cfg ? v_cfg_vl : v_scalar) :
+                            idex_zb               ? zb_result :
                             (idex_wb_sel==WB_PC4)  ? pc4_ex    :
                             (idex_wb_sel==WB_IMM)  ? idex_imm  : alu_result;
     wire ex_keep = ex_go & ~take_trap;        // instruction moves on to MEM
@@ -465,7 +572,7 @@ module cpu_pipe_u #(
             exmem_rd<=0; exmem_result<=0; exmem_addr<=0; exmem_store<=0;
             exmem_funct3<=0; exmem_wb_sel<=WB_ALU; exmem_amo_f5<=0;
         end else if (!freeze) begin
-            exmem_reg_write<=idex_is_csr | idex_reg_write;
+            exmem_reg_write<=idex_is_csr | idex_reg_write | (idex_vec & v_writes_rd);
             exmem_mem_read<=idex_mem_read; exmem_mem_write<=idex_mem_write;
             exmem_lr<=idex_lr; exmem_sc<=idex_sc; exmem_rmw<=idex_rmw;
             exmem_valid<=1'b1; exmem_rd<=idex_rd;
@@ -517,10 +624,15 @@ module cpu_pipe_u #(
     wire m_done  = m_req & d_ready;
     assign freeze = halt | (m_port & ~(m_done & m_last));
 
-    assign d_addr  = ptw_busy ? ptw_addr : exmem_addr;
-    assign d_req   = ptw_busy | m_req;
-    assign d_we    = ptw_busy ? 4'b0000 : (m_write ? (exmem_rmw ? 4'b1111 : st_mask) : 4'b0000);
-    assign d_wdata = exmem_rmw ? amo_new : st_data;
+    // the vector unit only runs while MEM is empty (its instruction holds EX)
+    wire v_req_g    = v_mem_req & ~ptw_busy & ~halt;
+    assign v_mem_done = v_req_g & d_ready;
+    assign d_addr  = ptw_busy ? ptw_addr : v_mem_active ? v_pa : exmem_addr;
+    assign d_req   = ptw_busy | v_req_g | m_req;
+    assign d_we    = ptw_busy ? 4'b0000 :
+                     v_mem_active ? (v_mem_store ? v_mem_be : 4'b0000) :
+                     (m_write ? (exmem_rmw ? 4'b1111 : st_mask) : 4'b0000);
+    assign d_wdata = v_mem_active ? v_mem_wdata : exmem_rmw ? amo_new : st_data;
 
     always @(posedge clk) begin
         if (rst) begin
@@ -577,12 +689,12 @@ module cpu_pipe_u #(
     // =================================================================
     // A walk may only start when MEM is not using the port this cycle, so
     // it never cuts into a transfer; once started, MEM waits for it.
-    wire ptw_start_d = ex_dwalk & ~m_port & ~halt;
+    wire ptw_start_d = (ex_dwalk | v_walk) & ~m_port & ~halt;
     wire ptw_start_i = if_walk & ~m_port & ~flush & ~halt;
     generate if (MMU) begin : g_ptw
         ptw u_ptw (
             .clk(clk), .rst(rst), .satp(satp_val),
-            .start_d(ptw_start_d), .va_d(ex_va),
+            .start_d(ptw_start_d), .va_d(dtlb_va),
             .start_i(ptw_start_i), .va_i(pc),
             .kill(flush),
             .busy(ptw_busy), .mem_addr(ptw_addr), .mem_rdata(d_rdata), .mem_ready(d_ready),

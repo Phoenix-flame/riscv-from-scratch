@@ -1,0 +1,6 @@
+# The vector preset: 5-stage pipeline, RV32IMA + Zba/Zbb/Zbs + V (Zve32x,
+# VLEN=128), M/S/U, Sv32 MMU + TLBs (vector accesses are translated too),
+# branch predictor, I/D caches, timer, GPIO. Standalone. Zbc is left out
+# to make room: the vector unit is ~4,300 LUTs at VLEN=128 (docs/47).
+CONFIG_PROJECT_NAME="riscv_vec"
+CONFIG_ISA_V=y

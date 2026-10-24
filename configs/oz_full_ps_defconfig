@@ -2,3 +2,4 @@
 # M_AXI_GP0 and relays the console to the on-board USB-UART.
 CONFIG_PROJECT_NAME="riscv_full_ps"
 CONFIG_SYS_PS=y
+CONFIG_ISA_ZBC=y

@@ -118,7 +118,7 @@ module cpu_mc_s #(
     wire [31:0] trap_val   = illegal_instr ? instr :
                              is_ebreak      ? pc    : 32'd0;
 
-    csr_s u_csr (
+    csr_s #(.HAS_V(0)) u_csr (
         .clk(clk), .rst(rst),
         .csr_addr(csr_addr), .csr_funct3(funct3), .csr_wsrc(csr_wsrc),
         .csr_we(is_csr & in_exec & ~take_trap),
@@ -130,6 +130,7 @@ module cpu_mc_s #(
         .trap_cause(trap_cause), .trap_val(trap_val),
         .trap_vector(trap_vector), .mret_target(mret_target), .sret_target(sret_target),
         .irq_pending(irq_pending), .irq_cause(irq_cause), .deleg_now(),
+        .status_sum(), .status_mxr(), .status_vs(), .set_vs_dirty(1'b0),
         .cur_priv(cur_priv), .satp_out()
     );
 
