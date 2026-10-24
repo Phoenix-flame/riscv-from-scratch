@@ -29,6 +29,9 @@ unmodified in `tools/kconfig/` (ISC licence), so nothing needs installing.
 
 ## The menu
 
+(For a screen-by-screen tour with screenshots, see
+[menuconfig-guide.md](menuconfig-guide.md).)
+
 ```
 Project            name; standalone or PS-attached; UART pin + baud
 Core               5-stage pipeline  |  multi-cycle
