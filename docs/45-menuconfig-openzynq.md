@@ -32,7 +32,7 @@ unmodified in `tools/kconfig/` (ISC licence), so nothing needs installing.
 ```
 Project            name; standalone or PS-attached; UART pin + baud
 Core               5-stage pipeline  |  multi-cycle
-  ISA extensions   M, A (pipeline) -- or C / F (multi-cycle)
+  ISA extensions   M, A, Zba/Zbb/Zbc/Zbs, V + VLEN (pipeline) -- or C / F (multi-cycle)
   Privilege        U, S + delegation, Sv32 MMU (TLB entries)     (pipeline)
   Branch predictor BTB + 2-bit counters, size                     (pipeline)
 Memory             IMEM / DMEM KiB; I/D caches, line size, lines  (caches: pipeline)
@@ -204,11 +204,12 @@ DEFCONFIG=configs/...`). `make rvgen-all` generates and simulates every one:
 
 | Preset | Configuration | Self-test |
 |---|---|---|
-| `oz_full` | pipeline RV32IMA, M/S/U, Sv32 (4+4 TLB), 32-entry predictor, 1 KiB I$ + 1 KiB D$, standalone | 10/10, 88,114 cycles |
-| `oz_full_ps` | the same, PS-attached | 10/10 over AXI |
-| `oz_mu_mmu` | pipeline, M/U + MMU, no S; 2-entry TLBs, 8-entry predictor, 8-line caches of 4 words | 9/9 |
-| `oz_msu_nommu_ps` | pipeline, M/S/U, no MMU, PS-attached | 8/8 over AXI |
-| `oz_tiny` | pipeline RV32I, machine mode only, not-taken, no caches, no timer/GPIO, 8+8 KiB | 4/4 (incl. 3 "absent") |
+| `oz_full` | pipeline RV32IMA + Zba/Zbb/Zbc/Zbs, M/S/U, Sv32 (4+4 TLB), 32-entry predictor, 1 KiB I$ + 1 KiB D$, standalone | 15/15 (incl. 1 "absent"), 109,586 cycles |
+| `oz_full_ps` | the same, PS-attached | 15/15 over AXI |
+| `oz_vec` | as `oz_full` without Zbc, plus V (Zve32x, VLEN=128) — Step 47 | 17/17, 123,371 cycles |
+| `oz_mu_mmu` | pipeline, M/U + MMU, no S; 2-entry TLBs, 8-entry predictor, 8-line caches of 4 words | 13/13 (incl. 1 "absent") |
+| `oz_msu_nommu_ps` | pipeline, M/S/U, no MMU, PS-attached | 12/12 over AXI (incl. 1 "absent") |
+| `oz_tiny` | pipeline RV32I, machine mode only, not-taken, no caches, no timer/GPIO, 8+8 KiB | 6/6 (incl. 5 "absent") |
 | `oz_mc` | multi-cycle RV32IM | 5/5 (incl. 1 "absent") |
 | `oz_mc_c` | multi-cycle RV32IMC (the whole image compressed) | 6/6 (incl. 1 "absent") |
 | `oz_mc_f_ps` | multi-cycle RV32IMF, PS-attached | 6/6 over AXI (incl. 1 "absent") |
@@ -218,18 +219,27 @@ DEFCONFIG=configs/...`). `make rvgen-all` generates and simulates every one:
 
 | Preset | LUTs | of which LUTRAM | FFs | RAMB36 | DSP48 | CARRY4 |
 |---|---:|---:|---:|---:|---:|---:|
-| `oz_full` | 9,584 | 376 | 4,502 | 12 | 12 | 958 |
-| `oz_full_ps` | 9,532 | 388 | 4,908 | 12 | 12 | 969 |
-| `oz_mu_mmu` | 6,982 | 236 | 2,372 | 12 | 12 | 948 |
-| `oz_msu_nommu_ps` | 8,312 | 436 | 4,448 | 8 | 12 | 963 |
-| `oz_tiny` | 2,264 | 48 | 1,221 | 4 | 0 | 78 |
+| `oz_full` | 11,031 | 376 | 4,500 | 12 | 12 | 993 |
+| `oz_full_ps` | 11,491 | 388 | 4,906 | 12 | 12 | 1,004 |
+| `oz_vec` | ≈ 14,760 † | ≈ 816 | ≈ 5,070 | 12 | 19 | ≈ 1,200 |
+| `oz_mu_mmu` | 8,225 | 236 | 2,370 | 12 | 12 | 983 |
+| `oz_msu_nommu_ps` | 9,476 | 436 | 4,446 | 8 | 12 | 998 |
+| `oz_tiny` | 2,280 | 48 | 1,218 | 4 | 0 | 78 |
 | `oz_mc` | 4,521 | 48 | 376 | 8 | 12 | 912 |
 | `oz_mc_c` | 4,849 | 48 | 393 | 8 | 12 | 918 |
 | `oz_mc_f_ps` | 11,856 | 108 | 837 | 8 | 14 | 2,027 |
 
 LUTs include LUT-RAM (the caches' line arrays, the register files). Every
-pipeline preset is a fraction of the part: the full configuration uses 54 % of
-the LUTs and 13 % of the flip-flops, and `oz_tiny` uses 13 % of the LUTs. The
+pipeline preset is a fraction of the part: the full configuration (with all
+four Zb groups since Step 46, about +1,450 LUTs) uses 63 % of the LUTs and 13 %
+of the flip-flops, and `oz_tiny` uses 13 % of the LUTs.
+
+† `oz_vec` is an estimate: `oz_full` − Zbc + the vector unit synthesized on its
+own (Step 47: 3,822 logic LUTs + 440 LUT-RAM, 573 FFs, 7 DSP48 at VLEN=128),
+about **84 %** of the LUTs. The whole-SoC run maps it in minutes, but then ABC's
+`&mfs` resynthesis pass did not finish in 1.5 hours, the same pathology as the
+F core below. That is also why V is a preset of its own and not part of
+`oz_full`: together with everything else it leaves little room on a 7010. The
 12 DSPs and ~900 carry chains in every preset with M are the multiplier and,
 mostly, the **combinational divider**, which is a long carry ripple. `oz_tiny`,
 without M, has neither.
