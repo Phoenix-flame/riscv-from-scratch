@@ -80,6 +80,7 @@ class Cfg:
         self.c, self.f = b("ISA_C"), b("ISA_F")
         self.zba, self.zbb, self.zbc, self.zbs = b("ISA_ZBA"), b("ISA_ZBB"), b("ISA_ZBC"), b("ISA_ZBS")
         self.v = b("ISA_V")
+        self.cnt = b("ISA_ZICNTR")
         self.vlen = 64 if b("VLEN_64") else 256 if b("VLEN_256") else 128
         self.u, self.s, self.mmu = b("PRIV_U"), b("PRIV_S"), b("MMU")
         self.tlb = i("TLB_ENTRIES") or 4
@@ -199,7 +200,7 @@ def build_firmware(cfg, work):
         f.write('#define CONFIG_OZ_SUMMARY "%s"\n' % cfg.summary())
         f.write('#define CONFIG_OZ_VLEN %d\n' % cfg.vlen)
         for n in ("ISA_M", "ISA_A", "ISA_C", "ISA_F", "PRIV_U", "PRIV_S", "MMU", "TIMER", "GPIO",
-                  "CORE_PIPE", "ISA_ZBA", "ISA_ZBB", "ISA_ZBC", "ISA_ZBS", "ISA_V"):
+                  "CORE_PIPE", "ISA_ZBA", "ISA_ZBB", "ISA_ZBC", "ISA_ZBS", "ISA_V", "ISA_ZICNTR"):
             f.write("#ifndef CONFIG_%s\n#define CONFIG_%s 0\n#endif\n" % (n, n))
     with open(os.path.join(fw, "oz.ld"), "w") as f:
         f.write(LINKER % {"dmem": cfg.dmem_kb * 1024, "imem": cfg.imem_kb * 1024})
@@ -256,7 +257,7 @@ def soc_params(cfg, fw_path):
              I_LINES=cfg.i_lines, D_LINES=cfg.d_lines, IMEM_WORDS=cfg.imem_kb * 256,
              DMEM_WORDS=cfg.dmem_kb * 256, TIMER=int(cfg.timer), GPIO=int(cfg.gpio),
              ZBA=int(cfg.zba), ZBB=int(cfg.zbb), ZBC=int(cfg.zbc), ZBS=int(cfg.zbs),
-             V_EXT=int(cfg.v), VLEN=cfg.vlen)
+             V_EXT=int(cfg.v), VLEN=cfg.vlen, ZICNTR=int(cfg.cnt))
     lines = [".%s(%s)" % (k, v) for k, v in p.items()]
     if fw_path:
         lines += [".IMEM_INIT(%s)" % fw_path, ".DMEM_INIT(%s)" % fw_path]

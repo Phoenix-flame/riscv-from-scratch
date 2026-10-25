@@ -90,6 +90,20 @@ config ISA_A
 	depends on CORE_PIPE
 	default y
 
+config ISA_ZICNTR
+	bool "Zicntr + Zihpm: cycle, instret and stall-event counters"
+	depends on CORE_PIPE
+	default y
+	help
+	  64-bit mcycle and minstret, readable from every privilege level as
+	  cycle / instret (rdcycle, rdinstret, and the ...h upper halves), so
+	  a program can time itself to the clock and measure its own CPI --
+	  what Dhrystone and CoreMark are timed with. Plus hpmcounter3..7:
+	  load-use, flush, fetch-stall and memory-freeze cycles and
+	  mispredictions, which with instret add up to cycle exactly; and
+	  mcountinhibit to snapshot them. See docs/48-benchmarks.md.
+	  Seven 64-bit counters: about 460 flip-flops and 600 LUTs.
+
 menu "Bit manipulation (Zb*)"
 	depends on CORE_PIPE
 

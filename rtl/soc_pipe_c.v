@@ -32,6 +32,7 @@ module soc_pipe_c #(
     parameter TLB_ENTRIES  = 4,
     parameter BPRED        = 1,
     parameter VLEN         = 128,
+    parameter ZICNTR       = 1,          // cycle / instret / event counters (Step 48)
     parameter CLKS_PER_BIT = 1085
 ) (
     input  wire clk,
@@ -46,7 +47,7 @@ module soc_pipe_c #(
     wire [3:0]  dwe;
     wire        timer_irq, halt_q, retire;
 
-    cpu_pipe_u #(.TLB_ENTRIES(TLB_ENTRIES), .BPRED(BPRED), .VLEN(VLEN)) u_core (
+    cpu_pipe_u #(.TLB_ENTRIES(TLB_ENTRIES), .BPRED(BPRED), .VLEN(VLEN), .ZICNTR(ZICNTR)) u_core (
         .clk(clk), .rst(rst), .timer_irq(timer_irq), .halt(halt_q),
         .i_addr(iaddr), .i_req(ireq), .i_rdata(irdata), .i_ready(iready),
         .d_addr(daddr), .d_req(dreq), .d_we(dwe), .d_wdata(dwdata),
@@ -90,9 +91,12 @@ module soc_pipe_c #(
             .m_done(dm_done), .m_rdata(dm_rdata));
         assign dm_mask = 4'b1111;
 
+`ifndef VERILATOR
         // testbench helper: the CURRENT value of a RAM word. With a
         // write-back cache the newest copy may still be in the cache, not
-        // in main memory, so look there first.
+        // in main memory, so look there first. (Icarus testbenches only:
+        // Verilator cannot resolve these references, and tools/bench's
+        // Verilator models do not need them.)
         localparam OFF = $clog2(LINE_WORDS) + 2, IDX = $clog2(D_LINES);
         function [31:0] peek;
             input [31:0] pa;
@@ -104,6 +108,7 @@ module soc_pipe_c #(
                     peek = u_dmem.mem[pa[$clog2(RAM_WORDS)+1:2]];
             end
         endfunction
+`endif
     end else begin : g_nocache
         mem_bridge #(.LINE_WORDS(LINE_WORDS)) u_ibridge (
             .clk(clk), .rst(rst), .addr(iaddr), .req(ireq), .we(4'b0), .wdata(32'd0),

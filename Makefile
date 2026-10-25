@@ -370,6 +370,31 @@ vec: sw/vec_vm.hex sw/vec_bench.hex ## vector unit: random differential test vs 
 	$(VVP) $(B)/pipe_u_prog_tb.vvp +ROM=sw/vec_bench.hex +RAM=sw/vec_bench.hex | grep -v '\$$finish' | tee $(B)/vec_bench.log
 	@grep -q 'VEC-BENCH: PASS' $(B)/vec_bench.log
 
+# ---- Step 48: performance counters, Dhrystone and CoreMark --------------
+# make bench-counters      directed checks of cycle/instret/event counters (Icarus)
+# make bench               the full Dhrystone + CoreMark matrix (tools/bench)
+# make bench-quick         headline configuration only, short CoreMark run
+# tools/bench builds with Verilator when it is installed (~1M cycles/s) and
+# falls back to Icarus (~7k cycles/s); ARGS="--sim iverilog" forces it.
+sw/cnt_test.hex: sw/bench/cnt_test.c sw/firmware.c sw/firmware.h sw/crt0.s sw/link.ld sw/bin2hex.py
+	riscv64-unknown-elf-gcc -march=rv32im_zicsr_zicntr_zihpm -mabi=ilp32 -nostdlib -nostartfiles \
+	  -ffreestanding -O1 -I sw -T sw/link.ld sw/crt0.s sw/firmware.c sw/bench/cnt_test.c \
+	  -o $(B)/cnt_test.elf -lgcc
+	riscv64-unknown-elf-objcopy -O binary $(B)/cnt_test.elf $(B)/cnt_test.bin
+	python3 sw/bin2hex.py $(B)/cnt_test.bin > sw/cnt_test.hex
+
+.PHONY: bench bench-quick bench-counters
+bench-counters: sw/cnt_test.hex ## counters: exact cycle/instret/event deltas, M-mode writes, read-only alias traps
+	$(IV) -o $(B)/pipe_u_prog_tb.vvp $(RTL_PIPE_U) tb/pipe_u_prog_tb.v
+	$(VVP) $(B)/pipe_u_prog_tb.vvp +ROM=sw/cnt_test.hex +RAM=sw/cnt_test.hex +EXPECT=tb/cnt_expected.txt | grep -v '\$$finish' | tee $(B)/cnt_test.log
+	@grep -q 'PIPE-U PROG: PASS' $(B)/cnt_test.log
+
+bench: bench-counters ## Dhrystone + CoreMark: DMIPS/MHz and CoreMark/MHz across compiler builds and memory systems
+	python3 tools/bench $(ARGS)
+
+bench-quick: bench-counters ## Dhrystone + CoreMark, headline configuration only (short CoreMark run)
+	python3 tools/bench --quick $(ARGS)
+
 # ---- Step 45: menuconfig -> a generated RISC-V project for OpenZynq ------
 # make menuconfig                         edit .config (curses menu, Kconfig)
 # make defconfig DEFCONFIG=configs/...    start from a preset
