@@ -6,6 +6,10 @@
 // it twice: `pipe_u` (the suite as built for every core -- body in M)
 // and `pipe_u_vm` (built with -DRVTEST_VM -- body in U with Sv32 on, so
 // every fetch and access goes through the TLBs).
+//
+// -DRVT_UNIFIED (`pipe_u_uni`, Step 49): ONE memory behind both ports, as
+// on soc_boot -- the I-port fetches from the RAM the D-port writes, so a
+// store can become an instruction and fence_i can pass.
 // =====================================================================
 `timescale 1ns/1ps
 `default_nettype none
@@ -23,7 +27,7 @@ module rvtest_pu_tb;
     wire [31:0] rvt_pc;
 
     cpu_pipe_u u_core (
-        .clk(clk), .rst(rst), .timer_irq(1'b0), .halt(1'b0),
+        .clk(clk), .rst(rst), .timer_irq(1'b0), .mtime(64'd0), .halt(1'b0),
         .i_addr(iaddr), .i_req(ireq), .i_rdata(irdata), .i_ready(1'b1),
         .d_addr(daddr), .d_req(dreq), .d_we(dwe), .d_wdata(dwdata),
         .d_rdata(drdata), .d_ready(1'b1),
@@ -37,7 +41,11 @@ module rvtest_pu_tb;
         for (k = 0; k < ROM_WORDS; k = k + 1) rom[k] = 32'd0;
         for (k = 0; k < RAM_WORDS; k = k + 1) ram[k] = 32'd0;
     end
+`ifdef RVT_UNIFIED
+    assign irdata = ram[iaddr[$clog2(RAM_WORDS)+1:2]];
+`else
     assign irdata = rom[iaddr[$clog2(ROM_WORDS)+1:2]];
+`endif
 
     wire sel_ram = (daddr[31:28] == 4'h0);
     wire [$clog2(RAM_WORDS)-1:0] rw = daddr[$clog2(RAM_WORDS)+1:2];

@@ -395,6 +395,56 @@ bench: bench-counters ## Dhrystone + CoreMark: DMIPS/MHz and CoreMark/MHz across
 bench-quick: bench-counters ## Dhrystone + CoreMark, headline configuration only (short CoreMark run)
 	python3 tools/bench --quick $(ARGS)
 
+# ---- Step 49: boot ROM + device tree + SBI on a virt-style platform --------
+# make uart16550       register-level test of the ns16550a UART (Icarus)
+# make boot            the system test: the ROM rejects two bad images, then
+#                      loads and runs three programs over the UART in a row
+#                      (tools/rvboot; Verilator when installed, else Icarus)
+# tools/rvboot image prog.elf -o prog.rvbi --bootargs "..."   your own image
+# Needs dtc (device-tree-compiler) for the DTB.
+BB = $(B)/boot
+$(shell mkdir -p $(BB))
+RTL_UART16550 = rtl/uart_tx_cfg.v rtl/uart_rx.v rtl/uart16550.v
+BOOT_CC  = riscv64-unknown-elf-gcc -march=rv32ima_zicsr_zifencei_zicntr -mabi=ilp32 -Os -g \
+           -ffreestanding -nostdlib -nostartfiles -fno-tree-loop-distribute-patterns \
+           -ffunction-sections -Wl,--gc-sections -Wl,--no-warn-rwx-segments \
+           -Wall -Wextra -I sw/boot
+BOOT_LIB = sw/boot/fdt.c sw/boot/lib.c sw/boot/ns16550.c
+BOOT_HDR = sw/boot/fdt.h sw/boot/lib.h sw/boot/ns16550.h sw/boot/sbi.h sw/boot/platform.h
+
+$(BB)/rvfs-soc.dtb: sw/boot/rvfs-soc.dts sw/boot/platform.h
+	cpp -nostdinc -undef -x assembler-with-cpp -I sw/boot $< | dtc -q -I dts -O dtb -o $@ -
+
+$(BB)/rom.hex: sw/boot/rom_start.S sw/boot/rom_main.c sw/boot/rom_sbi.c sw/boot/rom.h sw/boot/rom.ld \
+               sw/boot/bootimg.h $(BOOT_LIB) $(BOOT_HDR) $(BB)/rvfs-soc.dtb sw/bin2hex.py
+	$(BOOT_CC) -DDTB_PATH='"$(BB)/rvfs-soc.dtb"' -T sw/boot/rom.ld sw/boot/rom_start.S \
+	  sw/boot/rom_main.c sw/boot/rom_sbi.c $(BOOT_LIB) -lgcc -o $(BB)/rom.elf
+	riscv64-unknown-elf-objcopy -O binary $(BB)/rom.elf $(BB)/rom.bin
+	python3 sw/bin2hex.py $(BB)/rom.bin > $@
+
+$(BB)/dtdemo.elf: sw/boot/dtdemo.c sw/boot/payload_start.S sw/boot/payload.ld $(BOOT_LIB) $(BOOT_HDR)
+	$(BOOT_CC) -T sw/boot/payload.ld sw/boot/payload_start.S sw/boot/dtdemo.c $(BOOT_LIB) -lgcc -o $@
+
+$(BB)/mhello.elf: sw/boot/mhello.c sw/boot/payload_start.S sw/boot/payload.ld $(BOOT_LIB) $(BOOT_HDR)
+	$(BOOT_CC) -T sw/boot/payload.ld sw/boot/payload_start.S sw/boot/mhello.c $(BOOT_LIB) -lgcc -o $@
+
+# Step 37's libc_demo.c, unchanged, on picolibc retargeted to the SBI; the
+# integer-only printf (__i_vfprintf) keeps it at ~4 KB instead of ~13 KB
+$(BB)/libc_demo.elf: sw/libc_demo.c sw/boot/sbi_libc.c sw/boot/sbi.h sw/boot/payload_start.S sw/boot/payload.ld
+	riscv64-unknown-elf-gcc -march=rv32im_zicsr -mabi=ilp32 -nostdlib -nostartfiles -ffreestanding -Os \
+	  -isystem $(PICOLIBC_INC) -I sw/boot -T sw/boot/payload.ld -Wl,--no-warn-rwx-segments \
+	  sw/boot/payload_start.S sw/boot/sbi_libc.c sw/libc_demo.c \
+	  -L $(PICOLIBC_LIB) -Wl,--defsym=vfprintf=__i_vfprintf -Wl,-u,__i_vfprintf -lc -lgcc -o $@
+
+.PHONY: uart16550 boot boot-sw
+uart16550: ## ns16550a UART: divisor, framing, FIFOs, overrun, errors, interrupts, loopback
+	$(IV) -o $(B)/uart16550_tb.vvp $(RTL_UART16550) tb/uart16550_tb.v && $(VVP) $(B)/uart16550_tb.vvp | grep -v '\$$finish'
+
+boot-sw: $(BB)/rom.hex $(BB)/dtdemo.elf $(BB)/mhello.elf $(BB)/libc_demo.elf
+
+boot: boot-sw ## boot ROM + device tree + SBI: reject bad images, then load and run 3 programs over the UART
+	python3 tools/rvboot test $(ARGS)
+
 # ---- Step 45: menuconfig -> a generated RISC-V project for OpenZynq ------
 # make menuconfig                         edit .config (curses menu, Kconfig)
 # make defconfig DEFCONFIG=configs/...    start from a preset

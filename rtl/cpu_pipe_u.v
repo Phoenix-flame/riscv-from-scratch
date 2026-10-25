@@ -49,6 +49,13 @@
 // instret and event counters (Step 48).
 // tools/rvgen sets them from a Kconfig .config; all default on.
 //
+// Boot support (Step 49). `time` / `timeh` (0xC01 / 0xC81) read the
+// platform's mtime, wired in from the CLINT, so S-mode code (and Linux)
+// can read the time without a trap; SoCs without one tie it to 0.
+// FENCE.I redirects to pc+4 from EX, so the instructions behind it are
+// fetched again: on a SoC whose fetch and data share one memory (soc_boot)
+// that is all it takes for freshly stored code to be executed.
+//
 // Translation. With satp.MODE=1 in S- or U-mode, IF looks up the I-TLB with
 // the PC and EX looks up the D-TLB with the effective address; a hit
 // costs nothing. A miss asks the shared walker (ptw.v), which borrows
@@ -87,6 +94,7 @@ module cpu_pipe_u #(
     input  wire        clk,
     input  wire        rst,
     input  wire        timer_irq,
+    input  wire [63:0] mtime,         // platform timer, read as the time CSR
     input  wire        halt,          // freeze (SoC halt register)
 
     // ---- instruction port ----
@@ -250,6 +258,7 @@ module cpu_pipe_u #(
     wire id_ebreak = is_system && (funct3_id==3'b000) && (ifid_instr[31:20]==12'h001);
     wire id_sret   = is_system && (funct3_id==3'b000) && (ifid_instr[31:20]==12'h102);
     wire id_sfence = is_system && (funct3_id==3'b000) && (funct7==7'b0001001);
+    wire id_fencei = (opcode == 7'b0001111) && (funct3_id == 3'b001);
     // vector encodings (Step 47): OP-V, and LOAD-FP / STORE-FP with a vector width
     wire id_vec = (V_EXT != 0) &&
                   ((opcode == 7'b1010111) ||
@@ -306,7 +315,7 @@ module cpu_pipe_u #(
                idex_mem_read, idex_mem_write, idex_branch, idex_jump, idex_jalr,
                idex_is_csr, idex_is_mret, idex_ecall, idex_ebreak, idex_illegal,
                idex_sfence, idex_lr, idex_sc, idex_rmw, idex_ifault, idex_valid,
-               idex_sret, idex_pred_taken;
+               idex_sret, idex_pred_taken, idex_fencei;
     wire [31:0] opA, opB;               // forwarded operands (EX)
 
     always @(posedge clk) begin
@@ -321,6 +330,7 @@ module cpu_pipe_u #(
             idex_lr<=0; idex_sc<=0; idex_rmw<=0; idex_ifault<=0; idex_valid<=0;
             idex_opcode<=0; idex_funct7<=0; idex_zb<=0; idex_vec<=0;
             idex_sret<=0; idex_instr<=0; idex_pred_taken<=0; idex_pred_target<=0;
+            idex_fencei<=0;
         end else if (freeze || ex_hold) begin
             // hold, but keep the operands current: a producer that leaves
             // WB while we wait must not take its forwarded value with it
@@ -339,7 +349,7 @@ module cpu_pipe_u #(
             idex_csr_addr<=ifid_instr[31:20]; idex_sfence<=id_sfence;
             idex_amo_f5<=id_amo_f5; idex_lr<=id_lr; idex_sc<=id_sc; idex_rmw<=id_rmw;
             idex_ifault<=ifid_ifault; idex_valid<=ifid_valid;
-            idex_sret<=id_sret; idex_instr<=ifid_instr;
+            idex_sret<=id_sret; idex_instr<=ifid_instr; idex_fencei<=id_fencei;
             idex_opcode<=opcode; idex_funct7<=funct7; idex_zb<=id_zb; idex_vec<=id_vec;
             idex_pred_taken<=ifid_pred_taken; idex_pred_target<=ifid_pred_target;
         end
@@ -507,7 +517,8 @@ module cpu_pipe_u #(
     assign bp_upd_jump   = idex_jump | idex_jalr;
     assign bp_upd_target = ex_target;
 
-    assign redirect    = take_trap | mret_ex | sret_ex | (ex_go & mispred);
+    // fence.i: refetch everything younger (its pc4 is the not-taken target)
+    assign redirect    = take_trap | mret_ex | sret_ex | (ex_go & (mispred | idex_fencei));
     assign redirect_pc = take_trap ? trap_vector :
                          mret_ex   ? mepc_out    :
                          sret_ex   ? sepc_out    :
@@ -576,6 +587,8 @@ module cpu_pipe_u #(
     // clearing them gives a consistent snapshot -- otherwise each counter
     // is read a few cycles after the last, and the stalls in between land
     // in some deltas and not others.
+    // time / timeh (C01 / C81) read the mtime input (Step 49): read-only,
+    // like the other user aliases, and there is no mtime CSR behind them.
     // There is no mcounteren: U and S may always read them. All count from
     // reset and stop while the SoC is halted; a CSR write wins over that
     // cycle's increment, as the spec says.
@@ -602,9 +615,12 @@ module cpu_pipe_u #(
         wire        is_inh = (ca == 12'h320);
         wire        is_cnt = ((ca[11:8] == 4'hB) | (ca[11:8] == 4'hC)) & (ca[6:3] == 4'd0) &
                              (idx != 3'd1);
-        assign cnt_hit = is_cnt | is_inh;
+        wire        is_time = (ca == 12'hC01) | (ca == 12'hC81);
+        assign cnt_hit = is_cnt | is_inh | is_time;
         wire [63:0] cnt_sel = cnt[idx];
-        assign cnt_rdata = is_inh ? {24'd0, inhibit} : ca[7] ? cnt_sel[63:32] : cnt_sel[31:0];
+        assign cnt_rdata = is_inh  ? {24'd0, inhibit} :
+                           is_time ? (ca[7] ? mtime[63:32] : mtime[31:0]) :
+                           ca[7]   ? cnt_sel[63:32] : cnt_sel[31:0];
         wire        cnt_we  = csr_commit & is_cnt & (ca[11:8] == 4'hB);
         wire [31:0] cnt_new = csrnx(cnt_rdata, csr_wsrc, idex_funct3);
         always @(posedge clk)

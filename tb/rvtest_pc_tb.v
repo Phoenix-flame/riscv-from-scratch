@@ -25,7 +25,7 @@ module rvtest_pc_tb;
     wire [31:0] rvt_pc;
 
     cpu_pipe_u u_core (
-        .clk(clk), .rst(rst), .timer_irq(1'b0), .halt(1'b0),
+        .clk(clk), .rst(rst), .timer_irq(1'b0), .mtime(64'd0), .halt(1'b0),
         .i_addr(iaddr), .i_req(ireq), .i_rdata(irdata), .i_ready(iready),
         .d_addr(daddr), .d_req(dreq), .d_we(dwe), .d_wdata(dwdata),
         .d_rdata(drdata), .d_ready(sel_ram ? ram_ready : 1'b1),

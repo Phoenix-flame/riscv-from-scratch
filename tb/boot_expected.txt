@@ -1,0 +1,184 @@
+
+rvfs boot ROM (Step 49), hart 0
+  RAM      0x80000000, 256 KiB (probed)
+  payloads [0x80004000, 0x8003e000), DTB at 0x8003e000
+  SBI v2.0 resident: BASE TIME DBCN SRST + legacy 0.1
+boot> RVBI v1: 1 segment, entry 0x80004000, S-mode
+  segment 0: 0x80004000  file    64  mem    64
+  error: data CRC32 0xb2394f88, image says 0xeaca17c1
+  (discarded 0 more bytes)
+boot> RVBI v1: 1 segment, entry 0x80000100, S-mode
+  segment 0: 0x80000100  file    64  mem    64
+  error: segment 0 [0x80000100, 0x80000140) is outside the payload area [0x80004000, 0x8003e000)
+  (discarded 64 more bytes)
+boot> RVBI v1: 1 segment, entry 0x80004000, S-mode
+  bootargs "console=hvc0 earlycon=sbi rvfs.ticks=3 rvfs.exit=reboot"
+  segment 0: 0x80004000  file <...>
+  data: <...> bytes, CRC32 <...> ok (<...>)
+  dtb: <...> bytes, memory = <0x80000000 0x40000>, bootargs set
+  -> S-mode at 0x80004000, a0 = hart 0, a1 = dtb 0x8003e000
+
+dtdemo: running in S-mode on hart 0, device tree at 0x8003e000
+
+[SBI]
+  spec v2.0, implementation 0x52564653 ("RVFS") version 49
+  probe_extension BASE                     -> 1            ok
+  probe_extension TIME                     -> 1            ok
+  probe_extension DBCN                     -> 1            ok
+  probe_extension SRST                     -> 1            ok
+  probe_extension legacy putchar           -> 1            ok
+  probe_extension HSM (not implemented)    -> 0            ok
+  (this line went out through one DBCN write call)
+  DBCN write returns the byte count                         ok
+  legacy console_putchar: abc
+  unknown extension -> SBI_ERR_NOT_SUPPORTED                ok
+  DBCN write from firmware memory refused                   ok
+
+[device tree]
+  DTB header: magic 0xd00dfeed, version 17                  ok
+  <...> bytes, structure <...>, strings <...>
+
+/ {
+    #address-cells = <0x1>;
+    #size-cells = <0x1>;
+    model = "riscv-from-scratch boot platform";
+    compatible = "rvfs,soc-boot";
+    chosen {
+        stdout-path = "serial0";
+        bootargs = "console=hvc0 earlycon=sbi rvfs.ticks=3 rvfs.exit=reboot";
+    };
+    aliases {
+        serial0 = "/soc/serial@10000000";
+    };
+    cpus {
+        #address-cells = <0x1>;
+        #size-cells = <0x0>;
+        timebase-frequency = <0x2faf080>;
+        cpu@0 {
+            device_type = "cpu";
+            reg = <0x0>;
+            status = "okay";
+            compatible = "rvfs,cpu-pipe-u", "riscv";
+            riscv,isa = "rv32ima_zicntr_zicsr_zifencei_zihpm_zba_zbb_zbc_zbs";
+            riscv,isa-base = "rv32i";
+            riscv,isa-extensions = "i", "m", "a", "zicntr", "zicsr", "zifencei", "zihpm", "zba", "zbb", "zbc", "zbs";
+            mmu-type = "riscv,sv32";
+            clock-frequency = <0x2faf080>;
+            interrupt-controller {
+                #interrupt-cells = <0x1>;
+                interrupt-controller;
+                compatible = "riscv,cpu-intc";
+                phandle = <0x1>;
+            };
+        };
+    };
+    memory@80000000 {
+        device_type = "memory";
+        reg = <0x80000000 0x40000>;
+    };
+    reserved-memory {
+        #address-cells = <0x1>;
+        #size-cells = <0x1>;
+        ranges;
+        firmware@80000000 {
+            reg = <0x80000000 0x4000>;
+            no-map;
+        };
+    };
+    soc {
+        #address-cells = <0x1>;
+        #size-cells = <0x1>;
+        compatible = "simple-bus";
+        ranges;
+        clint@2000000 {
+            compatible = "sifive,clint0", "riscv,clint0";
+            reg = <0x2000000 0x10000>;
+            interrupts-extended = <0x1 0x3 0x1 0x7>;
+        };
+        serial@10000000 {
+            compatible = "ns16550a";
+            reg = <0x10000000 0x100>;
+            reg-shift = <0x2>;
+            reg-io-width = <0x4>;
+            clock-frequency = <0x2faf080>;
+            current-speed = <0x2faf08>;
+        };
+        test@100000 {
+            compatible = "sifive,test1", "sifive,test0", "syscon";
+            reg = <0x100000 0x1000>;
+            phandle = <0x2>;
+        };
+    };
+    poweroff {
+        compatible = "syscon-poweroff";
+        regmap = <0x2>;
+        offset = <0x0>;
+        value = <0x5555>;
+    };
+    reboot {
+        compatible = "syscon-reboot";
+        regmap = <0x2>;
+        offset = <0x0>;
+        value = <0x7777>;
+    };
+};
+
+[what the tree says]
+  model         riscv-from-scratch boot platform
+  cpu@0         rv32ima_zicntr_zicsr_zifencei_zihpm_zba_zbb_zbc_zbs, riscv,sv32
+  timebase      50000000 Hz
+  memory        0x80000000, 256 KiB
+  reserved      0x80000000, 16 KiB (firmware@80000000)
+  bootargs      "console=hvc0 earlycon=sbi rvfs.ticks=3 rvfs.exit=reboot"
+  the DTB lies inside the RAM the DTB describes             ok
+  this program lies above the firmware                      ok
+  stdout-path   "serial0" -> serial@10000000, "ns16550a"
+                reg 0x10000000, stride 4, 4-byte access, 50000000 Hz / 16 / 3125000 baud
+  console is a 16550: a driver we have                      ok
+  hello from dtdemo's own 16550 driver, divisor 1
+
+[S-mode traps]
+  3 timer interrupts, 5000 ticks apart, none early (rvfs.ticks=3)      ok
+  ebreak taken at stvec (scause 3), M-mode not involved     ok
+
+[storing an instruction]
+  store over the next instruction, then nop:     a0 = 0 (the stale copy ran)
+  store over the next instruction, then fence.i: a0 = 1     ok
+
+dtdemo: all checks passed
+dtdemo: rvfs.exit=reboot -> SBI system reset
+
+rvfs boot ROM (Step 49), hart 0
+  RAM      0x80000000, 256 KiB (probed)
+  payloads [0x80004000, 0x8003e000), DTB at 0x8003e000
+  SBI v2.0 resident: BASE TIME DBCN SRST + legacy 0.1
+boot> RVBI v1: 1 segment, entry 0x80004000, M-mode
+  segment 0: 0x80004000  file <...>
+  data: <...> bytes, CRC32 <...> ok (<...>)
+  dtb: <...> bytes, memory = <0x80000000 0x40000>, bootargs set
+  -> M-mode at 0x80004000, a0 = hart 0, a1 = dtb 0x8003e000
+
+mhello: M-mode payload, hart 0 (mhartid 0), dtb 0x8003e000
+  console serial@10000000 at 0x10000000, straight from the tree; no SBI below us
+  mtvec 0x<...>: still the ROM's SBI entry, ours to replace
+  /reboot: syscon-reboot, regmap -> test@100000, writes 0x7777 at 0x00100000
+mhello: rebooting
+
+rvfs boot ROM (Step 49), hart 0
+  RAM      0x80000000, 256 KiB (probed)
+  payloads [0x80004000, 0x8003e000), DTB at 0x8003e000
+  SBI v2.0 resident: BASE TIME DBCN SRST + legacy 0.1
+boot> RVBI v1: 1 segment, entry 0x80004000, S-mode
+  bootargs "rvfs.payload=libc_demo"
+  segment 0: 0x80004000  file <...>
+  data: <...> bytes, CRC32 <...> ok (<...>)
+  dtb: <...> bytes, memory = <0x80000000 0x40000>, bootargs set
+  -> S-mode at 0x80004000, a0 = hart 0, a1 = dtb 0x8003e000
+
+picolibc on rv32im: printf + malloc
+int=-42 uint=42 hex=0xdeadbeef char=Q
+width=[    7][7    ][00007]
+squares sum=140
+str='hello, world' len=12
+reuse ptr nonnull=1
+DONE
