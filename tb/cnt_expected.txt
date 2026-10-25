@@ -1,0 +1,17 @@
+instret, adjacent reads: 1 ok
+instret over 30 nops: 31 ok
+instret right after a flush: 3 ok
+cycle over 30 nops: 31 ok
+minstreth after write: 5 ok
+mcycle right after write 0: 0 ok
+mcountinhibit reads: 253 ok
+cycle while inhibited: 0 ok
+instret while inhibited: 0 ok
+load-use bubbles: 2 ok
+mispredictions: 1 ok
+flush bubbles: 2 ok
+cycles for read + taken branch: 4 ok
+csrw cycle -> trap: 1 ok
+  mcause: 2 ok
+csrr cycle: no trap: 1 ok
+CNT-TEST: PASS

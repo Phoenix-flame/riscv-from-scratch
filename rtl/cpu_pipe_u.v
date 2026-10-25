@@ -45,7 +45,8 @@
 // decode as illegal), A_EXT=0 the atomics, MMU=0 the TLBs and the walker
 // (satp reads 0), HAS_S=0 / HAS_U=0 supervisor / user mode, BPRED=0 the
 // predictor, ZBA/ZBB/ZBC/ZBS the bit-manipulation groups (Step 46),
-// V_EXT the vector unit (Step 47, rtl/vec_unit.v).
+// V_EXT the vector unit (Step 47, rtl/vec_unit.v), ZICNTR the cycle,
+// instret and event counters (Step 48).
 // tools/rvgen sets them from a Kconfig .config; all default on.
 //
 // Translation. With satp.MODE=1 in S- or U-mode, IF looks up the I-TLB with
@@ -80,7 +81,8 @@ module cpu_pipe_u #(
     parameter ZBC         = 1,        //            carry-less multiply
     parameter ZBS         = 1,        //            single-bit operations
     parameter V_EXT       = 1,        // vectors: Zve32x subset (Step 47)
-    parameter VLEN        = 128       //          vector register width in bits
+    parameter VLEN        = 128,      //          vector register width in bits
+    parameter ZICNTR      = 1         // cycle/instret/event counters     (Step 48)
 ) (
     input  wire        clk,
     input  wire        rst,
@@ -545,7 +547,90 @@ module cpu_pipe_u #(
         assign v_mem_active = 1'b0; assign v_mem_want = 1'b0; assign v_mem_req = 1'b0;
         assign v_mem_be = 4'd0; assign v_mem_wdata = 32'd0;
     end endgenerate
-    wire [31:0] csr_rdata = v_csr_hit ? v_csr_rdata : csr_rdata_s;
+
+    // ---- performance counters (Step 48) ----
+    // Zicntr: 64-bit mcycle / minstret, read in halves (mcycle B00 /
+    // mcycleh B80, minstret B02 / minstreth B82) and writable from M;
+    // cycle / instret (C00/C02, C80/C82) are their read-only user-level
+    // shadows -- writes to those already trap above (bits [11:10] = 11).
+    // Zihpm: mhpmcounter3..7 (B03..B07, +h at B83..B87; hpmcounterN at
+    // C03..C07) count FIXED events; mhpmevent3..7 are not implemented
+    // (read 0). Counters 3..6 say where the cycles that are not
+    // instructions go. Every cycle is classified once, by what EX does:
+    //   minstret  an instruction left EX
+    //   3  load-use   EX holds the bubble a load's consumer left behind
+    //   4  flush      EX holds a bubble a redirect (mispredict, trap) left
+    //   5  fetch      EX holds a bubble the I-port left (I-cache miss)
+    //   6  freeze     the whole pipe waits on the D-port (D-cache miss)
+    //   7  mispredictions -- events, not cycles: each one costs 2 flush cycles
+    // so cycles = instret + hpm3 + hpm4 + hpm5 + hpm6 + (the few cycles of
+    // reset fill, trap entry and EX holds), exactly. A bubble is tagged
+    // with its cause when it is made (ifid_why / idex_why) and counted when
+    // it reaches EX, so a stall that hides another is never counted twice.
+    // minstret counts an instruction when it leaves EX: every trap commits
+    // in EX, so from there on it will retire -- and a csrr of instret (in
+    // EX) then sees exactly the instructions older than itself, not just
+    // those that already drained through MEM and WB.
+    // mcountinhibit (0x320, M only): a set bit stops that counter (bit 0
+    // cycle, 2 instret, 3..7 the events). Setting them all, reading, and
+    // clearing them gives a consistent snapshot -- otherwise each counter
+    // is read a few cycles after the last, and the stalls in between land
+    // in some deltas and not others.
+    // There is no mcounteren: U and S may always read them. All count from
+    // reset and stop while the SoC is halted; a CSR write wins over that
+    // cycle's increment, as the spec says.
+    wire [31:0] cnt_rdata;
+    wire        cnt_hit;
+    generate if (ZICNTR) begin : g_cnt
+        localparam WHY_OTHER = 2'd0, WHY_LU = 2'd1, WHY_FLUSH = 2'd2, WHY_FETCH = 2'd3;
+        reg  [1:0]  ifid_why, idex_why;
+        always @(posedge clk)                    // mirrors the IF/ID and ID/EX updates
+            if (rst) begin
+                ifid_why <= WHY_OTHER; idex_why <= WHY_OTHER;
+            end else begin
+                if (flush && !freeze)                  ifid_why <= WHY_FLUSH;
+                else if (!freeze && !front_hold && !if_ok) ifid_why <= WHY_FETCH;
+                if (!freeze && !ex_hold && (flush || load_use))
+                    idex_why <= flush ? WHY_FLUSH : WHY_LU;
+                else if (!freeze && !ex_hold)          idex_why <= ifid_why;
+            end
+
+        reg  [63:0] cnt [0:7];                    // [1] (time) is unused
+        wire [11:0] ca  = idex_csr_addr;
+        wire [2:0]  idx = ca[2:0];
+        reg  [7:0]  inhibit;                      // mcountinhibit (bit 1 hardwired 0)
+        wire        is_inh = (ca == 12'h320);
+        wire        is_cnt = ((ca[11:8] == 4'hB) | (ca[11:8] == 4'hC)) & (ca[6:3] == 4'd0) &
+                             (idx != 3'd1);
+        assign cnt_hit = is_cnt | is_inh;
+        wire [63:0] cnt_sel = cnt[idx];
+        assign cnt_rdata = is_inh ? {24'd0, inhibit} : ca[7] ? cnt_sel[63:32] : cnt_sel[31:0];
+        wire        cnt_we  = csr_commit & is_cnt & (ca[11:8] == 4'hB);
+        wire [31:0] cnt_new = csrnx(cnt_rdata, csr_wsrc, idex_funct3);
+        always @(posedge clk)
+            if (rst)                         inhibit <= 8'd0;
+            else if (csr_commit & is_inh)    inhibit <= cnt_new[7:0] & 8'b1111_1101;
+        wire        bubble  = ~freeze & ~ex_hold & ~idex_valid;
+        wire [7:0]  ev;
+        assign ev[0] = 1'b1;                                          // cycle
+        assign ev[1] = 1'b0;
+        assign ev[2] = ex_go & ~take_trap;                            // instret
+        assign ev[3] = bubble & (idex_why == WHY_LU);
+        assign ev[4] = bubble & (idex_why == WHY_FLUSH);
+        assign ev[5] = bubble & (idex_why == WHY_FETCH);
+        assign ev[6] = freeze & ~halt;
+        assign ev[7] = ex_go & mispred & ~take_trap;
+        integer n;
+        always @(posedge clk)
+            for (n = 0; n < 8; n = n + 1)
+                if (rst || n == 1) cnt[n] <= 64'd0;
+                else if (cnt_we && idx == n && ca[7]) cnt[n][63:32] <= cnt_new;
+                else if (cnt_we && idx == n)          cnt[n][31:0]  <= cnt_new;
+                else if (ev[n] && !halt && !inhibit[n]) cnt[n] <= cnt[n] + 64'd1;
+    end else begin : g_nocnt
+        assign cnt_hit = 1'b0; assign cnt_rdata = 32'd0;
+    end endgenerate
+    wire [31:0] csr_rdata = v_csr_hit ? v_csr_rdata : cnt_hit ? cnt_rdata : csr_rdata_s;
 
     // ---- bit manipulation (Step 46): beside the ALU, picked when it hit ----
     wire [31:0] zb_result;

@@ -1,0 +1,333 @@
+#!/usr/bin/env python3
+# =====================================================================
+# bench  -  Dhrystone and CoreMark on the unified pipeline (Step 48)
+# ---------------------------------------------------------------------
+# Builds the two standard embedded integer benchmarks bare-metal against
+# picolibc, runs them on cpu_pipe_u in simulation, and reports the
+# clock-independent figures of merit:
+#
+#   DMIPS/MHz     = 10^6 / (1757 * cycles per Dhrystone)
+#   CoreMark/MHz  = iterations * 10^6 / cycles
+#
+# Each program reads the cycle / instret counters (ZICNTR) around its own
+# timed region and prints the totals; this script only parses them.
+#
+#   tools/bench                       # the full matrix (Verilator if present)
+#   tools/bench --quick               # headline row only, 2 CoreMark iterations
+#   tools/bench --sim iverilog        # use Icarus (slow: ~7k cycles/s)
+#   tools/bench --only dhrystone
+#
+# Sources are fetched on first use into third_party/ (gitignored):
+#   riscv-tests (benchmarks/dhrystone) via tools/rvtests, at its pinned commit
+#   eembc/coremark at COREMARK_COMMIT below
+# The ports -- the glue each benchmark leaves to the target -- live in
+# sw/bench/. See docs/48-benchmarks.md.
+#
+# Requires: riscv64-unknown-elf-gcc + picolibc, git, and verilator (5.x)
+# or iverilog/vvp.
+# =====================================================================
+import argparse
+import os
+import re
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+REPO = Path(__file__).resolve().parent.parent
+BUILD = REPO / "build" / "bench"
+TP = REPO / "third_party"
+DHRY = TP / "riscv-tests" / "benchmarks" / "dhrystone"
+CM = TP / "coremark"
+PORT = REPO / "sw" / "bench"
+
+COREMARK_URL = "https://github.com/eembc/coremark"
+# Pinned so a run is reproducible. Bump deliberately, then re-run.
+COREMARK_COMMIT = "1f483d5b8316753a742cbf5590caf5bd0a4e4777"
+
+CROSS = "riscv64-unknown-elf-"
+PICOLIBC = Path("/usr/lib/picolibc/riscv64-unknown-elf")
+
+# CoreMark's run rule: at least 10 s of timed execution. Our tick is one
+# cycle of a nominal 1 MHz clock, so 10 s = 10^7 cycles; 40 iterations is
+# comfortably past that on every configuration below (~280k cycles each).
+CM_ITERATIONS = 40
+CM_ITERATIONS_QUICK = 2
+
+# ---------------------------------------------------------------------
+# Software builds. All rv32im + picolibc (rv32im/ilp32 multilib); `zb`
+# adds the bit-manipulation extensions of Step 46 to the compiler's
+# target (the C library stays plain rv32im).
+# ---------------------------------------------------------------------
+SW = {
+    "O2":    dict(march="rv32im",             cflags=["-O2"]),
+    "O3":    dict(march="rv32im",             cflags=["-O3", "-funroll-all-loops"]),
+    "O3-zb": dict(march="rv32im_zba_zbb_zbs", cflags=["-O3", "-funroll-all-loops"]),
+}
+
+# ---------------------------------------------------------------------
+# Hardware configurations (tb/bench_tb.v parameters).
+# ---------------------------------------------------------------------
+RTL_CORE = ["alu", "regfile", "immgen", "control", "csr_s", "branch_predictor", "timer",
+            "uart_tx", "uart_hw", "tlb", "ptw", "zb_unit", "vec_unit", "cpu_pipe_u"]
+HW = {
+    "ideal":      dict(desc="ideal 1-cycle memory, BTB + 2-bit predictor",
+                       soc="soc_pipe_u", params=dict(BPRED=1)),
+    "ideal-nobp": dict(desc="ideal 1-cycle memory, predict not-taken",
+                       soc="soc_pipe_u", params=dict(BPRED=0)),
+    "c2k-l10":    dict(desc="2+2 KiB caches, memory latency 10",
+                       soc="soc_pipe_c", params=dict(LAT=10, I_LINES=64, D_LINES=64)),
+    "c2k-l40":    dict(desc="2+2 KiB caches, memory latency 40",
+                       soc="soc_pipe_c", params=dict(LAT=40, I_LINES=64, D_LINES=64)),
+    "c4k-l40":    dict(desc="4+4 KiB caches, memory latency 40",
+                       soc="soc_pipe_c", params=dict(LAT=40, I_LINES=128, D_LINES=128)),
+    "c1k-l40":    dict(desc="1+1 KiB caches, memory latency 40",
+                       soc="soc_pipe_c", params=dict(LAT=40, I_LINES=32, D_LINES=32)),
+}
+CACHE_RTL = ["mem_slow", "icache", "dcache", "mem_bridge"]
+
+# (software, hardware) pairs the full run measures; --quick runs the first
+MATRIX = [("O2", "ideal"), ("O3", "ideal"), ("O3-zb", "ideal"),
+          ("O2", "ideal-nobp"), ("O2", "c4k-l40"), ("O2", "c2k-l10"), ("O2", "c2k-l40"),
+          ("O2", "c1k-l40")]
+
+
+def die(msg):
+    sys.exit(f"[bench] error: {msg}")
+
+
+def need(tool):
+    if not shutil.which(tool):
+        die(f"'{tool}' not found on PATH")
+
+
+def run(cmd, **kw):
+    return subprocess.run(cmd, capture_output=True, text=True, **kw)
+
+
+def check(cmd, what, **kw):
+    r = run(cmd, **kw)
+    if r.returncode:
+        die(f"{what} failed:\n  {' '.join(map(str, cmd))}\n{r.stdout}{r.stderr}")
+    return r.stdout
+
+
+# ---- sources ---------------------------------------------------------
+def ensure_sources():
+    if not DHRY.exists():
+        print("[bench] fetching riscv-tests (for Dhrystone) via tools/rvtests ...")
+        check([sys.executable, str(REPO / "tools" / "rvtests"), "--fetch"], "riscv-tests fetch")
+    if not CM.exists():
+        need("git")
+        print(f"[bench] fetching CoreMark into {CM.relative_to(REPO)} ...")
+        CM.parent.mkdir(parents=True, exist_ok=True)
+        check(["git", "clone", "--quiet", COREMARK_URL, str(CM)], "git clone coremark")
+    r = run(["git", "-C", str(CM), "checkout", "--quiet", COREMARK_COMMIT])
+    if r.returncode:
+        run(["git", "-C", str(CM), "fetch", "--quiet", "origin"])
+        check(["git", "-C", str(CM), "checkout", "--quiet", COREMARK_COMMIT],
+              f"checkout coremark {COREMARK_COMMIT[:12]}")
+
+
+# ---- software --------------------------------------------------------
+def gcc_base(sw):
+    v = SW[sw]
+    # Hosted C, not -ffreestanding: like riscv-tests' own benchmark flags,
+    # GCC may treat strcpy/strcmp/memcpy as builtins (Dhrystone's string
+    # copies of constants become word stores; no Proc_* is inlined).
+    return [CROSS + "gcc", f"-march={v['march']}_zicsr_zicntr_zihpm", "-mabi=ilp32",
+            "-nostdlib", "-nostartfiles",
+            "-isystem", str(PICOLIBC / "include")] + v["cflags"]
+
+
+def link(sw, objs, out):
+    lib = PICOLIBC / "lib" / "rv32im" / "ilp32"
+    check(gcc_base(sw) + ["-T", str(REPO / "sw" / "picolibc.ld"), "-Wl,--no-warn-rwx-segments"]
+          + [str(o) for o in objs] + ["-L", str(lib), "-lc", "-lgcc", "-o", str(out)], f"link {out.name}")
+    binf = out.with_suffix(".bin")
+    check([CROSS + "objcopy", "-O", "binary", str(out), str(binf)], "objcopy")
+    data = binf.read_bytes()
+    data += b"\0" * (-len(data) % 4)
+    hexf = out.with_suffix(".hex")
+    hexf.write_text("".join("%08x\n" % int.from_bytes(data[i:i + 4], "little")
+                            for i in range(0, len(data), 4)))
+    return hexf
+
+
+def compile_one(sw, src, obj, extra=()):
+    check(gcc_base(sw) + list(extra) + ["-c", str(src), "-o", str(obj)], f"compile {Path(src).name}")
+    return obj
+
+
+def build_runtime(sw, d):
+    return [compile_one(sw, REPO / "sw" / "picolibc_crt0.S", d / "crt0.o"),
+            compile_one(sw, REPO / "sw" / "picolibc_retarget.c", d / "retarget.o")]
+
+
+def build_dhrystone(sw):
+    d = BUILD / sw / "dhry"
+    d.mkdir(parents=True, exist_ok=True)
+    # K&R C from 1988: implicit int, old-style definitions -- silence it
+    flags = ["-I", str(PORT / "dhrystone"), "-I", str(DHRY), "-w"]
+    objs = build_runtime(sw, d) + [
+        compile_one(sw, DHRY / "dhrystone.c", d / "dhrystone.o", flags),
+        compile_one(sw, DHRY / "dhrystone_main.c", d / "dhrystone_main.o", flags + ["-Dmain=dhry_main"]),
+        compile_one(sw, PORT / "dhrystone" / "dhry_port.c", d / "dhry_port.o", flags)]
+    return link(sw, objs, BUILD / sw / "dhrystone.elf")
+
+
+def build_coremark(sw, iterations):
+    d = BUILD / sw / "coremark"
+    d.mkdir(parents=True, exist_ok=True)
+    v = SW[sw]
+    flags_str = " ".join(["-march=" + v["march"]] + v["cflags"])
+    flags = ["-I", str(PORT / "coremark"), "-I", str(CM), f"-DITERATIONS={iterations}",
+             "-DPERFORMANCE_RUN=1", f'-DFLAGS_STR="{flags_str}"']
+    srcs = [CM / f for f in ("core_list_join.c", "core_main.c", "core_matrix.c",
+                             "core_state.c", "core_util.c")] + [PORT / "coremark" / "core_portme.c"]
+    objs = build_runtime(sw, d) + [compile_one(sw, s, d / (s.stem + ".o"), flags) for s in srcs]
+    return link(sw, objs, BUILD / sw / "coremark.elf")
+
+
+def text_size(elf):
+    return int(check([CROSS + "size", str(elf)], "size").splitlines()[-1].split()[0])
+
+
+# ---- simulation ------------------------------------------------------
+def rtl_files(hw):
+    names = RTL_CORE + (CACHE_RTL if HW[hw]["soc"] == "soc_pipe_c" else [])
+    return [str(REPO / "rtl" / f"{n}.v") for n in names] + \
+           [str(REPO / "rtl" / f"{HW[hw]['soc']}.v"), str(REPO / "tb" / "bench_tb.v")]
+
+
+def build_sim(hw, sim):
+    """Compile tb/bench_tb.v for one hardware configuration; return argv prefix."""
+    p = HW[hw]["params"]
+    cached = HW[hw]["soc"] == "soc_pipe_c"
+    out = BUILD / "sim" / f"{sim}-{hw}"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    if sim == "verilator":
+        cmd = ["verilator", "--binary", "--timing", "-O3", "-Wno-fatal", "-Wno-lint", "-Wno-style",
+               "-Wno-WIDTH", "-Wno-TIMESCALEMOD", "-Wno-SIDEEFFECT", "--top-module", "bench_tb",
+               "-Mdir", str(out), "-o", "vbench"]
+        cmd += [f"-G{k}={v}" for k, v in p.items()] + (["-DCACHED"] if cached else [])
+        check(cmd + rtl_files(hw), f"verilator {hw}")
+        return [str(out / "vbench")]
+    vvp = out.with_suffix(".vvp")
+    cmd = ["iverilog", "-g2012", "-o", str(vvp)] + [f"-Pbench_tb.{k}={v}" for k, v in p.items()]
+    check(cmd + (["-DCACHED"] if cached else []) + rtl_files(hw), f"iverilog {hw}")
+    return ["vvp", "-n", str(vvp)]
+
+
+def simulate(argv, hexf, log):
+    r = run(argv + [f"+IMG={hexf}", "+MAXCYC=200000000"])
+    log.write_text(r.stdout + r.stderr)
+    return r.stdout
+
+
+def parse(bench, out):
+    m = re.search(rf"^RESULT {bench} cycles=(\d+) instret=(\d+) n=(\d+) loaduse=(\d+) "
+                  r"flush=(\d+) fetch=(\d+) freeze=(\d+) mispred=(\d+)", out, re.M)
+    if not m:
+        return None
+    cyc, ins, n, lu, fl, fs, mf, mp = map(int, m.groups())
+    res = dict(cycles=cyc, instret=ins, n=n, cpi=cyc / ins, lu=lu, fl=fl, fs=fs, mf=mf, mp=mp,
+               other=cyc - ins - lu - fl - fs - mf)
+    if bench == "dhrystone":
+        res["ok"] = "DHRYSTONE: PASS" in out
+        res["per"] = cyc / n
+        res["score"] = n * 1e6 / (1757 * cyc)
+    else:
+        crc_ok = not re.search(r"ERROR! (list|matrix|state) crc", out) and \
+                 "2K performance run parameters" in out
+        res["valid"] = "Correct operation validated" in out
+        res["ok"] = crc_ok
+        res["per"] = cyc / n
+        res["score"] = n * 1e6 / cyc
+    # the event counters classify every cycle once: they cannot add up to more
+    res["ok"] = res["ok"] and res["other"] >= 0
+    return res
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__ if __doc__ else "Dhrystone / CoreMark",
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--sim", choices=["auto", "verilator", "iverilog"], default="auto")
+    ap.add_argument("--quick", action="store_true",
+                    help=f"headline configuration only, {CM_ITERATIONS_QUICK} CoreMark iterations")
+    ap.add_argument("--only", choices=["dhrystone", "coremark"])
+    ap.add_argument("--iterations", type=int, help="CoreMark iterations (default: "
+                    f"{CM_ITERATIONS}, or {CM_ITERATIONS_QUICK} with --quick)")
+    ap.add_argument("--fetch", action="store_true", help="fetch the sources, then exit")
+    args = ap.parse_args()
+
+    for t in (CROSS + "gcc", CROSS + "objcopy", CROSS + "size"):
+        need(t)
+    if not (PICOLIBC / "include" / "stdio.h").exists():
+        die(f"picolibc not found under {PICOLIBC} (apt install picolibc-riscv64-unknown-elf)")
+    sim = args.sim
+    if sim == "auto":
+        sim = "verilator" if shutil.which("verilator") else "iverilog"
+    need("verilator" if sim == "verilator" else "iverilog")
+    ensure_sources()
+    if args.fetch:
+        return 0
+
+    iters = args.iterations or (CM_ITERATIONS_QUICK if args.quick else CM_ITERATIONS)
+    benches = [args.only] if args.only else ["dhrystone", "coremark"]
+    matrix = MATRIX[:1] if args.quick else MATRIX
+    print(f"[bench] simulator: {sim};  CoreMark iterations: {iters}")
+    if sim == "iverilog" and "coremark" in benches and not args.quick:
+        print("[bench] note: Icarus runs ~7k cycles/s; the full matrix takes hours. "
+              "Install verilator, or use --quick.")
+
+    images, sizes = {}, {}
+    for sw in dict.fromkeys(s for s, _ in matrix):
+        for b in benches:
+            elf_hex = build_dhrystone(sw) if b == "dhrystone" else build_coremark(sw, iters)
+            images[sw, b] = elf_hex
+            sizes[sw, b] = text_size(elf_hex.with_suffix(".elf"))
+
+    results, fails = [], 0
+    sims = {}
+    for sw, hw in matrix:
+        if hw not in sims:
+            print(f"[bench] building {sim} model: {hw} ({HW[hw]['desc']})")
+            sims[hw] = build_sim(hw, sim)
+        for b in benches:
+            log = BUILD / f"{b}-{sw}-{hw}.log"
+            out = simulate(sims[hw], images[sw, b], log)
+            r = parse(b, out)
+            if not r or not r["ok"]:
+                print(f"  FAIL {b:<9} {sw:<6} {hw:<10} (see {log.relative_to(REPO)})")
+                fails += 1
+                continue
+            tag = "" if b == "dhrystone" or r["valid"] else "  (short run: < 10^7 cycles)"
+            unit = "DMIPS/MHz" if b == "dhrystone" else "CoreMark/MHz"
+            print(f"  {b:<9} {sw:<6} {hw:<10} {r['score']:6.3f} {unit:<12} "
+                  f"CPI {r['cpi']:.3f}  {r['per']:9.1f} cycles/{'run' if b == 'dhrystone' else 'iter'}{tag}")
+            results.append((b, sw, hw, r))
+
+    BUILD.mkdir(parents=True, exist_ok=True)
+    md = ["| benchmark | software | hardware | score | CPI | cycles / unit | instr | load-use "
+          "| flush | fetch stall | mem freeze | other | mispredicts | .text |",
+          "|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|"]
+    for b, sw, hw, r in results:
+        unit = "DMIPS/MHz" if b == "dhrystone" else "CoreMark/MHz"
+        flags = f"`{SW[sw]['march']} {' '.join(SW[sw]['cflags'])}`"
+        md.append(f"| {b} | {flags} | {HW[hw]['desc']} | **{r['score']:.3f}** {unit} | "
+                  f"{r['cpi']:.3f} | {r['per']:.1f} | {r['instret'] / r['n']:.1f} | "
+                  f"{r['lu'] / r['n']:.1f} | {r['fl'] / r['n']:.1f} | {r['fs'] / r['n']:.1f} | "
+                  f"{r['mf'] / r['n']:.1f} | {r['other'] / r['n']:.1f} | {r['mp'] / r['n']:.1f} | "
+                  f"{sizes[sw, b]} |")
+    (BUILD / "results.md").write_text("\n".join(md) + "\n")
+    print(f"[bench] table written to {(BUILD / 'results.md').relative_to(REPO)}")
+    if fails:
+        print(f"BENCH: {fails} FAIL")
+        return 1
+    print(f"BENCH: PASS ({len(results)} runs, results verified)")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -54,7 +54,8 @@ module oz_rv_soc #(
     parameter ZBC         = 1,
     parameter ZBS         = 1,
     parameter V_EXT       = 0,         // vector unit, Zve32x (pipeline only)
-    parameter VLEN        = 128
+    parameter VLEN        = 128,
+    parameter ZICNTR      = 1          // cycle / instret / event counters (pipeline only)
 ) (
     input  wire        clk,
     input  wire        rst,
@@ -130,7 +131,7 @@ module oz_rv_soc #(
         cpu_pipe_u #(.TLB_ENTRIES(TLB_ENTRIES), .BPRED(BPRED), .BP_IDX_BITS(BP_IDX_BITS),
                      .M_EXT(M_EXT), .A_EXT(A_EXT), .HAS_U(HAS_U), .HAS_S(HAS_S), .MMU(MMU),
                      .ZBA(ZBA), .ZBB(ZBB), .ZBC(ZBC), .ZBS(ZBS),
-                     .V_EXT(V_EXT), .VLEN(VLEN)) u_core (
+                     .V_EXT(V_EXT), .VLEN(VLEN), .ZICNTR(ZICNTR)) u_core (
             .clk(clk), .rst(rst), .timer_irq(timer_irq), .halt(halted),
             .i_addr(iaddr), .i_req(ireq), .i_rdata(irdata), .i_ready(iready),
             .d_addr(daddr), .d_req(dreq), .d_we(dwe), .d_wdata(dwdata),

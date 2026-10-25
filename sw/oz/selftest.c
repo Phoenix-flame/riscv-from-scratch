@@ -242,6 +242,25 @@ int main(void)
           ((CSRR(mstatus) >> 9) & 3u) == 0u && bad_cause == 2);
 #endif
 
+#if CONFIG_ISA_ZICNTR
+    {   /* Step 48: instret is exact, cycle counts, the user alias is
+         * read-only (numeric CSR names: -march does not list Zicntr) */
+        unsigned i0, i1, c0, c1;
+        asm volatile ("csrr %0, 0xC02; nop; nop; nop; csrr %1, 0xC02" : "=r"(i0), "=r"(i1));
+        asm volatile ("csrr %0, 0xC00; csrr %1, 0xC00" : "=r"(c0), "=r"(c1));
+        bad_cause = 0;
+        asm volatile ("csrw 0xC00, zero");
+        check("Zicntr: instret exact, cycle counts, cycle is read-only",
+              i1 - i0 == 4 && c1 != c0 && bad_cause == 2);
+    }
+#elif CONFIG_CORE_PIPE
+    {
+        unsigned c;
+        asm volatile ("csrr %0, 0xC00" : "=r"(c));
+        check("Zicntr absent: cycle reads 0", c == 0);
+    }
+#endif
+
 #if CONFIG_ISA_C
     {   /* the image itself is compressed: look for 16-bit encodings in main
          * (the data memory holds a copy of the program image) */
