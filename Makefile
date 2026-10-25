@@ -287,7 +287,7 @@ tlb: sw/tlb.hex ## translated fetch + I/D TLBs + sfence.vma, vs a walk-every-acc
 
 # ---- Step 42: the unified pipeline (RV32IMA + M/U + Sv32 + TLBs) ------
 RTL_PIPE_U = rtl/alu.v rtl/regfile.v rtl/immgen.v rtl/control.v rtl/csr_s.v rtl/branch_predictor.v \
-             rtl/timer.v rtl/uart_tx.v rtl/uart_hw.v rtl/tlb.v rtl/ptw.v \
+             rtl/timer.v rtl/uart_tx.v rtl/uart_hw.v rtl/tlb.v rtl/ptw.v rtl/zb_unit.v rtl/vec_unit.v \
              rtl/cpu_pipe_u.v rtl/soc_pipe_u.v
 
 # Step 38's scheduler with the code page mapped X and sfence.vma on each switch
@@ -308,7 +308,7 @@ pipe-u: sw/tlb.hex sw/at.hex sw/smmu_vm.hex ## unified pipeline: TLB demo + atom
 
 # ---- Step 43: I-cache / D-cache in front of slow (DDR-like) memory -----
 RTL_PIPE_C = rtl/alu.v rtl/regfile.v rtl/immgen.v rtl/control.v rtl/csr_s.v rtl/branch_predictor.v \
-             rtl/timer.v rtl/uart_tx.v rtl/uart_hw.v rtl/tlb.v rtl/ptw.v \
+             rtl/timer.v rtl/uart_tx.v rtl/uart_hw.v rtl/tlb.v rtl/ptw.v rtl/zb_unit.v rtl/vec_unit.v \
              rtl/cpu_pipe_u.v rtl/mem_slow.v rtl/icache.v rtl/dcache.v \
              rtl/mem_bridge.v rtl/soc_pipe_c.v
 
@@ -343,6 +343,32 @@ pipe-u-sv: sw/sv.hex sw/smode.hex sw/bpred_bench.hex sw/cb.hex ## unified pipeli
 	$(IV) -o $(B)/pipe_u_sv_tb.vvp $(RTL_PIPE_U) tb/pipe_u_sv_tb.v && $(VVP) $(B)/pipe_u_sv_tb.vvp
 	$(IV) -o $(B)/pipe_u_smode_tb.vvp $(RTL_PIPE_U) tb/pipe_u_smode_tb.v && $(VVP) $(B)/pipe_u_smode_tb.vvp
 	$(IV) -o $(B)/pipe_u_bp_tb.vvp $(RTL_PIPE_U) tb/pipe_u_bp_tb.v && $(VVP) $(B)/pipe_u_bp_tb.vvp
+
+# ---- Step 47: the vector unit (Zve32x) ----------------------------------
+sw/vec_vm.hex: sw/vec_vm.S tools/vtest/link.ld sw/bin2hex.py
+	riscv64-unknown-elf-gcc -march=rv32ima_zicsr_zve32x -mabi=ilp32 -nostdlib -nostartfiles \
+	  -T tools/vtest/link.ld sw/vec_vm.S -o $(B)/vec_vm.elf
+	riscv64-unknown-elf-objcopy -O binary $(B)/vec_vm.elf $(B)/vec_vm.bin
+	python3 sw/bin2hex.py $(B)/vec_vm.bin > sw/vec_vm.hex
+
+sw/vec_bench.hex: sw/vec_bench.c sw/firmware.c sw/firmware.h sw/crt0.s sw/link.ld sw/bin2hex.py
+	riscv64-unknown-elf-gcc -march=rv32ima_zicsr_zve32x -mabi=ilp32 -nostdlib -nostartfiles \
+	  -ffreestanding -O2 -fno-tree-vectorize -I sw -T sw/link.ld sw/crt0.s sw/firmware.c \
+	  sw/vec_bench.c -o $(B)/vec_bench.elf -lgcc
+	riscv64-unknown-elf-objcopy -O binary $(B)/vec_bench.elf $(B)/vec_bench.bin
+	python3 sw/bin2hex.py $(B)/vec_bench.bin > sw/vec_bench.hex
+
+VTEST_SEEDS ?= 0-199
+vec: sw/vec_vm.hex sw/vec_bench.hex ## vector unit: random differential test vs an RVV model (VLEN 64/128/256, caches), faults under Sv32, benchmark
+	python3 tools/vtest/run.py --seeds $(VTEST_SEEDS) --count 100
+	python3 tools/vtest/run.py --seeds 0-49 --count 100 --vlen 64
+	python3 tools/vtest/run.py --seeds 0-49 --count 100 --vlen 256
+	python3 tools/vtest/run.py --seeds 0-49 --count 100 --cached
+	$(IV) -o $(B)/pipe_u_prog_tb.vvp $(RTL_PIPE_U) tb/pipe_u_prog_tb.v
+	$(VVP) $(B)/pipe_u_prog_tb.vvp +ROM=sw/vec_vm.hex +RAM=sw/vec_vm.hex +EXPECT=tb/vec_vm_expected.txt | grep -v '\$$finish' | tee $(B)/vec_vm.log
+	@grep -q 'PIPE-U PROG: PASS' $(B)/vec_vm.log
+	$(VVP) $(B)/pipe_u_prog_tb.vvp +ROM=sw/vec_bench.hex +RAM=sw/vec_bench.hex | grep -v '\$$finish' | tee $(B)/vec_bench.log
+	@grep -q 'VEC-BENCH: PASS' $(B)/vec_bench.log
 
 # ---- Step 45: menuconfig -> a generated RISC-V project for OpenZynq ------
 # make menuconfig                         edit .config (curses menu, Kconfig)

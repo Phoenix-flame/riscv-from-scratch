@@ -10,3 +10,6 @@ CONFIG_PROJECT_NAME="riscv_tiny"
 # CONFIG_GPIO is not set
 CONFIG_IMEM_KB=8
 CONFIG_DMEM_KB=8
+# CONFIG_ISA_ZBA is not set
+# CONFIG_ISA_ZBB is not set
+# CONFIG_ISA_ZBS is not set

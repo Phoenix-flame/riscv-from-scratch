@@ -78,6 +78,9 @@ class Cfg:
         self.pipe = b("CORE_PIPE")
         self.m, self.a = b("ISA_M"), b("ISA_A")
         self.c, self.f = b("ISA_C"), b("ISA_F")
+        self.zba, self.zbb, self.zbc, self.zbs = b("ISA_ZBA"), b("ISA_ZBB"), b("ISA_ZBC"), b("ISA_ZBS")
+        self.v = b("ISA_V")
+        self.vlen = 64 if b("VLEN_64") else 256 if b("VLEN_256") else 128
         self.u, self.s, self.mmu = b("PRIV_U"), b("PRIV_S"), b("MMU")
         self.tlb = i("TLB_ENTRIES") or 4
         self.bp = b("BPRED")
@@ -110,14 +113,22 @@ class Cfg:
     def march(self):
         isa = "rv32i" + ("m" if self.m else "") + ("a" if self.a else "") + \
               ("f" if self.f else "") + ("c" if self.c else "")
-        return isa + "_zicsr"
+        isa += "_zicsr"
+        for on, z in ((self.zba, "zba"), (self.zbb, "zbb"), (self.zbc, "zbc"), (self.zbs, "zbs")):
+            if on:
+                isa += "_" + z
+        if self.v:
+            isa += "_zve32x"
+        return isa
 
     def mabi(self):
         return "ilp32f" if self.f else "ilp32"
 
     def summary(self):
-        parts = [self.march().replace("_zicsr", "") + "_zicsr", self.core_module]
+        parts = [self.march(), self.core_module]
         if self.pipe:
+            if self.v:
+                parts.append("vlen=%d" % self.vlen)
             parts.append("priv=M" + ("S" if self.s else "") + ("U" if self.u else ""))
             if self.mmu:
                 parts.append("sv32(tlb=%d)" % self.tlb)
@@ -131,6 +142,9 @@ class Cfg:
         bits = [self.m, self.a, self.c, self.f, self.u, self.s, self.mmu, self.bp,
                 self.caches, self.timer, self.gpio, self.ps]
         v = sum(1 << n for n, on in enumerate(bits) if on)
+        zb = [self.zba, self.zbb, self.zbc, self.zbs]
+        v |= sum(1 << (16 + n) for n, on in enumerate(zb) if on)
+        v |= int(self.v) << 20
         return v | (self.core_id << 12)
 
     def _written(self, minimal):
@@ -183,8 +197,9 @@ def build_firmware(cfg, work):
     cfg.kconf.write_autoconf(os.path.join(fw, "oz_config.h"))
     with open(os.path.join(fw, "oz_config.h"), "a") as f:
         f.write('#define CONFIG_OZ_SUMMARY "%s"\n' % cfg.summary())
+        f.write('#define CONFIG_OZ_VLEN %d\n' % cfg.vlen)
         for n in ("ISA_M", "ISA_A", "ISA_C", "ISA_F", "PRIV_U", "PRIV_S", "MMU", "TIMER", "GPIO",
-                  "CORE_PIPE"):
+                  "CORE_PIPE", "ISA_ZBA", "ISA_ZBB", "ISA_ZBC", "ISA_ZBS", "ISA_V"):
             f.write("#ifndef CONFIG_%s\n#define CONFIG_%s 0\n#endif\n" % (n, n))
     with open(os.path.join(fw, "oz.ld"), "w") as f:
         f.write(LINKER % {"dmem": cfg.dmem_kb * 1024, "imem": cfg.imem_kb * 1024})
@@ -213,7 +228,9 @@ def rtl_files(cfg):
     if cfg.timer:
         f.append("rtl/timer.v")
     if cfg.pipe:
-        f += ["rtl/csr_s.v", "rtl/cpu_pipe_u.v", "rtl/oz/oz_burst_mem.v"]
+        f += ["rtl/csr_s.v", "rtl/zb_unit.v", "rtl/cpu_pipe_u.v", "rtl/oz/oz_burst_mem.v"]
+        if cfg.v:
+            f.append("rtl/vec_unit.v")
         if cfg.bp:
             f.append("rtl/branch_predictor.v")
         if cfg.mmu:
@@ -237,7 +254,9 @@ def soc_params(cfg, fw_path):
              HAS_S=int(cfg.s), MMU=int(cfg.mmu), TLB_ENTRIES=cfg.tlb, BPRED=int(cfg.bp),
              BP_IDX_BITS=cfg.bp_bits, CACHES=int(cfg.caches), LINE_WORDS=cfg.line_words,
              I_LINES=cfg.i_lines, D_LINES=cfg.d_lines, IMEM_WORDS=cfg.imem_kb * 256,
-             DMEM_WORDS=cfg.dmem_kb * 256, TIMER=int(cfg.timer), GPIO=int(cfg.gpio))
+             DMEM_WORDS=cfg.dmem_kb * 256, TIMER=int(cfg.timer), GPIO=int(cfg.gpio),
+             ZBA=int(cfg.zba), ZBB=int(cfg.zbb), ZBC=int(cfg.zbc), ZBS=int(cfg.zbs),
+             V_EXT=int(cfg.v), VLEN=cfg.vlen)
     lines = [".%s(%s)" % (k, v) for k, v in p.items()]
     if fw_path:
         lines += [".IMEM_INIT(%s)" % fw_path, ".DMEM_INIT(%s)" % fw_path]

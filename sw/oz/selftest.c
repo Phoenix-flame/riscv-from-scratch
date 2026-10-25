@@ -53,6 +53,31 @@ static void check(const char *what, int ok)
     if (ok) passes++; else fails++;
 }
 
+#if CONFIG_ISA_V
+/* c[i] = a[i] * b[i] + a[i], strip-mined at LMUL = 2; returns the sum of c
+ * (vredsum). Assembly: GCC 13 has no reduction intrinsics for ELEN = 32. */
+unsigned oz_vtest(const unsigned *a, const unsigned *b, unsigned *c, unsigned n);
+asm("    .text\n"
+    "    .globl oz_vtest\n"
+    "oz_vtest:\n"
+    "    vsetivli zero, 1, e32, m1, ta, ma\n"
+    "    vmv.s.x  v8, zero\n"
+    "1:  vsetvli  t0, a3, e32, m2, ta, ma\n"
+    "    vle32.v  v2, (a0)\n"
+    "    vle32.v  v4, (a1)\n"
+    "    vmadd.vv v4, v2, v2\n"               /* v4 = v4 * v2 + v2 */
+    "    vse32.v  v4, (a2)\n"
+    "    vredsum.vs v8, v4, v8\n"
+    "    slli     t1, t0, 2\n"
+    "    add      a0, a0, t1\n"
+    "    add      a1, a1, t1\n"
+    "    add      a2, a2, t1\n"
+    "    sub      a3, a3, t0\n"
+    "    bnez     a3, 1b\n"
+    "    vmv.x.s  a0, v8\n"
+    "    ret\n");
+#endif
+
 #if CONFIG_PRIV_U
 static void u_ecall(void)  { asm volatile ("ecall"); for (;;) { } }
 static void u_csr(void)    { (void)CSRR(mstatus); asm volatile ("ecall"); for (;;) { } }
@@ -138,6 +163,83 @@ int main(void)
         asm volatile ("sc.w %0, %2, (%1)" : "=r"(sc) : "r"(&v), "r"(r + 1) : "memory");
         check("A: amoadd / lr / sc", old == 40 && r == 42 && sc == 0 && v == 43);
     }
+#endif
+
+#if CONFIG_ISA_ZBA
+    {
+        unsigned r1, r2;
+        asm volatile ("sh2add %0, %1, %2" : "=r"(r1) : "r"(0x10u), "r"(0x100u));
+        asm volatile ("sh3add %0, %1, %2" : "=r"(r2) : "r"(3u), "r"(1u));
+        check("Zba: sh2add / sh3add", r1 == 0x140u && r2 == 25u);
+    }
+#endif
+
+#if CONFIG_ISA_ZBB
+    {
+        unsigned x = 0x00F0F000u, r1, r2, r3, r4, r5, r6, r7;
+        asm volatile ("clz  %0, %1" : "=r"(r1) : "r"(x));
+        asm volatile ("ctz  %0, %1" : "=r"(r2) : "r"(x));
+        asm volatile ("cpop %0, %1" : "=r"(r3) : "r"(x));
+        asm volatile ("rev8 %0, %1" : "=r"(r4) : "r"(0x11223344u));
+        asm volatile ("andn %0, %1, %2" : "=r"(r5) : "r"(0xFFu), "r"(0x0Fu));
+        asm volatile ("max  %0, %1, %2" : "=r"(r6) : "r"(-5), "r"(3));
+        asm volatile ("rori %0, %1, 8"  : "=r"(r7) : "r"(0x11223344u));
+        check("Zbb: clz / ctz / cpop / rev8 / andn / max / rori",
+              r1 == 8 && r2 == 12 && r3 == 8 && r4 == 0x44332211u && r5 == 0xF0u &&
+              r6 == 3 && r7 == 0x44112233u);
+    }
+#elif CONFIG_CORE_PIPE
+    bad_cause = 0;
+    asm volatile (".word 0x40b57533" ::: "a0");           /* andn a0, a0, a1 */
+    check("Zbb absent: andn is an illegal instruction", bad_cause == 2);
+#endif
+
+#if CONFIG_ISA_ZBC
+    {
+        unsigned r1, r2;
+        asm volatile ("clmul  %0, %1, %2" : "=r"(r1) : "r"(5u), "r"(3u));
+        asm volatile ("clmulh %0, %1, %2" : "=r"(r2) : "r"(0x80000000u), "r"(2u));
+        check("Zbc: clmul / clmulh", r1 == 0xFu && r2 == 1u);
+    }
+#endif
+
+#if CONFIG_ISA_ZBS
+    {
+        unsigned r1, r2, r3;
+        asm volatile ("bset  %0, %1, %2" : "=r"(r1) : "r"(0u), "r"(5u));
+        asm volatile ("bexti %0, %1, 5"  : "=r"(r2) : "r"(0x20u));
+        asm volatile ("binvi %0, %1, 0"  : "=r"(r3) : "r"(0xFFu));
+        check("Zbs: bset / bexti / binvi", r1 == 32u && r2 == 1u && r3 == 0xFEu);
+    }
+#endif
+
+    /* vsetvli zero, zero, e8, m1, ta, ma -- as a .word so it assembles without V */
+#define VSETVLI_ZERO ".word 0x0c007057"
+#if CONFIG_ISA_V
+    {
+        unsigned a[37], b[37], c[37], sum = 0, ok = 1, n;
+        CSRC(mstatus, 3u << 9);
+        bad_cause = 0;
+        asm volatile (VSETVLI_ZERO);
+        check("V: illegal while mstatus.VS = Off", bad_cause == 2);
+        CSRS(mstatus, 1u << 9);                          /* VS = Initial */
+        for (n = 0; n < 37; n++) { a[n] = n * 0x01010101u + 7; b[n] = 3 * n + 1; }
+        unsigned got = oz_vtest(a, b, c, 37);
+        for (n = 0; n < 37; n++) { sum += a[n] * b[n] + a[n]; ok &= c[n] == a[n] * b[n] + a[n]; }
+        check("V: vle32 / vmadd / vse32 / vredsum, 37 elements", ok && got == sum);
+        bad_cause = 0;
+        asm volatile (".word 0xc2001073");               /* csrw vl, zero: vl is read-only */
+        check("V: writing the read-only vl CSR is illegal", bad_cause == 2);
+        check("V: vlenb = VLEN / 8, mstatus.VS = Dirty, SD = 1",
+              CSRR(vlenb) == CONFIG_OZ_VLEN / 8 && ((CSRR(mstatus) >> 9) & 3u) == 3u &&
+              (CSRR(mstatus) >> 31) == 1u);
+    }
+#elif CONFIG_CORE_PIPE
+    CSRS(mstatus, 3u << 9);
+    bad_cause = 0;
+    asm volatile (VSETVLI_ZERO);
+    check("V absent: mstatus.VS reads 0, vsetvli is illegal",
+          ((CSRR(mstatus) >> 9) & 3u) == 0u && bad_cause == 2);
 #endif
 
 #if CONFIG_ISA_C
