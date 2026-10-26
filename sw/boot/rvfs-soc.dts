@@ -1,0 +1,116 @@
+/* =====================================================================
+ * rvfs-soc.dts  -  device tree for the boot platform (rtl/soc_boot.v)
+ * ---------------------------------------------------------------------
+ * What a program is told about the machine it runs on. The boot ROM
+ * carries this tree (compiled by dtc, linked in with .incbin), copies it
+ * to the top of RAM, fills in what it only learns at boot -- the RAM
+ * size and the command line -- and passes its address in a1.
+ *
+ * Built with the C preprocessor first, so the numbers come from the
+ * same platform.h the ROM is compiled with:
+ *   cpp -nostdinc -undef -x assembler-with-cpp -I sw/boot rvfs-soc.dts | dtc -O dtb
+ *
+ * The devices are standard ones, at QEMU virt's addresses, described with
+ * the bindings Linux and OpenSBI already understand.
+ * ===================================================================== */
+/dts-v1/;
+
+#include "platform.h"
+
+/ {
+    #address-cells = <1>;
+    #size-cells = <1>;
+    model = "riscv-from-scratch boot platform";
+    compatible = "rvfs,soc-boot";
+
+    chosen {
+        stdout-path = "serial0";
+        bootargs = "";                       /* replaced by the boot ROM */
+    };
+
+    aliases {
+        serial0 = &uart0;
+    };
+
+    cpus {
+        #address-cells = <1>;
+        #size-cells = <0>;
+        timebase-frequency = <PLAT_CLOCK_HZ>;   /* mtime ticks once per clock */
+
+        cpu0: cpu@0 {
+            device_type = "cpu";
+            reg = <0>;
+            status = "okay";
+            compatible = "rvfs,cpu-pipe-u", "riscv";
+            riscv,isa = "rv32ima_zicntr_zicsr_zifencei_zihpm_zba_zbb_zbc_zbs";
+            riscv,isa-base = "rv32i";
+            riscv,isa-extensions = "i", "m", "a", "zicntr", "zicsr", "zifencei",
+                                   "zihpm", "zba", "zbb", "zbc", "zbs";
+            mmu-type = "riscv,sv32";
+            clock-frequency = <PLAT_CLOCK_HZ>;
+
+            cpu0_intc: interrupt-controller {
+                #interrupt-cells = <1>;
+                interrupt-controller;
+                compatible = "riscv,cpu-intc";
+            };
+        };
+    };
+
+    memory@80000000 {
+        device_type = "memory";
+        reg = <RAM_BASE 0>;                  /* size: probed by the boot ROM */
+    };
+
+    reserved-memory {
+        #address-cells = <1>;
+        #size-cells = <1>;
+        ranges;
+
+        firmware@80000000 {                  /* boot ROM data + resident SBI */
+            reg = <RAM_BASE FW_RAM_SIZE>;
+            no-map;
+        };
+    };
+
+    soc {
+        #address-cells = <1>;
+        #size-cells = <1>;
+        compatible = "simple-bus";
+        ranges;
+
+        clint@2000000 {
+            compatible = "sifive,clint0", "riscv,clint0";
+            reg = <CLINT_BASE 0x10000>;
+            interrupts-extended = <&cpu0_intc 3>, <&cpu0_intc 7>;
+        };
+
+        uart0: serial@10000000 {
+            compatible = "ns16550a";
+            reg = <UART_BASE 0x100>;
+            reg-shift = <2>;
+            reg-io-width = <4>;
+            clock-frequency = <PLAT_CLOCK_HZ>;
+            current-speed = <(PLAT_CLOCK_HZ / 16 / UART_DIVISOR)>;
+        };
+
+        test: test@100000 {
+            compatible = "sifive,test1", "sifive,test0", "syscon";
+            reg = <TEST_BASE 0x1000>;
+        };
+    };
+
+    poweroff {
+        compatible = "syscon-poweroff";
+        regmap = <&test>;
+        offset = <0>;
+        value = <TEST_PASS>;
+    };
+
+    reboot {
+        compatible = "syscon-reboot";
+        regmap = <&test>;
+        offset = <0>;
+        value = <TEST_RESET>;
+    };
+};

@@ -1,0 +1,298 @@
+#!/usr/bin/env python3
+# =====================================================================
+# rvboot  -  boot images for the Step 49 boot ROM, and its system test
+# ---------------------------------------------------------------------
+# The boot ROM (sw/boot/) loads programs sent to it over the serial
+# port. This tool makes what it loads, from any statically linked ELF:
+#
+#   tools/rvboot image prog.elf -o prog.rvbi [--bootargs "..."] [--mmode]
+#   tools/rvboot info prog.rvbi
+#
+# The image (sw/boot/bootimg.h) is a one-way stream -- no handshake --
+# so on real hardware any serial program can send it:
+#   stty -F /dev/ttyUSB0 115200 raw && cat prog.rvbi > /dev/ttyUSB0
+#
+# And it runs the platform's system test (`make boot`):
+#
+#   tools/rvboot test [--sim auto|verilator|iverilog]
+#
+# which boots soc_boot in simulation with tb/boot_tb.v on the other end
+# of the UART, sends it a sequence of images -- two that must be
+# rejected, then three real programs in a row, with a reset between
+# each -- compares everything the machine prints with
+# tb/boot_expected.txt, and has dtc decompile the device tree the ROM
+# left in RAM. Verilator is used when installed (seconds); Icarus works
+# but is slow (~10 minutes), since every byte is a real 10-bit serial
+# frame of 16 clocks per bit.
+#
+# Requires: python3; for `test`, the Makefile's build/boot/ outputs,
+# dtc, and verilator (5.x) or iverilog/vvp.
+# =====================================================================
+import argparse
+import binascii
+import difflib
+import re
+import shutil
+import struct
+import subprocess
+import sys
+from pathlib import Path
+
+REPO = Path(__file__).resolve().parent.parent
+BUILD = REPO / "build" / "boot"
+
+MAGIC = 0x49425652            # "RVBI"
+VERSION = 1
+F_MMODE = 1
+HDR = struct.Struct("<IHHIIHHIII")      # struct rvbi_header, 32 bytes
+SEG = struct.Struct("<III")             # struct rvbi_seg
+
+# must match sw/boot/platform.h
+PAYLOAD_BASE = 0x80004000
+
+RTL = ["alu", "regfile", "immgen", "control", "csr_s", "branch_predictor", "tlb", "ptw",
+       "zb_unit", "vec_unit", "cpu_pipe_u", "uart_tx_cfg", "uart_rx", "uart16550",
+       "clint_sifive", "soc_boot"]
+
+
+def die(msg):
+    sys.exit(f"[rvboot] error: {msg}")
+
+
+def crc32(b):
+    return binascii.crc32(b) & 0xFFFFFFFF
+
+
+# ---- images -----------------------------------------------------------
+def elf_segments(path):
+    """(entry, [(paddr, bytes, memsz)]) of a 32-bit little-endian RISC-V ELF."""
+    b = Path(path).read_bytes()
+    if b[:4] != b"\x7fELF" or b[4] != 1 or b[5] != 1:
+        die(f"{path}: not a 32-bit little-endian ELF")
+    if struct.unpack_from("<H", b, 18)[0] != 243:
+        die(f"{path}: not a RISC-V ELF")
+    entry, phoff = struct.unpack_from("<II", b, 24)
+    phentsize, phnum = struct.unpack_from("<HH", b, 42)
+    segs = []
+    for i in range(phnum):
+        ptype, off, _vaddr, paddr, filesz, memsz = struct.unpack_from("<IIIIII", b, phoff + i * phentsize)
+        if ptype == 1 and memsz:                                     # PT_LOAD
+            segs.append((paddr, b[off:off + filesz], memsz))
+    if not segs:
+        die(f"{path}: no loadable segments")
+    return entry, segs
+
+
+def make_image(entry, segs, bootargs=b"", flags=0):
+    data = b"".join(d for _, d, _ in segs)
+    table = b"".join(SEG.pack(a, len(d), m) for a, d, m in segs)
+    if len(bootargs) > 255:
+        die("bootargs longer than 255 bytes")
+    hdr = HDR.pack(MAGIC, VERSION, len(segs), entry, flags, len(bootargs), 0,
+                   len(data), crc32(data), 0)
+    hdr = hdr[:-4] + struct.pack("<I", crc32(hdr + table + bootargs))
+    return hdr + table + bootargs + data
+
+
+def image_from_elf(path, bootargs="", mmode=False):
+    entry, segs = elf_segments(path)
+    return make_image(entry, segs, bootargs.encode(), F_MMODE if mmode else 0)
+
+
+def describe(img):
+    (magic, ver, nseg, entry, flags, clen, _, dsize, dcrc, hcrc) = HDR.unpack_from(img)
+    if magic != MAGIC:
+        die("not an RVBI image")
+    off = HDR.size
+    out = [f"RVBI v{ver}: entry 0x{entry:08x}, {'M' if flags & F_MMODE else 'S'}-mode, "
+           f"{dsize} data bytes, data CRC32 0x{dcrc:08x}, header CRC32 0x{hcrc:08x}"]
+    for i in range(nseg):
+        a, f, m = SEG.unpack_from(img, off)
+        out.append(f"  segment {i}: 0x{a:08x}  file {f}  mem {m}")
+        off += SEG.size
+    if clen:
+        out.append(f"  bootargs \"{img[off:off + clen].decode()}\"")
+    return "\n".join(out)
+
+
+# ---- the system test --------------------------------------------------
+def run(cmd, **kw):
+    return subprocess.run(cmd, capture_output=True, text=True, **kw)
+
+
+def check(cmd, what):
+    r = run(cmd, cwd=REPO)
+    if r.returncode:
+        die(f"{what} failed:\n  {' '.join(map(str, cmd))}\n{r.stdout}{r.stderr}")
+    return r.stdout
+
+
+def test_chunks():
+    """What the bench sends, one chunk per "boot> " prompt."""
+    nops = b"\x13\x00\x00\x00" * 16
+    # 1. line noise, then an image whose data was corrupted on the way
+    bad = bytearray(make_image(PAYLOAD_BASE, [(PAYLOAD_BASE, nops, len(nops))]))
+    bad[-5] ^= 0x40
+    c1 = b"\r\n(line noise before the magic)\r\n" + bytes(bad)
+    # 2. a well-formed image that would overwrite the firmware
+    c2 = make_image(0x80000100, [(0x80000100, nops, len(nops))])
+    # 3..5. real programs: S-mode + SBI + DT, M-mode, unchanged picolibc demo
+    c3 = image_from_elf(BUILD / "dtdemo.elf",
+                        "console=hvc0 earlycon=sbi rvfs.ticks=3 rvfs.exit=reboot")
+    c4 = image_from_elf(BUILD / "mhello.elf", mmode=True)
+    c5 = image_from_elf(BUILD / "libc_demo.elf", "rvfs.payload=libc_demo")
+    return [c1, c2, c3, c4, c5]
+
+
+def build_sim(sim):
+    files = [str(REPO / "rtl" / f"{m}.v") for m in RTL] + [str(REPO / "tb" / "boot_tb.v")]
+    if sim == "verilator":
+        obj = BUILD / "vobj"
+        check(["verilator", "--binary", "--timing", "-O3", "-Wno-fatal", "-Wno-lint",
+               "-Wno-style", "--top-module", "boot_tb", "-Mdir", str(obj), "-o", "boot_tb"]
+              + files, "verilator")
+        return [str(obj / "boot_tb")]
+    vvp = BUILD / "boot_tb.vvp"
+    check(["iverilog", "-g2012", "-o", str(vvp)] + files, "iverilog")
+    return ["vvp", "-n", str(vvp)]
+
+
+# Numbers that change whenever a payload or the ROM is rebuilt differently
+# (sizes, CRCs, cycle counts, the ROM's own addresses) are `<...>` in the
+# expected transcript; `test --update` rewrites it from a run with these.
+VOLATILE = [
+    (r"(  segment 0: 0x80004000  file) (?!   64  mem    64$).*", r"\1 <...>"),
+    (r"(  data: ).*( bytes, CRC32 ).*( ok \().*\)", r"\1<...>\2<...>\3<...>)"),
+    (r"(  dtb: ).*( bytes, memory)", r"\1<...>\2"),
+    (r"(  ).* bytes, structure .*, strings .*", r"\1<...> bytes, structure <...>, strings <...>"),
+    (r"(  mtvec 0x)[0-9a-f]{8}(: still)", r"\1<...>\2"),
+]
+
+
+def expected_from(actual):
+    t = actual.replace("\r", "")
+    for a, b in VOLATILE:
+        t = re.sub(a, b, t, flags=re.M)
+    return t
+
+
+def expected_matches(actual, expected):
+    """Line by line; `<...>` in an expected line matches anything."""
+    a = actual.replace("\r", "").split("\n")
+    e = expected.split("\n")
+    for i in range(max(len(a), len(e))):
+        al = a[i] if i < len(a) else "<missing>"
+        el = e[i] if i < len(e) else "<missing>"
+        pat = "^" + ".*".join(re.escape(p) for p in el.split("<...>")) + "$"
+        if not re.match(pat, al):
+            return f"line {i + 1}:\n  expected: {el}\n  got:      {al}"
+    return None
+
+
+def cmd_test(args):
+    for f in ["rom.hex", "dtdemo.elf", "mhello.elf", "libc_demo.elf", "rvfs-soc.dtb"]:
+        if not (BUILD / f).exists():
+            die(f"build/boot/{f} missing -- run `make boot` (it builds them first)")
+    sim = args.sim
+    if sim == "auto":
+        sim = "verilator" if shutil.which("verilator") else "iverilog"
+    if not shutil.which(sim):
+        die(f"{sim} not found on PATH")
+
+    chunks = test_chunks()
+    stream = BUILD / "boot_stream.bin"
+    stream.write_bytes(b"".join(struct.pack("<I", len(c)) + c for c in chunks))
+    print(f"[rvboot] {len(chunks)} images, {sum(map(len, chunks))} bytes on the wire; "
+          f"simulating with {sim} ...")
+
+    exe = build_sim(sim)
+    log, dtb = BUILD / "boot.log", BUILD / "dtb_out.dtb"
+    r = run(exe + [f"+ROM={BUILD / 'rom.hex'}", f"+STREAM={stream}", f"+LOG={log}",
+                   f"+DTB={dtb}", f"+MAXCYC={args.max_cycles}"], cwd=REPO)
+    if args.verbose:
+        print(r.stdout)
+    m = re.search(r"BOOT-TB: (\w+) exit=(\d+) cycles=(\d+) resets=(\d+) chunks=(\d+) "
+                  r"sent=(\d+) received=(\d+) rxfifo_peak=(\d+)", r.stdout)
+    if not m:
+        die("no summary from the testbench:\n" + r.stdout[-3000:] + r.stderr[-2000:])
+    state, code, cycles, resets, nchunks, sent, recv, peak = m.group(1), *map(int, m.groups()[1:])
+    print(f"[rvboot] {state}, exit code {code}, {cycles} cycles, {resets} resets, "
+          f"{nchunks} images sent")
+    print(f"[rvboot] {sent} bytes in, {recv} bytes out; RX FIFO peak {peak} of 16")
+
+    fails = []
+    if state != "halted" or code != 0:
+        fails.append(f"machine did not power off cleanly ({state}, exit code {code})")
+    if resets != 2 or nchunks != len(chunks):
+        fails.append(f"expected 2 resets and {len(chunks)} images, got {resets} and {nchunks}")
+    actual = log.read_text(errors="replace")
+    exp_file = REPO / "tb" / "boot_expected.txt"
+    if args.update:
+        exp_file.write_text(expected_from(actual))
+        print(f"[rvboot] rewrote {exp_file.relative_to(REPO)} from this run")
+    diff = expected_matches(actual, exp_file.read_text())
+    if diff:
+        fails.append(f"UART output differs from {exp_file.relative_to(REPO)} at {diff}\n"
+                     f"  (whole transcript: {log.relative_to(REPO)})")
+    else:
+        print(f"[rvboot] UART transcript matches tb/boot_expected.txt "
+              f"({len(actual.splitlines())} lines)")
+
+    # the tree the ROM handed the last payload, as dtc reads it
+    if shutil.which("dtc"):
+        out = run(["dtc", "-I", "dtb", "-O", "dts", str(dtb)])
+        orig = run(["dtc", "-I", "dtb", "-O", "dts", str(BUILD / "rvfs-soc.dtb")])
+        if out.returncode:
+            fails.append("dtc cannot read the fixed-up DTB:\n" + out.stderr)
+        else:
+            changed = [l for l in difflib.unified_diff(orig.stdout.splitlines(),
+                                                       out.stdout.splitlines(), lineterm="", n=0)
+                       if l[:1] in "+-" and l[:3] not in ("+++", "---")]
+            print("[rvboot] dtc reads the DTB left in RAM; the ROM's fixups:")
+            for l in changed:
+                print("           " + l.strip())
+            want = {"-\t\tbootargs = [00];", "+\t\tbootargs = \"rvfs.payload=libc_demo\";",
+                    "-\t\treg = <0x80000000 0x00>;", "+\t\treg = <0x80000000 0x40000>;"}
+            if set(changed) != want:
+                fails.append("the fixed-up tree differs from the original in unexpected ways")
+    else:
+        print("[rvboot] dtc not found: skipping the DTB check")
+
+    if fails:
+        for f in fails:
+            print(f"[rvboot] FAIL: {f}")
+        print("BOOT: FAIL")
+        sys.exit(1)
+    print("BOOT: ALL PASS")
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__.split("\n")[2] if __doc__ else None)
+    sub = ap.add_subparsers(dest="cmd", required=True)
+    p = sub.add_parser("image", help="ELF -> boot image")
+    p.add_argument("elf")
+    p.add_argument("-o", "--output", required=True)
+    p.add_argument("--bootargs", default="")
+    p.add_argument("--mmode", action="store_true", help="enter in M-mode instead of S")
+    p = sub.add_parser("info", help="describe a boot image")
+    p.add_argument("image")
+    p = sub.add_parser("test", help="the boot platform's system test (make boot)")
+    p.add_argument("--sim", choices=["auto", "verilator", "iverilog"], default="auto")
+    p.add_argument("--max-cycles", type=int, default=40000000)
+    p.add_argument("-v", "--verbose", action="store_true", help="echo the simulation")
+    p.add_argument("--update", action="store_true",
+                   help="rewrite tb/boot_expected.txt from this run (check the diff!)")
+    args = ap.parse_args()
+
+    if args.cmd == "image":
+        img = image_from_elf(args.elf, args.bootargs, args.mmode)
+        Path(args.output).write_bytes(img)
+        print(describe(img))
+    elif args.cmd == "info":
+        print(describe(Path(args.image).read_bytes()))
+    else:
+        cmd_test(args)
+
+
+if __name__ == "__main__":
+    main()

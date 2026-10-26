@@ -74,6 +74,7 @@ sequence) and we will watch the registers change in the waveform viewer.
 | 46 | `docs/46-bitmanip.md` | Bonus: the bit-manipulation extensions Zba/Zbb/Zbc/Zbs in the unified pipeline — a combinational unit beside the ALU, strict OP/OP-IMM decode so an unconfigured extension traps, each group a parameter and a menuconfig option; the official `rv32uzb*` riscv-tests (32) pass on all four pipeline configurations (90/90) | **done & tested (sim + synth)** |
 | 47 | `docs/47-vector.md` | Bonus: the RISC-V vector extension (Zve32x subset, VLEN 64/128/256) — an element-serial unit holding EX, VRF in LUT RAM, vector memory translated by the D-TLB/walker, precise mid-vector page faults with `vstart` resume, fault-only-first, `mstatus.VS`; random differential testing against a Python RVV model (thousands of programs, with and without caches), an Sv32 fault test, a menuconfig option, and a 1.3–2.4× scalar-vs-vector benchmark | **done & tested (sim + synth)** |
 | 48 | `docs/48-benchmarks.md` | Bonus: benchmarks — Dhrystone and CoreMark on the unified pipeline, timed by new `cycle`/`instret` counters (Zicntr) and stall-event counters (Zihpm) whose categories add up to every cycle exactly; **1.37 DMIPS/MHz** and **2.88 CoreMark/MHz** (3.31 with `-O3` + Zb) on ideal memory, with the predictor, compiler and cache effects broken down cycle by cycle; Verilator runs the matrix in minutes, cycle-identical to Icarus | **done & tested (sim + synth)** |
+| 49 | `docs/49-bootloader-device-tree.md` | Bonus: boot ROM + device tree + SBI — a `virt`-style platform (`soc_boot`: one memory for fetch and data, an ns16550a UART, the standard CLINT, a test device) whose ROM loads CRC-checked images over the serial port, checks every segment before writing a byte, fixes up the DT (probed RAM size, `bootargs`) and stays resident as an SBI v2.0 (BASE/TIME/DBCN/SRST); `make boot` rejects two bad images, then runs an S-mode program that knows the machine only from its DT, an M-mode one that reboots through `syscon-reboot`, and Step 37's picolibc demo unchanged; `time` CSR and a refetching `FENCE.I` in `cpu_pipe_u` (riscv-tests `fence_i` now passes) | **done & tested (sim)** |
 
 ## Directory layout
 
@@ -235,11 +236,12 @@ tools/rvtests --list                   # what would run
 | `mc_tlb` | `cpu_mc_tlb.v` — multi-cycle RV32IM, run with Sv32 **on** (identity map, U-mode) through the I/D TLBs | ui, um | 48/48 |
 | `pipe_u` | `cpu_pipe_u.v` — unified pipeline RV32IMA, M/S/U, MMU, branch predictor (body in M) | ui, um, ua, uzba, uzbb, uzbc, uzbs | 90/90 |
 | `pipe_u_vm` | `cpu_pipe_u.v` — same, body in U with Sv32 **on** | ui, um, ua, uzb* | 90/90 |
+| `pipe_u_uni` | `cpu_pipe_u.v` with ONE memory for fetch and data, as `soc_boot` (Step 49) — so `fence_i` passes | ui, um, ua, uzb* | 91/91 |
 | `pipe_c` | `cpu_pipe_u.v` behind 512 B I$/D$ on slow memory (latency 5) | ui, um, ua, uzb* | 90/90 |
 | `pipe_c_vm` | same, body in U with Sv32 **on** (PTEs read through the D$) | ui, um, ua, uzb* | 90/90 |
 
-Tests that cannot pass on this hardware (`fence_i`, `ma_data` on the word-RAM
-cores, `fmadd`) are still run and reported as documented gaps rather than
+Tests that cannot pass on this hardware (`fence_i` on the Harvard cores, `ma_data`
+on the word-RAM cores, `fmadd`) are still run and reported as documented gaps rather than
 skipped, so a gap that closes shows up as readily as one that opens. See
 `docs/40-riscv-tests.md` for what the suite found.
 
@@ -265,7 +267,7 @@ A menu of where this project can go next, grouped by goal. Rough difficulty:
 - ✅ **Memory-isolated processes** — per-task page tables with `satp` reloaded on every context switch (Step 38). Two preempted user tasks share the same virtual addresses (private page at VA `0x1000`, stack at `0x2000`) yet map to different physical pages, so neither can touch the other's memory; the MMU enforces it, the kernel just hands each task its own address space. Built on the unmodified synthesizable MMU SoC. A TLB (and the `sfence.vma` it would require) is the natural next step.
 - ✅ **Supervisor mode + `medeleg`/`mideleg`** — a third privilege level (S) with per-cause trap delegation (Step 39). Two bit-masks route traps taken below machine mode: a delegated cause vectors straight to the S-mode handler at `stvec`, updates the supervisor trap CSRs, and enters S — machine mode never runs. The demo delegates a user `ecall`, an illegal instruction, and a supervisor software interrupt to an S-mode kernel, while a non-delegated `ecall` from S still reaches M. `sstatus`/`sie`/`sip` are masked views of the machine registers; built on a fresh `cpu_mc_s`/`csr_s` so the rest of the regression is untouched. Step 44 brings S-mode to the unified pipeline, where an S-mode kernel running translated serves its user's page faults (demand paging with `stval`, SUM, fetch faults) without M ever running.
 - ✅ **Instruction-fetch translation + TLB** — a new core, `cpu_mc_tlb` (Step 41), translates the PC as well as data: user code runs at a virtual address, execute-only pages work, and a leaf without `X` raises an instruction page fault (cause 12). Split fully-associative I/D TLBs (`tlb.v`, 4 entries each) cache finished walks, so a hit costs no cycles, and `sfence.vma` (all entries, or by address) invalidates them. The demo shows a stale translation surviving a PTE change until the fence; against a walk-every-access build it takes 2.36x fewer cycles, and rv32ui/um pass 48/48 with every fetch and access translated. ASID-tagged entries (so a `satp` switch needs no flush) are the natural next step.
-- 🔴 **Port xv6-riscv, then Linux** — xv6 is the realistic next OS; Linux needs S-mode, full MMU+TLB, atomics, device tree.
+- 🔴 **Port xv6-riscv, then Linux** — xv6 is the realistic next OS. Linux needs S-mode, MMU + TLBs, atomics (Steps 39–44), a device tree, the SBI and the boot protocol (Step 49); still missing are megabytes of RAM, a PLIC on SEIP, and Svade/Svadu A/D handling in the page-table walker.
 
 ### Make it fast (microarchitecture)
 - ✅ **Branch predictor** — BTB + 2-bit saturating counters on the pipelined core (Step 32): 3544 flushes → 879 mispredictions on the demo, ~1.3x fewer cycles. Return-address stack is the natural follow-up.
@@ -292,7 +294,7 @@ A menu of where this project can go next, grouped by goal. Rough difficulty:
 ### Tooling & ecosystem
 - ✅ **Debug stub** — hardware debug module (halt/step/4 HW breakpoints/reg+mem access) + gdb RSP server (Step 29); transport bridge to live gdb is the remaining glue.
 - ✅ **Real libc** — picolibc with full `printf` and `malloc`/`free` (Step 37). The platform contract is three hooks: a UART `putc` for `stdout`, `__heap_start`/`__heap_end` for the allocator, and `_exit`. A byte-exact demo (`make libc`) checks formatting + heap + `string.h`, and the FreeRTOS build now links picolibc with the header shims and the `firmware.c` mini-printf retired (verified running through real `printf`).
-- 🟡 **Bootloader + device tree** — load/run arbitrary programs; Linux prerequisite.
+- ✅ **Bootloader + device tree** — boot ROM + DT + SBI on `soc_boot` (Step 49): images arrive over a 16550 UART with header and data CRCs, every segment is range-checked before the first write, the ROM fixes up the DTB in place (probed RAM size, `/chosen/bootargs`; `dtc` re-reads the result) and enters the payload with the RISC-V boot protocol (`a0` = hart, `a1` = DTB, S-mode), leaving an SBI v2.0 behind that forwards the machine timer as STIP. Three programs run back to back over two resets; the RX FIFO never holds more than one byte. Next: block-RAM memories for the board, a PLIC wired to SEIP, and A/D-bit handling in the walker.
 
 ### Peripherals & interrupts
 - ✅ **UART interrupts + receive-to-idle** — machine external interrupt (cause 11) wired to a configurable UART, with STM32-style IDLE-line detection to receive whole variable-length messages (Step 31).
