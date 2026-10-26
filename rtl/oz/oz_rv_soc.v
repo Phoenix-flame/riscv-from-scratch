@@ -132,7 +132,7 @@ module oz_rv_soc #(
                      .M_EXT(M_EXT), .A_EXT(A_EXT), .HAS_U(HAS_U), .HAS_S(HAS_S), .MMU(MMU),
                      .ZBA(ZBA), .ZBB(ZBB), .ZBC(ZBC), .ZBS(ZBS),
                      .V_EXT(V_EXT), .VLEN(VLEN), .ZICNTR(ZICNTR)) u_core (
-            .clk(clk), .rst(rst), .timer_irq(timer_irq), .mtime(64'd0), .meip(1'b0), .seip(1'b0), .halt(halted),
+            .clk(clk), .rst(rst), .timer_irq(timer_irq), .mtime(64'd0), .meip(1'b0), .seip(1'b0), .fencei_req(), .fencei_ack(1'b1), .halt(halted),
             .i_addr(iaddr), .i_req(ireq), .i_rdata(irdata), .i_ready(iready),
             .d_addr(daddr), .d_req(dreq), .d_we(dwe), .d_wdata(dwdata),
             .d_rdata(drdata), .d_ready(sel_ram ? ram_ready : 1'b1),
@@ -147,12 +147,12 @@ module oz_rv_soc #(
 
         if (CACHES) begin : g_cache
             icache #(.LINES(I_LINES), .LINE_WORDS(LINE_WORDS)) u_icache (
-                .clk(clk), .rst(rst), .addr(iaddr), .req(ireq), .rdata(irdata), .ready(iready),
+                .clk(clk), .rst(rst), .addr(iaddr), .req(ireq), .rdata(irdata), .ready(iready), .inval(1'b0),
                 .m_req(im_req), .m_addr(im_addr), .m_done(im_done), .m_rdata(im_rdata));
             assign im_we = 1'b0; assign im_mask = 4'b0; assign im_wdata = {LW{1'b0}};
             dcache #(.LINES(D_LINES), .LINE_WORDS(LINE_WORDS)) u_dcache (
                 .clk(clk), .rst(rst), .addr(daddr), .req(dreq & sel_ram), .we(dwe), .wdata(dwdata),
-                .rdata(ram_rdata), .ready(ram_ready),
+                .rdata(ram_rdata), .ready(ram_ready), .clean(1'b0), .clean_done(),
                 .m_req(dm_req), .m_we(dm_we), .m_addr(dm_addr), .m_wdata(dm_wdata),
                 .m_done(dm_done), .m_rdata(dm_rdata));
             assign dm_mask = 4'b1111;

@@ -212,8 +212,10 @@ static void external_irqs(const void *fdt, int plic, uint32_t plic_base, int con
     while (!(n_rx && line[n_rx - 1] == '\r')) __asm__ volatile("wfi");
     csr_clear(sstatus, 1u << 1);
     line[n_rx - 1] = 0;
+    /* how many depends on how fast the handler gets there (cold caches:
+       fewer, longer ones); what matters is that it is not one per byte */
     printf("\n  got \"%s\": %u bytes in %u external interrupts", line, n_rx - 1, n_ext);
-    verdict(n_ext >= 2 && n_ext < n_rx);
+    verdict(n_ext >= 1 && n_ext < n_rx - 1);
 }
 
 int main(uint32_t hartid, const void *fdt)

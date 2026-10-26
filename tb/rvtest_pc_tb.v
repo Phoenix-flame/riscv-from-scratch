@@ -7,6 +7,12 @@
 // PTE reads through the D-cache all happen inside the tests. tools/rvtests
 // runs it as `pipe_c` (body in M) and `pipe_c_vm` (-DRVTEST_VM: body in
 // U with Sv32 on).
+//
+// -DRVT_UNIFIED (`pipe_c_uni`, Step 51): ONE memory behind both caches,
+// shared through line_arb, as on soc_boot with MEMSYS 1/2 -- and FENCE.I
+// done properly: the core holds it until the D-cache is written back and
+// the I-cache invalidated, so fence_i's freshly stored code is what the
+// I-cache refills.
 // =====================================================================
 `timescale 1ns/1ps
 `default_nettype none
@@ -23,9 +29,11 @@ module rvtest_pc_tb;
     wire        ireq, iready, dreq, ram_ready;
     wire [3:0]  dwe;
     wire [31:0] rvt_pc;
+    wire        fencei_req, fencei_ack, ic_inval, dc_clean, dc_clean_done;
 
     cpu_pipe_u u_core (
-        .clk(clk), .rst(rst), .timer_irq(1'b0), .mtime(64'd0), .meip(1'b0), .seip(1'b0), .halt(1'b0),
+        .clk(clk), .rst(rst), .timer_irq(1'b0), .mtime(64'd0), .meip(1'b0), .seip(1'b0),
+        .fencei_req(fencei_req), .fencei_ack(fencei_ack), .halt(1'b0),
         .i_addr(iaddr), .i_req(ireq), .i_rdata(irdata), .i_ready(iready),
         .d_addr(daddr), .d_req(dreq), .d_we(dwe), .d_wdata(dwdata),
         .d_rdata(drdata), .d_ready(sel_ram ? ram_ready : 1'b1),
@@ -39,19 +47,44 @@ module rvtest_pc_tb;
     wire [LWB-1:0] im_rdata, dm_wdata, dm_rdata;
 
     icache #(.LINES(16), .LINE_WORDS(LW)) u_icache (
-        .clk(clk), .rst(rst), .addr(iaddr), .req(ireq), .rdata(irdata), .ready(iready),
+        .clk(clk), .rst(rst), .addr(iaddr), .req(ireq), .rdata(irdata), .ready(iready), .inval(ic_inval),
         .m_req(im_req), .m_addr(im_addr), .m_done(im_done), .m_rdata(im_rdata));
     dcache #(.LINES(16), .LINE_WORDS(LW)) u_dcache (
         .clk(clk), .rst(rst), .addr(daddr), .req(dreq & sel_ram), .we(dwe), .wdata(dwdata),
-        .rdata(ram_rdata), .ready(ram_ready),
+        .rdata(ram_rdata), .ready(ram_ready), .clean(dc_clean), .clean_done(dc_clean_done),
         .m_req(dm_req), .m_we(dm_we), .m_addr(dm_addr), .m_wdata(dm_wdata),
         .m_done(dm_done), .m_rdata(dm_rdata));
+`ifdef RVT_UNIFIED
+    // one memory: both caches refill from it; FENCE.I as soc_boot does it
+    wire          m_req, m_we, m_done;
+    wire [31:0]   m_addr;
+    wire [LWB-1:0] m_wdata, m_rdata;
+    line_arb #(.LW(LWB)) u_arb (
+        .clk(clk), .rst(rst),
+        .d_req(dm_req), .d_we(dm_we), .d_addr(dm_addr), .d_wdata(dm_wdata), .d_done(dm_done),
+        .i_req(im_req), .i_addr(im_addr), .i_done(im_done),
+        .m_req(m_req), .m_we(m_we), .m_addr(m_addr), .m_wdata(m_wdata), .m_done(m_done));
+    mem_slow #(.WORDS(RAM_WORDS), .LINE_WORDS(LW), .LATENCY(5)) u_ram (
+        .clk(clk), .rst(rst), .req(m_req), .we(m_we), .burst(1'b1), .addr(m_addr),
+        .wmask(4'b1111), .wdata(m_wdata), .done(m_done), .rdata(m_rdata));
+    assign im_rdata = m_rdata;
+    assign dm_rdata = m_rdata;
+    reg fi_done;
+    always @(posedge clk)
+        if (rst || !fencei_req) fi_done <= 1'b0;
+        else if (dc_clean_done) fi_done <= 1'b1;
+    assign dc_clean   = fencei_req & ~fi_done;
+    assign ic_inval   = dc_clean & dc_clean_done;
+    assign fencei_ack = fi_done;
+`else
     mem_slow #(.WORDS(ROM_WORDS), .LINE_WORDS(LW), .LATENCY(5)) u_rom (
         .clk(clk), .rst(rst), .req(im_req), .we(1'b0), .burst(1'b1), .addr(im_addr),
         .wmask(4'b0), .wdata({LWB{1'b0}}), .done(im_done), .rdata(im_rdata));
     mem_slow #(.WORDS(RAM_WORDS), .LINE_WORDS(LW), .LATENCY(5)) u_ram (
         .clk(clk), .rst(rst), .req(dm_req), .we(dm_we), .burst(1'b1), .addr(dm_addr),
         .wmask(4'b1111), .wdata(dm_wdata), .done(dm_done), .rdata(dm_rdata));
+    assign dc_clean = 1'b0; assign ic_inval = 1'b0; assign fencei_ack = 1'b1;
+`endif
 
     // ---- what rvtest_harness.vh needs ---------------------------------
     wire [31:0] rvt_instr  = u_core.ifid_instr;
@@ -64,8 +97,12 @@ module rvtest_pc_tb;
         input [1023:0] ramf;
         input          has_ram;
         begin
+`ifdef RVT_UNIFIED
+            $readmemh(ramf, u_ram.mem);           // .text is mirrored into it at 0
+`else
             $readmemh(romf, u_rom.mem);
             if (has_ram) $readmemh(ramf, u_ram.mem);
+`endif
         end
     endtask
 

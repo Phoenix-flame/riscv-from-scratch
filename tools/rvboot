@@ -52,7 +52,8 @@ PAYLOAD_BASE = 0x80004000
 
 RTL = ["alu", "regfile", "immgen", "control", "csr_s", "branch_predictor", "tlb", "ptw",
        "zb_unit", "vec_unit", "cpu_pipe_u", "uart_tx_cfg", "uart_rx", "uart16550",
-       "clint_sifive", "plic_sifive", "soc_boot"]
+       "clint_sifive", "plic_sifive", "icache", "dcache", "line_arb",
+       "oz/oz_burst_mem", "axi4_line_master", "soc_boot"]
 
 
 def die(msg):
@@ -148,16 +149,40 @@ def test_chunks():
     return [c1, c2, c3, kd, typed, c4, c5]
 
 
-def build_sim(sim):
-    files = [str(REPO / "rtl" / f"{m}.v") for m in RTL] + [str(REPO / "tb" / "boot_tb.v")]
+# The memory systems soc_boot can be built with (Step 51), as boot_tb
+# parameters: MEMSYS and the RAM size (the ROM probes it; the DT reports it).
+MEMSYS = {
+    "ideal": dict(memsys=0, ram_words=1 << 16,
+                  desc="ideal memory, 256 KiB"),
+    "bram":  dict(memsys=1, ram_words=1 << 16,
+                  desc="2+2 KiB caches, block RAM, 256 KiB"),
+    "ddr":   dict(memsys=2, ram_words=1 << 24,
+                  desc="2+2 KiB caches, 64 MiB of DDR over AXI4 (latency 20, stalls)"),
+    # fpga_top_boot's configuration: the board ROM (115200 baud from 50 MHz,
+    # divisor 27 -- 432 clocks a bit, so only a short stream: a bad image,
+    # then libc_demo), checked line by line rather than against the file
+    "board": dict(memsys=1, ram_words=1 << 15, divisor=27, rom="board/rom.hex", short=True,
+                  desc="the board build: caches + 128 KiB block RAM, 115200 baud"),
+}
+
+
+def build_sim(sim, variant):
+    v = MEMSYS[variant]
+    files = ([str(REPO / "rtl" / f"{m}.v") for m in RTL] +
+             [str(REPO / "tb" / "axi4_mem.v"), str(REPO / "tb" / "boot_tb.v")])
+    div = v.get("divisor", 1)
     if sim == "verilator":
-        obj = BUILD / "vobj"
+        obj = BUILD / f"vobj_{variant}"
         check(["verilator", "--binary", "--timing", "-O3", "-Wno-fatal", "-Wno-lint",
-               "-Wno-style", "--top-module", "boot_tb", "-Mdir", str(obj), "-o", "boot_tb"]
+               "-Wno-style", "--top-module", "boot_tb", "-Mdir", str(obj), "-o", "boot_tb",
+               f"-GMEMSYS={v['memsys']}", f"-GRAM_WORDS={v['ram_words']}", f"-GDIVISOR={div}"]
               + files, "verilator")
         return [str(obj / "boot_tb")]
-    vvp = BUILD / "boot_tb.vvp"
-    check(["iverilog", "-g2012", "-o", str(vvp)] + files, "iverilog")
+    vvp = BUILD / f"boot_tb_{variant}.vvp"
+    check(["iverilog", "-g2012", "-o", str(vvp),
+           f"-Pboot_tb.MEMSYS={v['memsys']}", f"-Pboot_tb.RAM_WORDS={v['ram_words']}",
+           f"-Pboot_tb.DIVISOR={div}"]
+          + files, "iverilog")
     return ["vvp", "-n", str(vvp)]
 
 
@@ -172,18 +197,31 @@ VOLATILE = [
     (r"(  mtvec 0x)[0-9a-f]{8}(: still)", r"\1<...>\2"),
     (r"(  segment [1-9]: ).*", r"\1<...>"),
     (r"(  PTE now 0x)[0-9a-f]{8}(: )", r"\1<...>\2"),
+    (r"( bytes in )\d+( external interrupts)", r"\1<...>\2"),
 ]
 
 
-def expected_from(actual):
+def ram_values(variant):
+    """What depends on the RAM size, as the transcript prints it."""
+    size = MEMSYS[variant]["ram_words"] * 4
+    return {"{DTB}": f"0x{0x80000000 + size - 0x2000:08x}",
+            "{RAM_SIZE}": f"0x{size:x}",
+            "{RAM_KIB}": f"{size >> 10} KiB"}
+
+
+def expected_from(actual, variant):
     t = actual.replace("\r", "")
     for a, b in VOLATILE:
         t = re.sub(a, b, t, flags=re.M)
+    for ph, val in ram_values(variant).items():          # the same file for every RAM size
+        t = re.sub(r"(?<![0-9a-zA-Z])" + re.escape(val) + r"(?![0-9a-zA-Z])", ph, t)
     return t
 
 
-def expected_matches(actual, expected):
+def expected_matches(actual, expected, variant):
     """Line by line; `<...>` in an expected line matches anything."""
+    for ph, val in ram_values(variant).items():
+        expected = expected.replace(ph, val)
     a = actual.replace("\r", "").split("\n")
     e = expected.split("\n")
     for i in range(max(len(a), len(e))):
@@ -195,48 +233,62 @@ def expected_matches(actual, expected):
     return None
 
 
-def cmd_test(args):
-    for f in ["rom.hex", "dtdemo.elf", "kdemo.elf", "mhello.elf", "libc_demo.elf", "rvfs-soc.dtb"]:
-        if not (BUILD / f).exists():
-            die(f"build/boot/{f} missing -- run `make boot` (it builds them first)")
-    sim = args.sim
-    if sim == "auto":
-        sim = "verilator" if shutil.which("verilator") else "iverilog"
-    if not shutil.which(sim):
-        die(f"{sim} not found on PATH")
-
-    chunks = test_chunks()
-    stream = BUILD / "boot_stream.bin"
-    stream.write_bytes(b"".join(struct.pack("<I", len(c)) + c for c in chunks))
-    print(f"[rvboot] {len(chunks)} images, {sum(map(len, chunks))} bytes on the wire; "
-          f"simulating with {sim} ...")
-
-    exe = build_sim(sim)
-    log, dtb = BUILD / "boot.log", BUILD / "dtb_out.dtb"
-    r = run(exe + [f"+ROM={BUILD / 'rom.hex'}", f"+STREAM={stream}", f"+LOG={log}",
-                   f"+DTB={dtb}", f"+MAXCYC={args.max_cycles}"], cwd=REPO)
+def run_variant(args, sim, variant, chunks, stream):
+    v = MEMSYS[variant]
+    print(f"[rvboot] --- {variant}: {v['desc']}")
+    if v.get("short"):
+        chunks = [chunks[0], chunks[-1]]                  # a bad image, then libc_demo
+        stream = BUILD / f"boot_stream_{variant}.bin"
+        stream.write_bytes(b"".join(struct.pack("<I", len(c)) + c for c in chunks))
+    rom = BUILD / v.get("rom", "rom.hex")
+    if not rom.exists():
+        return [f"{rom.relative_to(REPO)} missing -- run `make boot-board`"]
+    exe = build_sim(sim, variant)
+    log, dtb = BUILD / f"boot_{variant}.log", BUILD / f"dtb_out_{variant}.dtb"
+    maxcyc = args.max_cycles * (8 if v.get("short") else 1)
+    r = run(exe + [f"+ROM={rom}", f"+STREAM={stream}", f"+LOG={log}",
+                   f"+DTB={dtb}", f"+MAXCYC={maxcyc}"], cwd=REPO)
     if args.verbose:
         print(r.stdout)
     m = re.search(r"BOOT-TB: (\w+) exit=(\d+) cycles=(\d+) resets=(\d+) chunks=(\d+) "
                   r"sent=(\d+) received=(\d+) rxfifo_peak=(\d+)", r.stdout)
     if not m:
-        die("no summary from the testbench:\n" + r.stdout[-3000:] + r.stderr[-2000:])
+        return [f"no summary from the testbench:\n{r.stdout[-3000:]}{r.stderr[-2000:]}"]
     state, code, cycles, resets, nchunks, sent, recv, peak = m.group(1), *map(int, m.groups()[1:])
     print(f"[rvboot] {state}, exit code {code}, {cycles} cycles, {resets} resets, "
           f"{nchunks} chunks sent (images and typed input)")
     print(f"[rvboot] {sent} bytes in, {recv} bytes out; RX FIFO peak {peak} of 16")
+    fm = re.search(r"BOOT-TB fence.i: (\d+), (\d+) cycles", r.stdout)
+    if fm:
+        print(f"[rvboot] {fm.group(1)} fence.i, {fm.group(2)} cycles waiting for the caches")
 
     fails = []
+    if "AXI protocol errors" in r.stdout:
+        fails.append(re.search(r"AXI protocol errors: \d+", r.stdout).group(0))
     if state != "halted" or code != 0:
         fails.append(f"machine did not power off cleanly ({state}, exit code {code})")
-    if resets != 3 or nchunks != len(chunks):
-        fails.append(f"expected 3 resets and {len(chunks)} chunks, got {resets} and {nchunks}")
+    want_resets = 0 if v.get("short") else 3
+    if resets != want_resets or nchunks != len(chunks):
+        fails.append(f"expected {want_resets} resets and {len(chunks)} chunks, "
+                     f"got {resets} and {nchunks}")
     actual = log.read_text(errors="replace")
+    if v.get("short"):
+        size = v["ram_words"] * 4
+        for line in [f"  RAM      0x80000000, {size >> 10} KiB (probed)",
+                     "  error: data CRC32 0xb2394f88, image says 0xeaca17c1",
+                     "  -> S-mode at 0x80004000, a0 = hart 0, a1 = dtb "
+                     f"0x{0x80000000 + size - 0x2000:08x}",
+                     "picolibc on rv32im: printf + malloc", "squares sum=140", "DONE"]:
+            if line not in actual.replace("\r", "").split("\n"):
+                fails.append(f"missing from the transcript: {line!r}")
+        if not fails:
+            print(f"[rvboot] the board ROM's banner, the CRC rejection and libc_demo's output are there")
+        return fails
     exp_file = REPO / "tb" / "boot_expected.txt"
     if args.update:
-        exp_file.write_text(expected_from(actual))
+        exp_file.write_text(expected_from(actual, variant))
         print(f"[rvboot] rewrote {exp_file.relative_to(REPO)} from this run")
-    diff = expected_matches(actual, exp_file.read_text())
+    diff = expected_matches(actual, exp_file.read_text(), variant)
     if diff:
         fails.append(f"UART output differs from {exp_file.relative_to(REPO)} at {diff}\n"
                      f"  (whole transcript: {log.relative_to(REPO)})")
@@ -257,19 +309,45 @@ def cmd_test(args):
             print("[rvboot] dtc reads the DTB left in RAM; the ROM's fixups:")
             for l in changed:
                 print("           " + l.strip())
+            size = ram_values(variant)["{RAM_SIZE}"]
             want = {"-\t\tbootargs = [00];", "+\t\tbootargs = \"rvfs.payload=libc_demo\";",
-                    "-\t\treg = <0x80000000 0x00>;", "+\t\treg = <0x80000000 0x40000>;"}
+                    "-\t\treg = <0x80000000 0x00>;", f"+\t\treg = <0x80000000 {size}>;"}
             if set(changed) != want:
                 fails.append("the fixed-up tree differs from the original in unexpected ways")
     else:
         print("[rvboot] dtc not found: skipping the DTB check")
+    return fails
 
-    if fails:
+
+def cmd_test(args):
+    for f in ["rom.hex", "dtdemo.elf", "kdemo.elf", "mhello.elf", "libc_demo.elf", "rvfs-soc.dtb"]:
+        if not (BUILD / f).exists():
+            die(f"build/boot/{f} missing -- run `make boot` (it builds them first)")
+    sim = args.sim
+    if sim == "auto":
+        sim = "verilator" if shutil.which("verilator") else "iverilog"
+    if not shutil.which(sim):
+        die(f"{sim} not found on PATH")
+
+    chunks = test_chunks()
+    stream = BUILD / "boot_stream.bin"
+    stream.write_bytes(b"".join(struct.pack("<I", len(c)) + c for c in chunks))
+    variants = ([k for k in MEMSYS if not MEMSYS[k].get("short")] if args.memsys == "all"
+                else [args.memsys])
+    print(f"[rvboot] {len(chunks)} chunks, {sum(map(len, chunks))} bytes on the wire; "
+          f"simulating with {sim}: {', '.join(variants)}")
+
+    failed = []
+    for variant in variants:
+        fails = run_variant(args, sim, variant, chunks, stream)
         for f in fails:
-            print(f"[rvboot] FAIL: {f}")
-        print("BOOT: FAIL")
+            print(f"[rvboot] FAIL ({variant}): {f}")
+        if fails:
+            failed.append(variant)
+    if failed:
+        print(f"BOOT: FAIL ({', '.join(failed)})")
         sys.exit(1)
-    print("BOOT: ALL PASS")
+    print(f"BOOT: ALL PASS ({', '.join(variants)})")
 
 
 def main():
@@ -285,6 +363,8 @@ def main():
     p = sub.add_parser("test", help="the boot platform's system test (make boot)")
     p.add_argument("--sim", choices=["auto", "verilator", "iverilog"], default="auto")
     p.add_argument("--max-cycles", type=int, default=40000000)
+    p.add_argument("--memsys", choices=["all"] + list(MEMSYS), default="all",
+                   help="soc_boot memory system(s) to run (default: ideal, bram, ddr)")
     p.add_argument("-v", "--verbose", action="store_true", help="echo the simulation")
     p.add_argument("--update", action="store_true",
                    help="rewrite tb/boot_expected.txt from this run (check the diff!)")

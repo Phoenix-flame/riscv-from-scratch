@@ -159,7 +159,7 @@ UART in the device tree and does three things:
 [external interrupts: PLIC]
   interrupt-controller@c000000: 31 sources; S-mode is context 1; serial@10000000 is source 10
 type>
-  got "hello, PLIC!": 12 bytes in 3 external interrupts  ok
+  got "hello, PLIC!": 12 bytes in 3 external interrupts  ok    (ideal memory)
 ```
 
 **Access faults.** The handler skips the faulting load or store

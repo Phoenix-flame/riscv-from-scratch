@@ -66,21 +66,6 @@ char *strstr(const char *h, const char *n)
     return l ? 0 : (char *)h;
 }
 
-/* a nibble at a time: a 64-byte table instead of zlib's 1 KiB one, and
- * two lookups a byte instead of eight shift/xor steps -- the ROM has to
- * keep up with the UART while it checksums (see rom_main.c) */
-static const uint32_t crc_nib[16] = {
-    0x00000000, 0x1DB71064, 0x3B6E20C8, 0x26D930AC, 0x76DC4190, 0x6B6B51F4, 0x4DB26158, 0x5005713C,
-    0xEDB88320, 0xF00F9344, 0xD6D6A3E8, 0xCB61B38C, 0x9B64C2B0, 0x86D3D2D4, 0xA00AE278, 0xBDBDF21C,
-};
-
-uint32_t crc32_byte(uint32_t crc, uint8_t b)
-{
-    crc ^= b;
-    crc = (crc >> 4) ^ crc_nib[crc & 15];
-    return (crc >> 4) ^ crc_nib[crc & 15];
-}
-
 uint32_t crc32(uint32_t crc, const void *buf, size_t n)
 {
     const uint8_t *p = buf;

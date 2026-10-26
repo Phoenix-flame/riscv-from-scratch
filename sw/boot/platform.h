@@ -25,7 +25,12 @@
 #define RAM_BASE         0x80000000   /* RAM, size found at boot */
 #define RAM_WINDOW       0x10000000   /* the address window RAM may fill */
 
-#define UART_DIVISOR     1            /* baud = clock / (16 * divisor) */
+/* baud = clock / (16 * divisor): 1 in simulation (3.125 Mbaud, 16 clocks a
+ * bit); the board build (make boot-board) passes 27 -> 115740 baud, 115200
+ * within 0.5 % */
+#ifndef UART_DIVISOR
+#define UART_DIVISOR     1
+#endif
 
 /* RAM the firmware keeps for itself: the ROM's data, its stack, and,
  * once a payload runs, the SBI's state and trap stack. The DT marks it

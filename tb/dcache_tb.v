@@ -18,7 +18,7 @@ module dcache_tb;
 
     dcache #(.LINES(LINES), .LINE_WORDS(LW)) dut (
         .clk(clk), .rst(rst), .addr(addr), .req(req), .we(we), .wdata(wdata),
-        .rdata(rdata), .ready(ready),
+        .rdata(rdata), .ready(ready), .clean(1'b0), .clean_done(),
         .m_req(m_req), .m_we(m_we), .m_addr(m_addr), .m_wdata(m_wdata),
         .m_done(m_done), .m_rdata(m_rdata));
     mem_slow #(.WORDS(WORDS), .LINE_WORDS(LW), .LATENCY(3)) mem (

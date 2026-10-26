@@ -76,11 +76,26 @@ static int rx(void)
 
 /* receive n bytes, folding each into a running CRC as it arrives: there
  * is no flow control, so the ROM may never fall behind the line for
- * longer than the 16-byte FIFO can cover (see report()) */
+ * longer than the 16-byte FIFO can cover (see report()). So this loop
+ * touches no memory but the UART and the destination -- the UART at a
+ * constant address, the error bits and the CRC in registers: behind a
+ * direct-mapped D-cache and DDR (Step 51), any other line it used could
+ * share an index with the destination and cost a write-back plus a refill
+ * per byte. */
 static uint32_t rx_bytes(void *dst, uint32_t n, uint32_t crc)
 {
+    volatile uint32_t *const lsr = (volatile uint32_t *)(UART_BASE + (5 << 2));
+    volatile uint32_t *const rbr = (volatile uint32_t *)UART_BASE;
     uint8_t *p = dst;
-    while (n--) { *p = (uint8_t)rx(); crc = crc32_byte(crc, *p++); }
+    uint32_t err = 0, s;
+    while (n--) {
+        while (!((s = *lsr) & UART_LSR_DR)) err |= s;
+        err |= s;
+        uint8_t b = (uint8_t)*rbr;
+        *p++ = b;
+        crc = crc32_byte(crc, b);
+    }
+    line_err |= err & (UART_LSR_OE | UART_LSR_PE | UART_LSR_FE);
     return crc;
 }
 

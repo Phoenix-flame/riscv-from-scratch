@@ -54,7 +54,10 @@
 // can read the time without a trap; SoCs without one tie it to 0.
 // FENCE.I redirects to pc+4 from EX, so the instructions behind it are
 // fetched again: on a SoC whose fetch and data share one memory (soc_boot)
-// that is all it takes for freshly stored code to be executed.
+// that is all it takes for freshly stored code to be executed. Behind
+// caches (Step 51) it is not: `fencei_req` asks the SoC to write the D-cache
+// back and invalidate the I-cache, and the fence waits in EX until
+// `fencei_ack` (tie it to 1 where there is nothing to maintain).
 //
 // What a kernel expects of the hardware (Step 50). `meip` / `seip` are the
 // machine and supervisor external-interrupt lines from a PLIC. PMA_* list
@@ -114,6 +117,8 @@ module cpu_pipe_u #(
     input  wire        meip,          // external interrupts (PLIC contexts)
     input  wire        seip,
     input  wire        halt,          // freeze (SoC halt register)
+    output wire        fencei_req,    // a FENCE.I in EX wants the caches made coherent
+    input  wire        fencei_ack,    // ... done (1 = nothing to do)
 
     // ---- instruction port ----
     output wire [31:0] i_addr,        // physical
@@ -506,7 +511,11 @@ module cpu_pipe_u #(
                      v_fault_now;
     wire v_wait    = idex_valid & idex_vec & ~v_is_cfg & ~v_done &
                      (v_busy | (~exception & ~irq_pending));
-    assign ex_hold = ex_dwalk | v_wait;          // (implies idex_valid)
+    // FENCE.I waits in EX while the SoC writes back / invalidates its caches;
+    // it asks only once MEM is not waiting, so the older stores are in
+    assign fencei_req = idex_valid & idex_fencei & ~freeze;
+    wire   fencei_wait = idex_valid & idex_fencei & ~fencei_ack;
+    assign ex_hold = ex_dwalk | v_wait | fencei_wait;   // (implies idex_valid)
     assign ex_go   = idex_valid & ~freeze & ~ex_hold;
 
     wire irq_take  = irq_pending & ~exception & ~idex_is_mret & ~idex_sret & ~idex_is_csr &
