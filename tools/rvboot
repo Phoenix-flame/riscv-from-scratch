@@ -18,8 +18,8 @@
 #
 # which boots soc_boot in simulation with tb/boot_tb.v on the other end
 # of the UART, sends it a sequence of images -- two that must be
-# rejected, then three real programs in a row, with a reset between
-# each -- compares everything the machine prints with
+# rejected, then four real programs in a row, with a reset between
+# each, and a line of input for one of them -- compares everything the machine prints with
 # tb/boot_expected.txt, and has dtc decompile the device tree the ROM
 # left in RAM. Verilator is used when installed (seconds); Icarus works
 # but is slow (~10 minutes), since every byte is a real 10-bit serial
@@ -52,7 +52,7 @@ PAYLOAD_BASE = 0x80004000
 
 RTL = ["alu", "regfile", "immgen", "control", "csr_s", "branch_predictor", "tlb", "ptw",
        "zb_unit", "vec_unit", "cpu_pipe_u", "uart_tx_cfg", "uart_rx", "uart16550",
-       "clint_sifive", "soc_boot"]
+       "clint_sifive", "plic_sifive", "soc_boot"]
 
 
 def die(msg):
@@ -128,7 +128,7 @@ def check(cmd, what):
 
 
 def test_chunks():
-    """What the bench sends, one chunk per "boot> " prompt."""
+    """What the bench sends, one chunk per prompt ("boot> " or "type> ")."""
     nops = b"\x13\x00\x00\x00" * 16
     # 1. line noise, then an image whose data was corrupted on the way
     bad = bytearray(make_image(PAYLOAD_BASE, [(PAYLOAD_BASE, nops, len(nops))]))
@@ -139,9 +139,13 @@ def test_chunks():
     # 3..5. real programs: S-mode + SBI + DT, M-mode, unchanged picolibc demo
     c3 = image_from_elf(BUILD / "dtdemo.elf",
                         "console=hvc0 earlycon=sbi rvfs.ticks=3 rvfs.exit=reboot")
+    # kdemo (S-mode): access faults, A/D faults under Sv32, and a line typed
+    # at its "type> " prompt, taken as PLIC interrupts
+    kd = image_from_elf(BUILD / "kdemo.elf")
+    typed = b"hello, PLIC!\r"
     c4 = image_from_elf(BUILD / "mhello.elf", mmode=True)
     c5 = image_from_elf(BUILD / "libc_demo.elf", "rvfs.payload=libc_demo")
-    return [c1, c2, c3, c4, c5]
+    return [c1, c2, c3, kd, typed, c4, c5]
 
 
 def build_sim(sim):
@@ -166,6 +170,8 @@ VOLATILE = [
     (r"(  dtb: ).*( bytes, memory)", r"\1<...>\2"),
     (r"(  ).* bytes, structure .*, strings .*", r"\1<...> bytes, structure <...>, strings <...>"),
     (r"(  mtvec 0x)[0-9a-f]{8}(: still)", r"\1<...>\2"),
+    (r"(  segment [1-9]: ).*", r"\1<...>"),
+    (r"(  PTE now 0x)[0-9a-f]{8}(: )", r"\1<...>\2"),
 ]
 
 
@@ -190,7 +196,7 @@ def expected_matches(actual, expected):
 
 
 def cmd_test(args):
-    for f in ["rom.hex", "dtdemo.elf", "mhello.elf", "libc_demo.elf", "rvfs-soc.dtb"]:
+    for f in ["rom.hex", "dtdemo.elf", "kdemo.elf", "mhello.elf", "libc_demo.elf", "rvfs-soc.dtb"]:
         if not (BUILD / f).exists():
             die(f"build/boot/{f} missing -- run `make boot` (it builds them first)")
     sim = args.sim
@@ -217,14 +223,14 @@ def cmd_test(args):
         die("no summary from the testbench:\n" + r.stdout[-3000:] + r.stderr[-2000:])
     state, code, cycles, resets, nchunks, sent, recv, peak = m.group(1), *map(int, m.groups()[1:])
     print(f"[rvboot] {state}, exit code {code}, {cycles} cycles, {resets} resets, "
-          f"{nchunks} images sent")
+          f"{nchunks} chunks sent (images and typed input)")
     print(f"[rvboot] {sent} bytes in, {recv} bytes out; RX FIFO peak {peak} of 16")
 
     fails = []
     if state != "halted" or code != 0:
         fails.append(f"machine did not power off cleanly ({state}, exit code {code})")
-    if resets != 2 or nchunks != len(chunks):
-        fails.append(f"expected 2 resets and {len(chunks)} images, got {resets} and {nchunks}")
+    if resets != 3 or nchunks != len(chunks):
+        fails.append(f"expected 3 resets and {len(chunks)} chunks, got {resets} and {nchunks}")
     actual = log.read_text(errors="replace")
     exp_file = REPO / "tb" / "boot_expected.txt"
     if args.update:

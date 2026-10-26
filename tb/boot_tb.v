@@ -7,8 +7,9 @@
 // of the UART: it decodes everything the machine transmits (echoed, and
 // written to +LOG=), and it sends the boot images. +STREAM= is a file of
 // chunks, each a 4-byte little-endian length and that many bytes; the
-// bench waits for the ROM's "boot> " prompt before sending each chunk,
-// so chunk n goes to the n-th time the ROM asks (tools/rvboot builds it).
+// bench waits for a prompt -- the ROM's "boot> ", or a payload's "type> "
+// (Step 50's kdemo reads a line) -- before sending each chunk, so chunk n
+// goes to the n-th prompt (tools/rvboot builds the stream).
 //
 // Runs until the test device powers the machine off (or fails it), then
 // writes the DTB the ROM left at the top of RAM to +DTB= so that dtc can
@@ -63,7 +64,7 @@ module boot_tb;
                 if (logfd != 0) $fwrite(logfd, "%c", ch);
                 nrx = nrx + 1;
                 last6 = {last6[39:0], ch};
-                if (last6 == "boot> ") prompts = prompts + 1;
+                if (last6 == "boot> " || last6 == "type> ") prompts = prompts + 1;
             end
         end
     end

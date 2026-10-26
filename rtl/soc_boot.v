@@ -18,21 +18,23 @@
 //                                   0x3333 | code << 16 = fail with code,
 //                                   0x7777 = reset (back into the ROM)
 //       0x0200_0000  CLINT         "sifive,clint0"  (msip / mtimecmp / mtime)
-//       0x1000_0000  UART          "ns16550a", reg-shift 2
-//       0x8000_0000  RAM           RAM_WORDS*4 bytes, mirrored through
-//                                   the 256 MiB window (unused address
-//                                   bits are not decoded)
+//       0x0c00_0000  PLIC          "sifive,plic-1.0.0", contexts M and S (Step 50)
+//       0x1000_0000  UART          "ns16550a", reg-shift 2, PLIC source 10
+//       0x8000_0000  RAM           RAM_WORDS*4 bytes
 //
 //   * mtime wired into the core as the `time` CSR.
+//
+// Step 50 adds what a kernel expects of the hardware underneath it: the
+// PLIC, whose two contexts drive the core's MEIP and SEIP; the same memory
+// map handed to the core as PMA regions, so an access to a hole in it (or a
+// store to the ROM) is a precise access fault rather than a read of 0; and
+// a walker that faults on clear A / D bits (SVADE).
 //
 // A reset through the test device (SBI system_reset -> 0x7777) resets the
 // core and the devices but not the memories, like a warm reset: the ROM
 // starts over and can load the next program.
 //
-// Memories are ideal (combinational, always ready) as in soc_pipe_u. An
-// access to an unmapped address reads 0 and a write is dropped -- there
-// is no bus error -- and a fetch from one reads 0, an illegal
-// instruction.
+// Memories are ideal (combinational, always ready) as in soc_pipe_u.
 // =====================================================================
 `default_nettype none
 
@@ -43,7 +45,8 @@ module soc_boot #(
     parameter [15:0] UART_DIV = 16'd1,    // divisor latch at reset
     parameter TLB_ENTRIES  = 4,
     parameter BPRED        = 1,
-    parameter V_EXT        = 0            // no vectors: this platform is for scalar OSes
+    parameter V_EXT        = 0,           // no vectors: this platform is for scalar OSes
+    parameter SVADE        = 1            // page faults on clear A / D bits
 ) (
     input  wire        clk,
     input  wire        rst,
@@ -55,6 +58,14 @@ module soc_boot #(
 );
     localparam [31:0] ROM_BASE = 32'h0000_1000, ROM_BYTES = ROM_WORDS * 4;
 
+    // the memory map, as the core's PMA checker sees it: {X, W, R}
+    localparam [8*32-1:0] PMA_BASE = {32'd0, 32'd0, 32'h8000_0000, 32'h1000_0000,
+                                      32'h0c00_0000, 32'h0200_0000, 32'h0010_0000, ROM_BASE};
+    localparam [8*32-1:0] PMA_SIZE = {32'd0, 32'd0, RAM_WORDS * 32'd4, 32'h0000_0100,
+                                      32'h0400_0000, 32'h0001_0000, 32'h0000_1000, ROM_BYTES};
+    localparam [8*3-1:0]  PMA_ATTR = {3'b000, 3'b000, 3'b111, 3'b011,
+                                      3'b011, 3'b011, 3'b011, 3'b101};
+
     wire [31:0] iaddr, daddr, dwdata;
     reg  [31:0] irdata, drdata;
     wire        ireq, dreq;
@@ -63,9 +74,12 @@ module soc_boot #(
     wire [63:0] mtime;
     wire        sys_rst;                  // power-on reset, or a warm reset
 
+    wire [1:0] eip;                       // PLIC contexts: 0 = M, 1 = S
     cpu_pipe_u #(.RESET_PC(ROM_BASE), .TLB_ENTRIES(TLB_ENTRIES), .BPRED(BPRED),
-                 .V_EXT(V_EXT)) u_core (
-        .clk(clk), .rst(sys_rst), .timer_irq(timer_irq), .mtime(mtime), .halt(halted),
+                 .V_EXT(V_EXT), .SVADE(SVADE), .PMA_N(6), .PMA_BASE(PMA_BASE),
+                 .PMA_SIZE(PMA_SIZE), .PMA_ATTR(PMA_ATTR)) u_core (
+        .clk(clk), .rst(sys_rst), .timer_irq(timer_irq), .mtime(mtime),
+        .meip(eip[0]), .seip(eip[1]), .halt(halted),
         .i_addr(iaddr), .i_req(ireq), .i_rdata(irdata), .i_ready(1'b1),
         .d_addr(daddr), .d_req(dreq), .d_we(dwe), .d_wdata(dwdata),
         .d_rdata(drdata), .d_ready(1'b1),
@@ -99,6 +113,7 @@ module soc_boot #(
     wire sel_test  = (daddr[31:12] == 20'h00100);
     wire sel_clint = (daddr[31:16] == 16'h0200);
     wire sel_uart  = (daddr[31:12] == 20'h10000);
+    wire sel_plic  = (daddr[31:26] == 6'b000011);
     wire wr_any    = dreq & (|dwe);
 
     wire [$clog2(RAM_WORDS)-1:0] rw = ram_idx(daddr);
@@ -111,6 +126,7 @@ module soc_boot #(
         end
 
     wire [31:0] clint_rdata, uart_rdata;
+    wire        uart_irq;
     clint_sifive u_clint (
         .clk(clk), .rst(sys_rst), .sel(dreq & sel_clint), .we(wr_any),
         .addr(daddr[15:0]), .wdata(dwdata), .rdata(clint_rdata),
@@ -118,7 +134,13 @@ module soc_boot #(
     uart16550 #(.DEF_DIV(UART_DIV)) u_uart (
         .clk(clk), .rst(sys_rst), .sel(dreq & sel_uart), .we(wr_any),
         .addr(daddr[4:0]), .wdata(dwdata), .rdata(uart_rdata),
-        .rx(uart_rx_pin), .tx(uart_tx_pin), .irq());
+        .rx(uart_rx_pin), .tx(uart_tx_pin), .irq(uart_irq));
+
+    wire [31:0] plic_rdata;
+    plic_sifive #(.SOURCES(31), .CONTEXTS(2)) u_plic (
+        .clk(clk), .rst(sys_rst), .sel(dreq & sel_plic), .we(wr_any),
+        .addr(daddr[25:0]), .wdata(dwdata), .rdata(plic_rdata),
+        .src({21'd0, uart_irq, 9'd0}), .eip(eip));      // the UART is source 10
 
     // ---- the test device: power off (pass), fail with a code, or reset ----
     reg        halt_r;
@@ -145,7 +167,8 @@ module soc_boot #(
         drdata = sel_ram   ? dram :
                  sel_rom   ? drom :
                  sel_uart  ? uart_rdata :
-                 sel_clint ? clint_rdata : 32'd0;
+                 sel_clint ? clint_rdata :
+                 sel_plic  ? plic_rdata  : 32'd0;
 endmodule
 
 `default_nettype wire

@@ -132,7 +132,7 @@ module oz_rv_soc #(
                      .M_EXT(M_EXT), .A_EXT(A_EXT), .HAS_U(HAS_U), .HAS_S(HAS_S), .MMU(MMU),
                      .ZBA(ZBA), .ZBB(ZBB), .ZBC(ZBC), .ZBS(ZBS),
                      .V_EXT(V_EXT), .VLEN(VLEN), .ZICNTR(ZICNTR)) u_core (
-            .clk(clk), .rst(rst), .timer_irq(timer_irq), .mtime(64'd0), .halt(halted),
+            .clk(clk), .rst(rst), .timer_irq(timer_irq), .mtime(64'd0), .meip(1'b0), .seip(1'b0), .halt(halted),
             .i_addr(iaddr), .i_req(ireq), .i_rdata(irdata), .i_ready(iready),
             .d_addr(daddr), .d_req(dreq), .d_we(dwe), .d_wdata(dwdata),
             .d_rdata(drdata), .d_ready(sel_ram ? ram_ready : 1'b1),

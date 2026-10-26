@@ -48,7 +48,7 @@ module soc_pipe_c #(
     wire        timer_irq, halt_q, retire;
 
     cpu_pipe_u #(.TLB_ENTRIES(TLB_ENTRIES), .BPRED(BPRED), .VLEN(VLEN), .ZICNTR(ZICNTR)) u_core (
-        .clk(clk), .rst(rst), .timer_irq(timer_irq), .mtime(64'd0), .halt(halt_q),
+        .clk(clk), .rst(rst), .timer_irq(timer_irq), .mtime(64'd0), .meip(1'b0), .seip(1'b0), .halt(halt_q),
         .i_addr(iaddr), .i_req(ireq), .i_rdata(irdata), .i_ready(iready),
         .d_addr(daddr), .d_req(dreq), .d_we(dwe), .d_wdata(dwdata),
         .d_rdata(drdata), .d_ready(dready),

@@ -397,8 +397,9 @@ bench-quick: bench-counters ## Dhrystone + CoreMark, headline configuration only
 
 # ---- Step 49: boot ROM + device tree + SBI on a virt-style platform --------
 # make uart16550       register-level test of the ns16550a UART (Icarus)
+# make plic-sifive     register-level test of the standard PLIC (Step 50)
 # make boot            the system test: the ROM rejects two bad images, then
-#                      loads and runs three programs over the UART in a row
+#                      loads and runs four programs over the UART in a row
 #                      (tools/rvboot; Verilator when installed, else Icarus)
 # tools/rvboot image prog.elf -o prog.rvbi --bootargs "..."   your own image
 # Needs dtc (device-tree-compiler) for the DTB.
@@ -425,6 +426,9 @@ $(BB)/rom.hex: sw/boot/rom_start.S sw/boot/rom_main.c sw/boot/rom_sbi.c sw/boot/
 $(BB)/dtdemo.elf: sw/boot/dtdemo.c sw/boot/payload_start.S sw/boot/payload.ld $(BOOT_LIB) $(BOOT_HDR)
 	$(BOOT_CC) -T sw/boot/payload.ld sw/boot/payload_start.S sw/boot/dtdemo.c $(BOOT_LIB) -lgcc -o $@
 
+$(BB)/kdemo.elf: sw/boot/kdemo.c sw/boot/payload_start.S sw/boot/payload.ld $(BOOT_LIB) $(BOOT_HDR)
+	$(BOOT_CC) -T sw/boot/payload.ld sw/boot/payload_start.S sw/boot/kdemo.c $(BOOT_LIB) -lgcc -o $@
+
 $(BB)/mhello.elf: sw/boot/mhello.c sw/boot/payload_start.S sw/boot/payload.ld $(BOOT_LIB) $(BOOT_HDR)
 	$(BOOT_CC) -T sw/boot/payload.ld sw/boot/payload_start.S sw/boot/mhello.c $(BOOT_LIB) -lgcc -o $@
 
@@ -436,13 +440,16 @@ $(BB)/libc_demo.elf: sw/libc_demo.c sw/boot/sbi_libc.c sw/boot/sbi.h sw/boot/pay
 	  sw/boot/payload_start.S sw/boot/sbi_libc.c sw/libc_demo.c \
 	  -L $(PICOLIBC_LIB) -Wl,--defsym=vfprintf=__i_vfprintf -Wl,-u,__i_vfprintf -lc -lgcc -o $@
 
-.PHONY: uart16550 boot boot-sw
+.PHONY: uart16550 plic-sifive boot boot-sw
 uart16550: ## ns16550a UART: divisor, framing, FIFOs, overrun, errors, interrupts, loopback
 	$(IV) -o $(B)/uart16550_tb.vvp $(RTL_UART16550) tb/uart16550_tb.v && $(VVP) $(B)/uart16550_tb.vvp | grep -v '\$$finish'
 
-boot-sw: $(BB)/rom.hex $(BB)/dtdemo.elf $(BB)/mhello.elf $(BB)/libc_demo.elf
+plic-sifive: ## standard-layout PLIC (Step 50): M + S contexts, enables, thresholds, claim/complete
+	$(IV) -o $(B)/plic_sifive_tb.vvp rtl/plic_sifive.v tb/plic_sifive_tb.v && $(VVP) $(B)/plic_sifive_tb.vvp | grep -v '\$$finish'
 
-boot: boot-sw ## boot ROM + device tree + SBI: reject bad images, then load and run 3 programs over the UART
+boot-sw: $(BB)/rom.hex $(BB)/dtdemo.elf $(BB)/kdemo.elf $(BB)/mhello.elf $(BB)/libc_demo.elf
+
+boot: boot-sw ## boot ROM + DT + SBI + PLIC/access faults/Svade: reject bad images, then run 4 programs over the UART
 	python3 tools/rvboot test $(ARGS)
 
 # ---- Step 45: menuconfig -> a generated RISC-V project for OpenZynq ------

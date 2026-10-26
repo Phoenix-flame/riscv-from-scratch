@@ -47,6 +47,7 @@ module csr_s #(
     input  wire [31:0] pc,
     input  wire        timer_irq,
     input  wire        ext_irq,
+    input  wire        s_ext_irq,       // SEIP from an interrupt controller (Step 50)
     input  wire        instr_is_mret,
     input  wire        instr_is_sret,
     input  wire        take_trap,       // core takes a trap this cycle
@@ -93,7 +94,10 @@ module csr_s #(
     assign sret_target = sepc;
 
     // ---- live interrupt-pending: hardware lines OR software-set bits ----
+    // SEIP reads as the software bit OR the controller's line; a csrw/csrc of
+    // mip only ever reaches the software bit, as the privileged spec says
     wire [31:0] mip = (mip_sw & ((1<<1)|(1<<5)|(1<<9)))     // SSIP/STIP/SEIP (sw)
+                    | (s_ext_irq ? (1<<9)  : 0)             // SEIP (hardware)
                     | (timer_irq ? (1<<7)  : 0)             // MTIP (hardware)
                     | (ext_irq   ? (1<<11) : 0);            // MEIP (hardware)
 

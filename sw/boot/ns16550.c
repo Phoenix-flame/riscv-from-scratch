@@ -47,3 +47,10 @@ void ns16550_flush(const struct ns16550 *u)
 {
     while (!(rd(u, LSR) & UART_LSR_TEMT)) { }
 }
+
+void ns16550_rx_irq(const struct ns16550 *u, int trigger)
+{
+    unsigned t = trigger >= 14 ? 3 : trigger >= 8 ? 2 : trigger >= 4 ? 1 : 0;
+    wr(u, FCR, 0x01 | (t << 6));        /* FIFOs on (kept), trigger level */
+    wr(u, IER, 0x01);                   /* received data available / timeout */
+}
