@@ -147,6 +147,18 @@ CORES = {
         "suites": ["rv32ui", "rv32um", "rv32ua", "rv32uzba", "rv32uzbb", "rv32uzbc", "rv32uzbs"],
         "ram": "word",
     },
+    # ... and with one memory behind both caches (Step 51): fence_i then
+    # needs the D-cache written back and the I-cache invalidated.
+    "pipe_c_uni": {
+        "desc": "unified pipeline + caches, one memory behind both (as soc_boot)",
+        "rtl": COMMON_RTL + ["csr_s", "branch_predictor", "tlb", "ptw", "zb_unit", "vec_unit", "cpu_pipe_u", "icache", "dcache", "mem_slow", "line_arb"],
+        "tb": "tb/rvtest_pc_tb.v",
+        "define": "RVT_UNIFIED",
+        "march": "rv32ima_zicsr_zifencei_zba_zbb_zbc_zbs",
+        "abi": "ilp32",
+        "suites": ["rv32ui", "rv32um", "rv32ua", "rv32uzba", "rv32uzbb", "rv32uzbc", "rv32uzbs"],
+        "ram": "word",
+    },
     "pipe_c_vm": {
         "desc": "... same, test body in U with Sv32 on (identity map)",
         "rtl": COMMON_RTL + ["csr_s", "branch_predictor", "tlb", "ptw", "zb_unit", "vec_unit", "cpu_pipe_u", "icache", "dcache", "mem_slow"],
@@ -223,10 +235,11 @@ KNOWN_GAPS = {
                         "pipe_u", "pipe_u_vm", "pipe_c", "pipe_c_vm"},
         "self-modifying code. The instruction ROM is written once, at time "
         "zero; no store can ever become an instruction. (The s6 core has one "
-        "unified dual-port memory, and so does pipe_u_uni, whose fence.i "
-        "refetches -- both pass.)"),
+        "unified dual-port memory, and so do pipe_u_uni, whose fence.i "
+        "refetches, and pipe_c_uni, whose fence.i also cleans the D-cache "
+        "and invalidates the I-cache -- all three pass.)"),
     "rv32ui-ma_data": ({"mc", "mc_c", "mc_f", "mc_tlb", "s6", "s6_sf",
-                        "pipe_u", "pipe_u_vm", "pipe_u_uni", "pipe_c", "pipe_c_vm"},
+                        "pipe_u", "pipe_u_vm", "pipe_u_uni", "pipe_c", "pipe_c_vm", "pipe_c_uni"},
         "misaligned load/store. The mc cores select a sub-word inside one RAM "
         "word, so any access not aligned to its own width reads or writes the "
         "wrong bytes -- silently, with no trap. The s6 core instead raises the "

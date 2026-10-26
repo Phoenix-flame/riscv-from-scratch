@@ -25,7 +25,16 @@ char  *strstr(const char *h, const char *n);
 
 /* CRC-32 (IEEE 802.3, as zlib / Python's binascii.crc32): crc32(0, ...) to start */
 uint32_t crc32(uint32_t crc, const void *buf, size_t n);
-uint32_t crc32_byte(uint32_t crc, uint8_t b);      /* running form, pre/post-inverted */
+/* running form (pre/post-inverted): eight shift/xor steps, no table. A
+ * table lookup is a memory access, and behind a direct-mapped D-cache the
+ * table can share a line index with the buffer being received -- every
+ * byte then evicts that buffer's line (Step 51). Registers only. */
+static inline uint32_t crc32_byte(uint32_t crc, uint8_t b)
+{
+    crc ^= b;
+    for (int i = 0; i < 8; i++) crc = (crc >> 1) ^ (0xEDB88320u & -(crc & 1u));
+    return crc;
+}
 
 /* printf: %c %s %d %u %x %X %p %%, flags '-' '0', a width; 'l' is accepted */
 extern void (*lib_putc)(int c);                    /* set by the program; LF -> CRLF */

@@ -6,7 +6,7 @@
  * through the test device. The ROM knows the machine from platform.h;
  * what it hands on is the device tree, so the payload does not have to.
  *
- *   1. probe the RAM size (unused address bits alias)
+ *   1. probe the RAM size (the first offset whose load faults)
  *   2. wait on the UART for a boot image (bootimg.h): hunt for the magic,
  *      check the header CRC, check every segment lands inside the payload
  *      area BEFORE writing a byte, stream the data into place, check the
@@ -60,23 +60,7 @@ void rom_panic(uint32_t cause, uint32_t epc, uint32_t tval)
     ns16550_flush(&rom_uart);
 }
 
-/* The RAM decoder ignores the address bits above the RAM's size, so
- * RAM_BASE + size is the first offset that reads back RAM_BASE itself.
- * Only RAM_BASE is ever written (and restored). */
-static uint32_t probe_ram(void)
-{
-    volatile uint32_t *base = (volatile uint32_t *)RAM_BASE;
-    uint32_t save = *base, size;
-    for (size = 4096; size < RAM_WINDOW; size <<= 1) {
-        volatile uint32_t *alias = (volatile uint32_t *)(RAM_BASE + size);
-        *base = 0x600DF00Du;
-        if (*alias != 0x600DF00Du) continue;
-        *base = 0x0BADBEEFu;
-        if (*alias == 0x0BADBEEFu) break;
-    }
-    *base = save;
-    return size;
-}
+uint32_t probe_ram(void);                 /* rom_start.S: loads until one faults */
 
 /* ---- receiving ------------------------------------------------------- */
 static unsigned line_err;
@@ -92,11 +76,26 @@ static int rx(void)
 
 /* receive n bytes, folding each into a running CRC as it arrives: there
  * is no flow control, so the ROM may never fall behind the line for
- * longer than the 16-byte FIFO can cover (see report()) */
+ * longer than the 16-byte FIFO can cover (see report()). So this loop
+ * touches no memory but the UART and the destination -- the UART at a
+ * constant address, the error bits and the CRC in registers: behind a
+ * direct-mapped D-cache and DDR (Step 51), any other line it used could
+ * share an index with the destination and cost a write-back plus a refill
+ * per byte. */
 static uint32_t rx_bytes(void *dst, uint32_t n, uint32_t crc)
 {
+    volatile uint32_t *const lsr = (volatile uint32_t *)(UART_BASE + (5 << 2));
+    volatile uint32_t *const rbr = (volatile uint32_t *)UART_BASE;
     uint8_t *p = dst;
-    while (n--) { *p = (uint8_t)rx(); crc = crc32_byte(crc, *p++); }
+    uint32_t err = 0, s;
+    while (n--) {
+        while (!((s = *lsr) & UART_LSR_DR)) err |= s;
+        err |= s;
+        uint8_t b = (uint8_t)*rbr;
+        *p++ = b;
+        crc = crc32_byte(crc, b);
+    }
+    line_err |= err & (UART_LSR_OE | UART_LSR_PE | UART_LSR_FE);
     return crc;
 }
 
@@ -260,6 +259,7 @@ void rom_main(void)
         /* the S-level traps go straight to the payload's stvec ... */
         csr_write(medeleg, (1u << 0) | (1u << 2) | (1u << 3) | (1u << 8) |   /* misaligned fetch,
                                                          illegal, breakpoint, ecall from U */
+                           (1u << 1) | (1u << 5) | (1u << 7) |              /* access faults */
                            (1u << 12) | (1u << 13) | (1u << 15));           /* page faults */
         csr_write(mideleg, (1u << 1) | (1u << 5) | (1u << 9));              /* SSI, STI, SEI */
     }

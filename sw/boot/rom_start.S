@@ -52,6 +52,32 @@ _start:
         j       rom_fail
 
 # ---------------------------------------------------------------------
+# probe_ram(): the RAM size. Load at RAM_BASE + 4 KiB, + 8 KiB, ... until a
+# load takes an access fault -- the first address past the end of RAM --
+# with a temporary trap vector that just ends the loop. (Before Step 50
+# the RAM decoder aliased and nothing faulted; the ROM looked for the
+# address that read back RAM_BASE's own word instead.)
+# ---------------------------------------------------------------------
+        .text
+        .globl  probe_ram
+probe_ram:
+        csrr    t2, mtvec
+        la      t0, 3f
+        csrw    mtvec, t0
+        li      a0, 4096
+        li      t1, RAM_BASE
+        li      t3, RAM_WINDOW
+1:      bgeu    a0, t3, 4f
+        add     t4, t1, a0
+        lw      t5, 0(t4)                   # past the end of RAM: a load access fault
+        slli    a0, a0, 1
+        j       1b
+        .align  2
+3:                                          # (the trap lands here; a0 is the size)
+4:      csrw    mtvec, t2
+        ret
+
+# ---------------------------------------------------------------------
 # enter_payload(entry, hartid, dtb, mmode): mret into the payload with
 # the RISC-V boot convention -- a0 = hart ID, a1 = physical address of
 # the DTB, translation off, interrupts off -- in S-mode (or M if mmode).

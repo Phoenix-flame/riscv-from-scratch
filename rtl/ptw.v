@@ -22,10 +22,23 @@
 // `kill` abandons the *result* of a fetch-side walk (its instruction was
 // flushed). The walk still runs to the end of its current read so the
 // port is never dropped in the middle of a transfer.
+//
+// Step 50. SVADE=1 makes the walker honour the A and D bits the way the
+// Svade extension says -- by faulting, not by updating them: a leaf with
+// A=0 is no translation at all (a page fault, so the kernel can set A and
+// retry), and a leaf with D=0 goes into the TLB without W, so the first
+// store to the page takes a store page fault. SVADE=0 ignores them, as
+// every walker in this project did before (and as the older MMU programs,
+// whose PTEs leave A and D clear, still expect).
+// `mem_ok` says the PTE's address is readable memory (the core's PMA
+// check); if it is not, the walk ends without touching the port and
+// reports `done_af` -- an ACCESS fault for the access that needed it.
 // =====================================================================
 `default_nettype none
 
-module ptw (
+module ptw #(
+    parameter SVADE = 0
+) (
     input  wire        clk,
     input  wire        rst,
     input  wire [31:0] satp,
@@ -42,10 +55,12 @@ module ptw (
     output reg  [31:0] mem_addr,
     input  wire [31:0] mem_rdata,
     input  wire        mem_ready,
+    input  wire        mem_ok,        // mem_addr is readable (PMA)
 
     // ---- result (one-cycle pulses) ----
     output wire        done_fill,     // a valid leaf: fill side's TLB
     output wire        done_fault,    // a bad PTE: no translation exists
+    output wire        done_af,       // ... because a PTE could not be read (with done_fault)
     output reg         side_i,        // 1 = fetch-side walk, 0 = data-side
     output reg  [31:0] va,            // the VA being walked
     output wire [21:0] leaf_ppn,      // pte[31:10]
@@ -69,20 +84,25 @@ module ptw (
 
     wire [31:0] pte  = mem_rdata;
     wire pte_v = pte[0], pte_r = pte[1], pte_w = pte[2], pte_x = pte[3];
+    wire pte_a = pte[6], pte_d = pte[7];
     wire pte_leaf = pte_r | pte_x;
-    wire pte_bad  = ~pte_v | (~pte_r & pte_w);
+    wire pte_bad  = ~pte_v | (~pte_r & pte_w) | ((SVADE != 0) & pte_leaf & ~pte_a);
 
-    wire at_l1 = (state == S_L1) & mem_ready;
-    wire at_l0 = (state == S_L0) & mem_ready;
-    wire good  = (at_l1 & ~pte_bad & pte_leaf) | (at_l0 & ~pte_bad & pte_leaf);
-    wire bad   = (at_l1 & pte_bad) | (at_l0 & (pte_bad | ~pte_leaf));
+    // an unreadable PTE address ends the walk at once, without a request
+    wire noread = busy & ~mem_ok;
+    wire at_l1 = (state == S_L1) & (mem_ready | noread);
+    wire at_l0 = (state == S_L0) & (mem_ready | noread);
+    wire good  = ~noread & ((at_l1 & ~pte_bad & pte_leaf) | (at_l0 & ~pte_bad & pte_leaf));
+    wire bad   = noread | (at_l1 & pte_bad) | (at_l0 & (pte_bad | ~pte_leaf));
     wire drop  = killed | (kill & side_i);
 
     assign done_fill  = good & ~drop;
     assign done_fault = bad  & ~drop;
+    assign done_af    = noread & ~drop;
     assign leaf_ppn   = pte[31:10];
     assign leaf_super = (state == S_L1);
-    assign leaf_perm  = {pte[4], pte_x, pte_w, pte_r};
+    // Svade: no W until D is set, so the first store faults
+    assign leaf_perm  = {pte[4], pte_x, pte_w & (pte_d | (SVADE == 0)), pte_r};
 
     always @(posedge clk) begin
         if (rst) begin
@@ -95,11 +115,12 @@ module ptw (
                     if (start_d)      begin side_i <= 1'b0; va <= va_d; state <= S_L1; end
                     else if (start_i) begin side_i <= 1'b1; va <= va_i; state <= S_L1; end
                 end
-                S_L1: if (mem_ready) begin
-                    if (pte_bad | pte_leaf) state <= S_IDLE;
-                    else begin l0_ppn <= pte[31:10]; state <= S_L0; end
-                end
-                S_L0: if (mem_ready) state <= S_IDLE;
+                S_L1: if (noread) state <= S_IDLE;
+                      else if (mem_ready) begin
+                          if (pte_bad | pte_leaf) state <= S_IDLE;
+                          else begin l0_ppn <= pte[31:10]; state <= S_L0; end
+                      end
+                S_L0: if (noread | mem_ready) state <= S_IDLE;
                 default: state <= S_IDLE;
             endcase
         end

@@ -54,7 +54,21 @@
 // can read the time without a trap; SoCs without one tie it to 0.
 // FENCE.I redirects to pc+4 from EX, so the instructions behind it are
 // fetched again: on a SoC whose fetch and data share one memory (soc_boot)
-// that is all it takes for freshly stored code to be executed.
+// that is all it takes for freshly stored code to be executed. Behind
+// caches (Step 51) it is not: `fencei_req` asks the SoC to write the D-cache
+// back and invalidate the I-cache, and the fence waits in EX until
+// `fencei_ack` (tie it to 1 where there is nothing to maintain).
+//
+// What a kernel expects of the hardware (Step 50). `meip` / `seip` are the
+// machine and supervisor external-interrupt lines from a PLIC. PMA_* list
+// the platform's physical regions and what each allows (read, write,
+// execute); every access is checked against them BEFORE it is made, in the
+// stage that can still trap precisely -- a fetch in IF (it rides down as a
+// fault token, like a fetch page fault), a load / store / AMO in EX, a page-
+// table read in the walker -- so a bus error is an instruction, load or
+// store/AMO ACCESS fault (cause 1 / 5 / 7) with the address in mtval,
+// never a load that quietly reads 0. PMA_N=0 allows everything (the old
+// behaviour). SVADE=1: the walker faults on clear A / D bits (ptw.v).
 //
 // Translation. With satp.MODE=1 in S- or U-mode, IF looks up the I-TLB with
 // the PC and EX looks up the D-TLB with the effective address; a hit
@@ -89,13 +103,22 @@ module cpu_pipe_u #(
     parameter ZBS         = 1,        //            single-bit operations
     parameter V_EXT       = 1,        // vectors: Zve32x subset (Step 47)
     parameter VLEN        = 128,      //          vector register width in bits
-    parameter ZICNTR      = 1         // cycle/instret/event counters     (Step 48)
+    parameter ZICNTR      = 1,        // cycle/instret/event counters     (Step 48)
+    parameter SVADE       = 0,        // fault on clear PTE A/D bits      (Step 50)
+    parameter PMA_N       = 0,        // physical regions (max 8); 0 = all RWX
+    parameter [8*32-1:0] PMA_BASE = 0,    // region r: [base, base+size) ...
+    parameter [8*32-1:0] PMA_SIZE = 0,
+    parameter [8*3-1:0]  PMA_ATTR = 0     // ... allowing {X, W, R}
 ) (
     input  wire        clk,
     input  wire        rst,
     input  wire        timer_irq,
     input  wire [63:0] mtime,         // platform timer, read as the time CSR
+    input  wire        meip,          // external interrupts (PLIC contexts)
+    input  wire        seip,
     input  wire        halt,          // freeze (SoC halt register)
+    output wire        fencei_req,    // a FENCE.I in EX wants the caches made coherent
+    input  wire        fencei_ack,    // ... done (1 = nothing to do)
 
     // ---- instruction port ----
     output wire [31:0] i_addr,        // physical
@@ -137,13 +160,25 @@ module cpu_pipe_u #(
     wire        vm_on   = (MMU != 0) & ~in_m & satp_val[31];   // S and U are translated
 
     // ---- walker <-> TLB plumbing (driven further down) ----
-    wire        ptw_busy, ptw_fill, ptw_fault, ptw_side_i, ptw_super;
+    wire        ptw_busy, ptw_fill, ptw_fault, ptw_af, ptw_side_i, ptw_super;
     wire [31:0] ptw_va, ptw_addr;
     wire [21:0] ptw_ppn;
     wire [3:0]  ptw_perm;
     // last walk that found NO translation (so the requester can fault)
     reg         wres_valid, wres_i;
     reg  [19:0] wres_vpn;
+
+    // ---- physical memory attributes: what may be done at a physical address ----
+    function [2:0] pma;                       // {X, W, R}
+        input [31:0] a;
+        integer r;
+        begin
+            pma = (PMA_N == 0) ? 3'b111 : 3'b000;
+            for (r = 0; r < PMA_N; r = r + 1)
+                if (a - PMA_BASE[32*r +: 32] < PMA_SIZE[32*r +: 32]) pma = PMA_ATTR[3*r +: 3];
+        end
+    endfunction
+    reg wres_af;                              // ... that walk could not read a PTE
 
     // TLB flush (sfence.vma in EX)
     wire        tlb_flush_all, tlb_flush_one;
@@ -171,16 +206,21 @@ module cpu_pipe_u #(
     // fetch needs X, and U must match the mode: U runs only U pages, S never
     // executes a U page (SUM does not apply to fetch)
     wire fetch_ok = itlb_perm[2] & (in_user ? itlb_perm[3] : ~itlb_perm[3]);
-    wire if_fault = vm_on & (itlb_hit ? ~fetch_ok : if_wres_fault);
-    wire if_walk  = vm_on & ~itlb_hit & ~if_wres_fault;
+    wire if_pfault = vm_on & (itlb_hit ? ~fetch_ok : if_wres_fault);
+    wire if_walk   = vm_on & ~itlb_hit & ~if_wres_fault;
 
     assign i_addr = vm_on ? itlb_pa : pc;
+    // a fetch outside executable memory is an access fault -- and so is a
+    // fetch whose walk could not read its page table
+    wire [2:0] if_pma = pma(i_addr);
+    wire if_afault = (~if_pfault & ~if_walk & ~if_pma[2]) | (if_pfault & ~itlb_hit & wres_af);
+    wire if_fault  = if_pfault | if_afault;
     assign i_req  = ~rst & ~halt & ~if_fault & ~if_walk;
     // an instruction -- or a fault token -- is ready to enter ID
     wire if_ok = if_fault | (i_req & i_ready);
 
     reg [31:0] ifid_pc, ifid_instr, ifid_pred_target;
-    reg        ifid_valid, ifid_ifault, ifid_pred_taken;
+    reg        ifid_valid, ifid_ifault, ifid_iaf, ifid_pred_taken;
     wire       front_hold = ex_hold | load_use;
 
     // ---- branch prediction (combinational on the IF PC) ----
@@ -210,17 +250,17 @@ module cpu_pipe_u #(
     always @(posedge clk) begin
         if (rst || (flush && !freeze)) begin
             ifid_instr <= NOP; ifid_pc <= 32'd0; ifid_valid <= 1'b0; ifid_ifault <= 1'b0;
-            ifid_pred_taken <= 1'b0; ifid_pred_target <= 32'd0;
+            ifid_iaf <= 1'b0; ifid_pred_taken <= 1'b0; ifid_pred_target <= 32'd0;
         end else if (freeze || front_hold) begin
             // hold
         end else if (if_ok) begin
             ifid_instr  <= if_fault ? NOP : i_rdata;
             ifid_pc     <= pc;
             ifid_valid  <= 1'b1;
-            ifid_ifault <= if_fault;
+            ifid_ifault <= if_fault; ifid_iaf <= if_afault;
             ifid_pred_taken <= bp_taken; ifid_pred_target <= bp_target;
         end else begin                                    // I-port busy: bubble
-            ifid_instr <= NOP; ifid_valid <= 1'b0; ifid_ifault <= 1'b0;
+            ifid_instr <= NOP; ifid_valid <= 1'b0; ifid_ifault <= 1'b0; ifid_iaf <= 1'b0;
             ifid_pred_taken <= 1'b0;
         end
     end
@@ -315,7 +355,7 @@ module cpu_pipe_u #(
                idex_mem_read, idex_mem_write, idex_branch, idex_jump, idex_jalr,
                idex_is_csr, idex_is_mret, idex_ecall, idex_ebreak, idex_illegal,
                idex_sfence, idex_lr, idex_sc, idex_rmw, idex_ifault, idex_valid,
-               idex_sret, idex_pred_taken, idex_fencei;
+               idex_sret, idex_pred_taken, idex_fencei, idex_iaf;
     wire [31:0] opA, opB;               // forwarded operands (EX)
 
     always @(posedge clk) begin
@@ -330,7 +370,7 @@ module cpu_pipe_u #(
             idex_lr<=0; idex_sc<=0; idex_rmw<=0; idex_ifault<=0; idex_valid<=0;
             idex_opcode<=0; idex_funct7<=0; idex_zb<=0; idex_vec<=0;
             idex_sret<=0; idex_instr<=0; idex_pred_taken<=0; idex_pred_target<=0;
-            idex_fencei<=0;
+            idex_fencei<=0; idex_iaf<=0;
         end else if (freeze || ex_hold) begin
             // hold, but keep the operands current: a producer that leaves
             // WB while we wait must not take its forwarded value with it
@@ -348,7 +388,7 @@ module cpu_pipe_u #(
             idex_ebreak<=id_ebreak; idex_illegal<=~op_ok;
             idex_csr_addr<=ifid_instr[31:20]; idex_sfence<=id_sfence;
             idex_amo_f5<=id_amo_f5; idex_lr<=id_lr; idex_sc<=id_sc; idex_rmw<=id_rmw;
-            idex_ifault<=ifid_ifault; idex_valid<=ifid_valid;
+            idex_ifault<=ifid_ifault; idex_iaf<=ifid_iaf; idex_valid<=ifid_valid;
             idex_sret<=id_sret; idex_instr<=ifid_instr; idex_fencei<=id_fencei;
             idex_opcode<=opcode; idex_funct7<=funct7; idex_zb<=id_zb; idex_vec<=id_vec;
             idex_pred_taken<=ifid_pred_taken; idex_pred_target<=ifid_pred_target;
@@ -425,6 +465,13 @@ module cpu_pipe_u #(
     wire ex_dfault     = ex_xlate & (dtlb_hit ? ~perm_ok : ex_wres_fault);
     wire ex_dwalk      = ex_xlate & ~dtlb_hit & ~ex_wres_fault;
     wire [31:0] ex_pa  = ex_xlate ? dtlb_pa : ex_va;
+    // access faults: the walk could not read a PTE, or the physical address
+    // does not allow the access (loads need R; stores, SC and AMOs need W)
+    wire [2:0]  ex_pma = pma(ex_pa);
+    wire ex_daf_walk   = ex_dfault & ~dtlb_hit & wres_af;
+    wire ex_daf_pma    = ex_mem & ~ex_dfault & ~ex_dwalk &
+                         ((need_r & ~ex_pma[0]) | (need_w & ~ex_pma[1]));
+    wire ex_daf        = ex_daf_walk | ex_daf_pma;
     wire v_perm_ok     = user_ok & (v_mem_store ? dtlb_perm[1] : readable);
     wire v_xl_fault    = vm_on & (dtlb_hit ? ~v_perm_ok : v_wres_fault);
     wire v_xl_ok       = ~vm_on | (dtlb_hit & v_perm_ok);
@@ -460,10 +507,15 @@ module cpu_pipe_u #(
     wire [3:0]  v_fault_cause;
     wire [31:0] v_fault_tval, v_scalar, v_cfg_vl;
     wire v_fault_now = idex_vec & v_done & v_fault;
-    wire exception = idex_ifault | ex_illegal | idex_ecall | idex_ebreak | ex_dfault | v_fault_now;
+    wire exception = idex_ifault | ex_illegal | idex_ecall | idex_ebreak | ex_dfault | ex_daf_pma |
+                     v_fault_now;
     wire v_wait    = idex_valid & idex_vec & ~v_is_cfg & ~v_done &
                      (v_busy | (~exception & ~irq_pending));
-    assign ex_hold = ex_dwalk | v_wait;          // (implies idex_valid)
+    // FENCE.I waits in EX while the SoC writes back / invalidates its caches;
+    // it asks only once MEM is not waiting, so the older stores are in
+    assign fencei_req = idex_valid & idex_fencei & ~freeze;
+    wire   fencei_wait = idex_valid & idex_fencei & ~fencei_ack;
+    assign ex_hold = ex_dwalk | v_wait | fencei_wait;   // (implies idex_valid)
     assign ex_go   = idex_valid & ~freeze & ~ex_hold;
 
     wire irq_take  = irq_pending & ~exception & ~idex_is_mret & ~idex_sret & ~idex_is_csr &
@@ -474,10 +526,11 @@ module cpu_pipe_u #(
     wire csr_commit= ex_go & idex_is_csr  & ~take_trap;
     wire sfence_ex = ex_go & idex_sfence  & ~take_trap;
 
-    wire [31:0] trap_cause = idex_ifault ? 32'd12 :
+    wire [31:0] trap_cause = idex_ifault ? (idex_iaf ? 32'd1 : 32'd12) :
                              ex_illegal  ? 32'd2  :
                              idex_ecall  ? (in_user ? 32'd8 : in_m ? 32'd11 : 32'd9) :
                              idex_ebreak ? 32'd3  :
+                             ex_daf      ? (need_w ? 32'd7  : 32'd5)  :
                              ex_dfault   ? (need_w ? 32'd15 : 32'd13) :
                              v_fault_now ? {28'd0, v_fault_cause} :
                                            irq_cause;
@@ -485,14 +538,14 @@ module cpu_pipe_u #(
     wire [31:0] trap_val   = idex_ifault ? idex_pc    :
                              ex_illegal  ? idex_instr :
                              idex_ebreak ? idex_pc    :
-                             ex_dfault   ? ex_va      :
+                             (ex_dfault | ex_daf) ? ex_va :
                              v_fault_now ? v_fault_tval : 32'd0;
 
     csr_s #(.HAS_S(HAS_S), .HAS_U(HAS_U), .HAS_SATP(MMU), .HAS_V(V_EXT)) u_csr (
         .clk(clk), .rst(rst),
         .csr_addr(idex_csr_addr), .csr_funct3(idex_funct3), .csr_wsrc(csr_wsrc),
         .csr_we(csr_commit & ~v_csr_hit), .csr_rdata(csr_rdata_s),
-        .pc(idex_pc), .timer_irq(timer_irq), .ext_irq(1'b0),
+        .pc(idex_pc), .timer_irq(timer_irq), .ext_irq(meip), .s_ext_irq(seip),
         .instr_is_mret(mret_ex), .instr_is_sret(sret_ex),
         .take_trap(take_trap), .trap_cause(trap_cause), .trap_val(trap_val),
         .trap_vector(trap_vector), .mret_target(mepc_out), .sret_target(sepc_out),
@@ -729,7 +782,9 @@ module cpu_pipe_u #(
     wire v_req_g    = v_mem_req & ~ptw_busy & ~halt;
     assign v_mem_done = v_req_g & d_ready;
     assign d_addr  = ptw_busy ? ptw_addr : v_mem_active ? v_pa : exmem_addr;
-    assign d_req   = ptw_busy | v_req_g | m_req;
+    wire [2:0] ptw_pma = pma(ptw_addr);
+    wire   ptw_mem_ok = ptw_pma[0];
+    assign d_req   = (ptw_busy & ptw_mem_ok) | v_req_g | m_req;
     assign d_we    = ptw_busy ? 4'b0000 :
                      v_mem_active ? (v_mem_store ? v_mem_be : 4'b0000) :
                      (m_write ? (exmem_rmw ? 4'b1111 : st_mask) : 4'b0000);
@@ -793,25 +848,27 @@ module cpu_pipe_u #(
     wire ptw_start_d = (ex_dwalk | v_walk) & ~m_port & ~halt;
     wire ptw_start_i = if_walk & ~m_port & ~flush & ~halt;
     generate if (MMU) begin : g_ptw
-        ptw u_ptw (
+        ptw #(.SVADE(SVADE)) u_ptw (
             .clk(clk), .rst(rst), .satp(satp_val),
             .start_d(ptw_start_d), .va_d(dtlb_va),
             .start_i(ptw_start_i), .va_i(pc),
             .kill(flush),
             .busy(ptw_busy), .mem_addr(ptw_addr), .mem_rdata(d_rdata), .mem_ready(d_ready),
-            .done_fill(ptw_fill), .done_fault(ptw_fault), .side_i(ptw_side_i), .va(ptw_va),
+            .mem_ok(ptw_mem_ok),
+            .done_fill(ptw_fill), .done_fault(ptw_fault), .done_af(ptw_af),
+            .side_i(ptw_side_i), .va(ptw_va),
             .leaf_ppn(ptw_ppn), .leaf_super(ptw_super), .leaf_perm(ptw_perm)
         );
     end else begin : g_no_ptw
         assign ptw_busy = 1'b0; assign ptw_addr = 32'd0; assign ptw_fill = 1'b0;
-        assign ptw_fault = 1'b0; assign ptw_side_i = 1'b0; assign ptw_va = 32'd0;
+        assign ptw_fault = 1'b0; assign ptw_af = 1'b0; assign ptw_side_i = 1'b0; assign ptw_va = 32'd0;
         assign ptw_ppn = 22'd0; assign ptw_super = 1'b0; assign ptw_perm = 4'd0;
     end endgenerate
 
     always @(posedge clk) begin
-        if (rst || take_trap || sfence_ex) wres_valid <= 1'b0;
+        if (rst || take_trap || sfence_ex) begin wres_valid <= 1'b0; wres_af <= 1'b0; end
         else if (ptw_fault) begin
-            wres_valid <= 1'b1; wres_i <= ptw_side_i; wres_vpn <= ptw_va[31:12];
+            wres_valid <= 1'b1; wres_i <= ptw_side_i; wres_vpn <= ptw_va[31:12]; wres_af <= ptw_af;
         end else if (ptw_fill && ptw_va[31:12] == wres_vpn && ptw_side_i == wres_i)
             wres_valid <= 1'b0;
     end

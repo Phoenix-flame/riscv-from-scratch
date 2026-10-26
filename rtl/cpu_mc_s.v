@@ -123,7 +123,7 @@ module cpu_mc_s #(
         .csr_addr(csr_addr), .csr_funct3(funct3), .csr_wsrc(csr_wsrc),
         .csr_we(is_csr & in_exec & ~take_trap),
         .csr_rdata(csr_rdata),
-        .pc(pc), .timer_irq(timer_irq), .ext_irq(ext_irq),
+        .pc(pc), .timer_irq(timer_irq), .ext_irq(ext_irq), .s_ext_irq(1'b0),
         .instr_is_mret(is_mret & in_exec & ~take_trap),
         .instr_is_sret(is_sret & in_exec & ~take_trap),
         .take_trap(take_trap & in_exec),

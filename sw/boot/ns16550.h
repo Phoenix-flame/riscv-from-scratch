@@ -23,6 +23,8 @@ int  ns16550_getc(const struct ns16550 *u);                     /* -1: nothing w
 int  ns16550_lsr(const struct ns16550 *u);                      /* reading clears OE/PE/FE */
 int  ns16550_rbr(const struct ns16550 *u);                      /* pop, without looking */
 void ns16550_flush(const struct ns16550 *u);                    /* until the line is idle */
+/* interrupt when `trigger` (1, 4, 8, 14) bytes are waiting, or on a receive timeout */
+void ns16550_rx_irq(const struct ns16550 *u, int trigger);
 
 #define UART_LSR_DR    0x01
 #define UART_LSR_OE    0x02

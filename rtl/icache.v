@@ -14,8 +14,10 @@
 // the cache then simply looks the new address up.
 //
 // Instructions are read-only here, so there is no write path and no
-// dirty state; fence.i coherence with the D-side is out of scope (the
-// instruction memory is write-once, as on every core in this project).
+// dirty state. `inval` (Step 51, for FENCE.I on a memory shared with the
+// D-side) clears every line in one cycle; a refill already in flight then
+// completes but is not installed, since it may have read memory before
+// the D-cache's write-back reached it.
 // =====================================================================
 `default_nettype none
 
@@ -30,6 +32,7 @@ module icache #(
     input  wire                     req,
     output wire [31:0]              rdata,
     output wire                     ready,
+    input  wire                     inval,       // drop every line (FENCE.I)
     // ---- memory side ----
     output reg                      m_req,
     output wire [31:0]              m_addr,
@@ -50,7 +53,7 @@ module icache #(
     wire [32*LINE_WORDS-1:0] line = lines[idx];
     wire hit = valid[idx] & (tags[idx] == tag);
 
-    reg        filling;
+    reg        filling, drop;
     reg [31:0] miss_addr;
     assign m_addr = {miss_addr[31:OFF], {OFF{1'b0}}};
     assign rdata  = line[32*word +: 32];
@@ -61,8 +64,12 @@ module icache #(
 
     always @(posedge clk) begin
         if (rst) begin
-            valid <= {LINES{1'b0}}; filling <= 1'b0; m_req <= 1'b0;
+            valid <= {LINES{1'b0}}; filling <= 1'b0; m_req <= 1'b0; drop <= 1'b0;
             miss_addr <= 32'd0; n_hit <= 0; n_miss <= 0;
+        end else if (inval) begin
+            valid <= {LINES{1'b0}};
+            if (filling) drop <= ~m_done;
+            if (filling & m_done) begin m_req <= 1'b0; filling <= 1'b0; end
         end else if (!filling) begin
             if (req & hit) n_hit <= n_hit + 1;
             if (req & ~hit) begin
@@ -71,8 +78,8 @@ module icache #(
         end else if (m_done) begin
             lines[miss_addr[OFF+IDX-1:OFF]] <= m_rdata;
             tags [miss_addr[OFF+IDX-1:OFF]] <= miss_addr[31:OFF+IDX];
-            valid[miss_addr[OFF+IDX-1:OFF]] <= 1'b1;
-            m_req <= 1'b0; filling <= 1'b0;
+            valid[miss_addr[OFF+IDX-1:OFF]] <= ~drop;
+            m_req <= 1'b0; filling <= 1'b0; drop <= 1'b0;
         end
     end
 endmodule

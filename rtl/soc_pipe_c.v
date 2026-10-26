@@ -48,7 +48,7 @@ module soc_pipe_c #(
     wire        timer_irq, halt_q, retire;
 
     cpu_pipe_u #(.TLB_ENTRIES(TLB_ENTRIES), .BPRED(BPRED), .VLEN(VLEN), .ZICNTR(ZICNTR)) u_core (
-        .clk(clk), .rst(rst), .timer_irq(timer_irq), .mtime(64'd0), .halt(halt_q),
+        .clk(clk), .rst(rst), .timer_irq(timer_irq), .mtime(64'd0), .meip(1'b0), .seip(1'b0), .fencei_req(), .fencei_ack(1'b1), .halt(halt_q),
         .i_addr(iaddr), .i_req(ireq), .i_rdata(irdata), .i_ready(iready),
         .d_addr(daddr), .d_req(dreq), .d_we(dwe), .d_wdata(dwdata),
         .d_rdata(drdata), .d_ready(dready),
@@ -80,13 +80,13 @@ module soc_pipe_c #(
     wire [31:0] ram_rdata; wire ram_ready;
     generate if (CACHE_EN) begin : g_cache
         icache #(.LINES(I_LINES), .LINE_WORDS(LINE_WORDS)) u_icache (
-            .clk(clk), .rst(rst), .addr(iaddr), .req(ireq), .rdata(irdata), .ready(iready),
+            .clk(clk), .rst(rst), .addr(iaddr), .req(ireq), .rdata(irdata), .ready(iready), .inval(1'b0),
             .m_req(im_req), .m_addr(im_addr), .m_done(im_done), .m_rdata(im_rdata));
         assign im_we = 1'b0; assign im_mask = 4'b0; assign im_wdata = {LW{1'b0}};
 
         dcache #(.LINES(D_LINES), .LINE_WORDS(LINE_WORDS)) u_dcache (
             .clk(clk), .rst(rst), .addr(daddr), .req(dreq & sel_ram), .we(dwe), .wdata(dwdata),
-            .rdata(ram_rdata), .ready(ram_ready),
+            .rdata(ram_rdata), .ready(ram_ready), .clean(1'b0), .clean_done(),
             .m_req(dm_req), .m_we(dm_we), .m_addr(dm_addr), .m_wdata(dm_wdata),
             .m_done(dm_done), .m_rdata(dm_rdata));
         assign dm_mask = 4'b1111;

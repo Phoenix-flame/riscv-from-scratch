@@ -397,8 +397,12 @@ bench-quick: bench-counters ## Dhrystone + CoreMark, headline configuration only
 
 # ---- Step 49: boot ROM + device tree + SBI on a virt-style platform --------
 # make uart16550       register-level test of the ns16550a UART (Icarus)
+# make plic-sifive     register-level test of the standard PLIC (Step 50)
+# make axi4-line       the AXI4 line master against a stalling slave (Step 51)
+# make boot-board      the board configuration in simulation (Step 51)
+# make boot-synth      Yosys synthesis of fpga_top_boot for the Zynq-7010
 # make boot            the system test: the ROM rejects two bad images, then
-#                      loads and runs three programs over the UART in a row
+#                      loads and runs four programs over the UART in a row
 #                      (tools/rvboot; Verilator when installed, else Icarus)
 # tools/rvboot image prog.elf -o prog.rvbi --bootargs "..."   your own image
 # Needs dtc (device-tree-compiler) for the DTB.
@@ -425,6 +429,9 @@ $(BB)/rom.hex: sw/boot/rom_start.S sw/boot/rom_main.c sw/boot/rom_sbi.c sw/boot/
 $(BB)/dtdemo.elf: sw/boot/dtdemo.c sw/boot/payload_start.S sw/boot/payload.ld $(BOOT_LIB) $(BOOT_HDR)
 	$(BOOT_CC) -T sw/boot/payload.ld sw/boot/payload_start.S sw/boot/dtdemo.c $(BOOT_LIB) -lgcc -o $@
 
+$(BB)/kdemo.elf: sw/boot/kdemo.c sw/boot/payload_start.S sw/boot/payload.ld $(BOOT_LIB) $(BOOT_HDR)
+	$(BOOT_CC) -T sw/boot/payload.ld sw/boot/payload_start.S sw/boot/kdemo.c $(BOOT_LIB) -lgcc -o $@
+
 $(BB)/mhello.elf: sw/boot/mhello.c sw/boot/payload_start.S sw/boot/payload.ld $(BOOT_LIB) $(BOOT_HDR)
 	$(BOOT_CC) -T sw/boot/payload.ld sw/boot/payload_start.S sw/boot/mhello.c $(BOOT_LIB) -lgcc -o $@
 
@@ -436,14 +443,46 @@ $(BB)/libc_demo.elf: sw/libc_demo.c sw/boot/sbi_libc.c sw/boot/sbi.h sw/boot/pay
 	  sw/boot/payload_start.S sw/boot/sbi_libc.c sw/libc_demo.c \
 	  -L $(PICOLIBC_LIB) -Wl,--defsym=vfprintf=__i_vfprintf -Wl,-u,__i_vfprintf -lc -lgcc -o $@
 
-.PHONY: uart16550 boot boot-sw
+# The board build (Step 51): the same ROM and DT for 115200 baud from the
+# 50 MHz PL oscillator (UART divisor 27), and fpga_top_boot around them.
+BBB = $(BB)/board
+$(shell mkdir -p $(BBB))
+$(BBB)/rvfs-soc.dtb: sw/boot/rvfs-soc.dts sw/boot/platform.h
+	cpp -nostdinc -undef -x assembler-with-cpp -DUART_DIVISOR=27 -I sw/boot $< | dtc -q -I dts -O dtb -o $@ -
+
+$(BBB)/rom.hex: sw/boot/rom_start.S sw/boot/rom_main.c sw/boot/rom_sbi.c sw/boot/rom.h sw/boot/rom.ld \
+               sw/boot/bootimg.h $(BOOT_LIB) $(BOOT_HDR) $(BBB)/rvfs-soc.dtb sw/bin2hex.py
+	$(BOOT_CC) -DUART_DIVISOR=27 -DDTB_PATH='"$(BBB)/rvfs-soc.dtb"' -T sw/boot/rom.ld sw/boot/rom_start.S \
+	  sw/boot/rom_main.c sw/boot/rom_sbi.c $(BOOT_LIB) -lgcc -o $(BBB)/rom.elf
+	riscv64-unknown-elf-objcopy -O binary $(BBB)/rom.elf $(BBB)/rom.bin
+	python3 sw/bin2hex.py $(BBB)/rom.bin > $@
+
+RTL_BOOT = rtl/alu.v rtl/regfile.v rtl/immgen.v rtl/control.v rtl/csr_s.v rtl/branch_predictor.v \
+           rtl/tlb.v rtl/ptw.v rtl/zb_unit.v rtl/vec_unit.v rtl/cpu_pipe_u.v rtl/uart_tx_cfg.v \
+           rtl/uart_rx.v rtl/uart16550.v rtl/clint_sifive.v rtl/plic_sifive.v rtl/icache.v \
+           rtl/dcache.v rtl/line_arb.v rtl/oz/oz_burst_mem.v rtl/axi4_line_master.v rtl/soc_boot.v
+
+.PHONY: uart16550 plic-sifive axi4-line boot boot-sw boot-board boot-synth
 uart16550: ## ns16550a UART: divisor, framing, FIFOs, overrun, errors, interrupts, loopback
 	$(IV) -o $(B)/uart16550_tb.vvp $(RTL_UART16550) tb/uart16550_tb.v && $(VVP) $(B)/uart16550_tb.vvp | grep -v '\$$finish'
 
-boot-sw: $(BB)/rom.hex $(BB)/dtdemo.elf $(BB)/mhello.elf $(BB)/libc_demo.elf
+plic-sifive: ## standard-layout PLIC (Step 50): M + S contexts, enables, thresholds, claim/complete
+	$(IV) -o $(B)/plic_sifive_tb.vvp rtl/plic_sifive.v tb/plic_sifive_tb.v && $(VVP) $(B)/plic_sifive_tb.vvp | grep -v '\$$finish'
 
-boot: boot-sw ## boot ROM + device tree + SBI: reject bad images, then load and run 3 programs over the UART
+axi4-line: ## AXI4 burst master (Step 51): cache lines vs a stalling AXI slave, error responses, protocol checks
+	$(IV) -o $(B)/axi4_line_tb.vvp rtl/axi4_line_master.v tb/axi4_mem.v tb/axi4_line_tb.v && $(VVP) $(B)/axi4_line_tb.vvp | grep -v '\$$finish'
+
+boot-sw: $(BB)/rom.hex $(BB)/dtdemo.elf $(BB)/kdemo.elf $(BB)/mhello.elf $(BB)/libc_demo.elf
+
+boot: boot-sw ## boot ROM + DT + SBI + PLIC/faults/Svade, on ideal memory, caches + BRAM, and caches + DDR (AXI4)
 	python3 tools/rvboot test $(ARGS)
+
+boot-board: boot-sw $(BBB)/rom.hex ## the board build (115200 baud, 128 KiB BRAM) in simulation: banner, a bad image, libc_demo
+	python3 tools/rvboot test --memsys board $(ARGS)
+
+boot-synth: $(BBB)/rom.hex ## Yosys: fpga_top_boot for the Zynq-7010 (LUTs, FFs, block RAMs)
+	yosys -q -p "read_verilog $(RTL_BOOT) rtl/fpga_top_boot.v; synth_xilinx -flatten -abc9 -arch xc7 -top fpga_top_boot; tee -o $(BBB)/synth.txt stat"
+	@grep -E "LUT[1-6]|FD[RSCE]|RAMB|CARRY4|RAM32|RAM64" $(BBB)/synth.txt
 
 # ---- Step 45: menuconfig -> a generated RISC-V project for OpenZynq ------
 # make menuconfig                         edit .config (curses menu, Kconfig)

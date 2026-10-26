@@ -15,6 +15,11 @@
 //               install it clean, and the retried access hits. A write
 //               miss allocates the line the same way (write-allocate).
 //
+// `clean` (Step 51, for FENCE.I on a memory shared with the I-side)
+// writes every dirty line back, one burst each, and keeps them valid and
+// now clean; `clean_done` stays up while `clean` does once that is over.
+// It starts only between accesses, never in the middle of a miss.
+//
 // Memory only ever sees whole-line bursts, which is what a DDR
 // controller wants. The core holds its request (address, mask, data)
 // until `ready`, so nothing needs to be latched on the core side.
@@ -35,6 +40,8 @@ module dcache #(
     input  wire [31:0]              wdata,
     output wire [31:0]              rdata,
     output wire                     ready,
+    input  wire                     clean,       // write back every dirty line (FENCE.I)
+    output wire                     clean_done,
     // ---- memory side ----
     output reg                      m_req,
     output reg                      m_we,
@@ -46,7 +53,7 @@ module dcache #(
     localparam OFF = $clog2(LINE_WORDS) + 2;
     localparam IDX = $clog2(LINES);
     localparam TAG = 32 - OFF - IDX;
-    localparam S_IDLE=2'd0, S_WB=2'd1, S_FILL=2'd2;
+    localparam S_IDLE=2'd0, S_WB=2'd1, S_FILL=2'd2, S_CLEAN=2'd3;
 
     reg [LINES-1:0]          valid, dirty;
     reg [TAG-1:0]            tags  [0:LINES-1];
@@ -59,9 +66,12 @@ module dcache #(
     wire hit = valid[idx] & (tags[idx] == tag);
 
     reg [1:0] state;
+    reg [IDX:0] ci;                              // clean: the line being looked at
+    reg         cwb, cleaned;                    // ... being written back; all done
     assign rdata   = line[32*word +: 32];
     assign ready   = req & hit & (state == S_IDLE);
-    assign m_wdata = line;                       // the victim, during WB
+    assign m_wdata = (state == S_CLEAN) ? lines[ci[IDX-1:0]] : line;   // the victim
+    assign clean_done = clean & cleaned;
 
     // write-hit merge: the addressed word with the masked bytes replaced
     wire [31:0] old_w = line[32*word +: 32];
@@ -76,9 +86,13 @@ module dcache #(
         if (rst) begin
             valid <= {LINES{1'b0}}; dirty <= {LINES{1'b0}};
             state <= S_IDLE; m_req <= 1'b0; m_we <= 1'b0; m_addr <= 32'd0;
-            n_hit <= 0; n_miss <= 0; n_wb <= 0;
-        end else case (state)
-            S_IDLE: if (req) begin
+            n_hit <= 0; n_miss <= 0; n_wb <= 0; ci <= 0; cwb <= 1'b0; cleaned <= 1'b0;
+        end else begin
+          if (!clean) cleaned <= 1'b0;
+          case (state)
+            S_IDLE: if (clean && !cleaned && !req) begin
+                ci <= 0; cwb <= 1'b0; state <= S_CLEAN;
+            end else if (req) begin
                 if (hit) begin
                     n_hit <= n_hit + 1;
                     if (|we) begin
@@ -108,8 +122,18 @@ module dcache #(
                 valid[idx] <= 1'b1;   dirty[idx] <= 1'b0;
                 m_req <= 1'b0; state <= S_IDLE;
             end
-            default: state <= S_IDLE;
-        endcase
+            S_CLEAN: if (!cwb) begin
+                if (ci == LINES) begin cleaned <= 1'b1; state <= S_IDLE; end
+                else if (valid[ci[IDX-1:0]] & dirty[ci[IDX-1:0]]) begin
+                    m_req <= 1'b1; m_we <= 1'b1; cwb <= 1'b1; n_wb <= n_wb + 1;
+                    m_addr <= {tags[ci[IDX-1:0]], ci[IDX-1:0], {OFF{1'b0}}};
+                end else ci <= ci + 1'b1;
+            end else if (m_done) begin
+                dirty[ci[IDX-1:0]] <= 1'b0;
+                m_req <= 1'b0; m_we <= 1'b0; cwb <= 1'b0; ci <= ci + 1'b1;
+            end
+          endcase
+        end
     end
 endmodule
 
