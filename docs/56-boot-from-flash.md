@@ -104,15 +104,19 @@ The checks are those of `make linux-uboot`, plus the ROM's two lines
 above:
 
 ```
-[rvlinux] halted, exit code 0, 598,690,566 cycles in all
-[rvlinux]   241,208,579 cycles: the ROM checking and copying the image (3,232,060 bytes)
-[rvlinux]   the shell prompt at cycle 547,504,135 (from reset, nothing sent)
+[rvlinux] halted, exit code 0, 685,786,712 cycles in all
+[rvlinux]   239,557,999 cycles: the ROM checking and copying the image (3,232,060 bytes)
+[rvlinux]   the shell prompt at cycle 634,731,014 (from reset, nothing sent)
 [rvlinux]   7 commands typed; 22 output checks
 LINUX: ALL PASS
 ```
 
-That's the simulator configuration (`rvlinux run --frommem --uboot`). The
-board configuration's run is recorded in the PR.
+The shell prompt comes **12.7 s at 50 MHz after the RISC-V leaves
+reset**. Of that, 4.8 s is the ROM's check and copy, 2 s is U-Boot's
+autoboot delay, and the rest is U-Boot and Linux. Before it, the FSBL's
+flash reads are an estimated 4 s. The simulator configuration
+(`rvlinux run --frommem --uboot`, 3 Mbaud, no autoboot delay) passes the
+same checks, with the shell at cycle 547.5M.
 
 `make boot` and `make boot-board` pass unchanged on all six memory
 configurations. None of them has anything at `0x8300_0000` (RAM there is
