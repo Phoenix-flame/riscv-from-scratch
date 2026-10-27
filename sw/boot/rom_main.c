@@ -259,6 +259,8 @@ void rom_main(void)
         /* the S-level traps go straight to the payload's stvec ... */
         csr_write(medeleg, (1u << 0) | (1u << 2) | (1u << 3) | (1u << 8) |   /* misaligned fetch,
                                                          illegal, breakpoint, ecall from U */
+                           (1u << 4) | (1u << 6) |              /* misaligned load, store/AMO:
+                                                         the kernel emulates them (Step 52) */
                            (1u << 1) | (1u << 5) | (1u << 7) |              /* access faults */
                            (1u << 12) | (1u << 13) | (1u << 15));           /* page faults */
         csr_write(mideleg, (1u << 1) | (1u << 5) | (1u << 9));              /* SSI, STI, SEI */

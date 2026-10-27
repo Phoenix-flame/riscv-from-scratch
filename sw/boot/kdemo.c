@@ -3,8 +3,8 @@
  * ---------------------------------------------------------------------
  * dtdemo (Step 49) showed a program finding the machine through its
  * device tree. This one, also entered in S-mode, exercises the three
- * things Step 50 adds underneath a kernel -- and handles each the way
- * Linux's trap code does:
+ * things Step 50 adds underneath a kernel, and the misaligned traps of
+ * Step 52 -- and handles each the way Linux's trap code does:
  *
  *   1. ACCESS FAULTS. A load from a hole in the memory map, a store to the
  *      ROM, an AMO to a hole, a jump into a hole: each traps precisely,
@@ -21,6 +21,14 @@
  *      the line typed at it as supervisor external interrupts -- claim,
  *      drain the UART's FIFO, complete -- 4 bytes at a time plus one
  *      receive timeout for the tail.
+ *   4. MISALIGNED ACCESSES (Step 52). A word load at buf+1, a halfword
+ *      store at buf+3, ...: each traps (scause 4 / 6, stval = the address)
+ *      and a trap entry that saves all 32 registers -- what a kernel's
+ *      does -- lets a C handler emulate it with byte accesses and write
+ *      the loaded value into rd. A misaligned AMO, LR or SC is reported,
+ *      not emulated (Linux sends SIGBUS: it cannot be made atomic). A jump
+ *      or branch to a target that is not 4-byte aligned traps on the jump
+ *      (scause 0, stval = the target) without writing rd.
  *
  * Nothing is hardcoded but the two test addresses (a hole, and the boot
  * ROM, which the tree does not describe): RAM, PLIC and UART come from it.
@@ -126,6 +134,148 @@ static void access_faults(uint32_t rom)
     (void)w;
     printf("  %-34s %s\n", "load from the ROM: no trap", n_traps == 0 ? "ok" : "FAIL");
     if (n_traps) fails++;
+}
+
+/* ---- 4. misaligned accesses: trap and emulate ------------------------- */
+/* A kernel-style trap entry: all 32 registers in a frame on the stack, so
+ * the handler can read rs2 and write rd by number. frame[2] is the sp of
+ * the trapping code; the handler never writes it. */
+__asm__(".text\n.align 2\n"
+        "ma_trap:\n"
+        "  addi sp, sp, -128\n"
+        "  sw x1, 4(sp)\n  sw x3, 12(sp)\n  sw x4, 16(sp)\n  sw x5, 20(sp)\n"
+        "  sw x6, 24(sp)\n  sw x7, 28(sp)\n  sw x8, 32(sp)\n  sw x9, 36(sp)\n"
+        "  sw x10, 40(sp)\n sw x11, 44(sp)\n sw x12, 48(sp)\n sw x13, 52(sp)\n"
+        "  sw x14, 56(sp)\n sw x15, 60(sp)\n sw x16, 64(sp)\n sw x17, 68(sp)\n"
+        "  sw x18, 72(sp)\n sw x19, 76(sp)\n sw x20, 80(sp)\n sw x21, 84(sp)\n"
+        "  sw x22, 88(sp)\n sw x23, 92(sp)\n sw x24, 96(sp)\n sw x25, 100(sp)\n"
+        "  sw x26, 104(sp)\n sw x27, 108(sp)\n sw x28, 112(sp)\n sw x29, 116(sp)\n"
+        "  sw x30, 120(sp)\n sw x31, 124(sp)\n"
+        "  addi t0, sp, 128\n  sw t0, 8(sp)\n  sw zero, 0(sp)\n"
+        "  mv a0, sp\n  call ma_handle\n"
+        "  lw x1, 4(sp)\n  lw x3, 12(sp)\n  lw x4, 16(sp)\n  lw x5, 20(sp)\n"
+        "  lw x6, 24(sp)\n  lw x7, 28(sp)\n  lw x8, 32(sp)\n  lw x9, 36(sp)\n"
+        "  lw x10, 40(sp)\n lw x11, 44(sp)\n lw x12, 48(sp)\n lw x13, 52(sp)\n"
+        "  lw x14, 56(sp)\n lw x15, 60(sp)\n lw x16, 64(sp)\n lw x17, 68(sp)\n"
+        "  lw x18, 72(sp)\n lw x19, 76(sp)\n lw x20, 80(sp)\n lw x21, 84(sp)\n"
+        "  lw x22, 88(sp)\n lw x23, 92(sp)\n lw x24, 96(sp)\n lw x25, 100(sp)\n"
+        "  lw x26, 104(sp)\n lw x27, 108(sp)\n lw x28, 112(sp)\n lw x29, 116(sp)\n"
+        "  lw x30, 120(sp)\n lw x31, 124(sp)\n"
+        "  addi sp, sp, 128\n"
+        "  sret\n");
+void ma_trap(void);
+void ma_handle(uint32_t *frame);
+
+static volatile uint32_t n_emulated;
+
+/* what Linux's handle_misaligned_load / _store do, for RV32I: decode the
+ * instruction at sepc, move the bytes one at a time, step past it */
+void ma_handle(uint32_t *frame)
+{
+    uint32_t cause = csr_read(scause), addr = csr_read(stval), pc = csr_read(sepc);
+    uint32_t insn = *(volatile uint32_t *)pc;
+    uint32_t op = insn & 0x7f, f3 = (insn >> 12) & 7, rd = (insn >> 7) & 31, rs2 = (insn >> 20) & 31;
+    volatile uint8_t *p = (volatile uint8_t *)addr;
+    n_traps++;
+    last_cause = cause;
+    last_tval = addr;
+    if (cause == 4 && op == 0x03) {                         /* lh lw lhu */
+        uint32_t n = (f3 & 3) == 1 ? 2 : 4, v = 0;
+        for (uint32_t i = 0; i < n; i++) v |= (uint32_t)p[i] << (8 * i);
+        if (f3 == 1) v = (uint32_t)(int32_t)(int16_t)v;     /* lh sign-extends */
+        if (rd) frame[rd] = v;
+        n_emulated++;
+    } else if (cause == 6 && op == 0x23) {                  /* sh sw */
+        uint32_t n = f3 == 1 ? 2 : 4, v = frame[rs2];
+        for (uint32_t i = 0; i < n; i++) p[i] = (uint8_t)(v >> (8 * i));
+        n_emulated++;
+    } else if (cause != 0 && cause != 4 && cause != 6) {
+        printf("kdemo: unexpected trap, scause 0x%x sepc 0x%08x stval 0x%08x\n", cause, pc, addr);
+        sbi_system_reset(SBI_SRST_SHUTDOWN, SBI_SRST_REASON_FAILURE);
+    }
+    /* an AMO / LR / SC is not emulated (Linux: SIGBUS), nor is a jump to a
+     * bad target -- the test just steps over the instruction */
+    csr_write(sepc, pc + 4);
+}
+
+static uint8_t buf[16] __attribute__((aligned(4)));
+
+static void reset_buf(void) { for (int i = 0; i < 16; i++) buf[i] = (uint8_t)(0x10 + i); }
+
+/* one trap at buf+off with this cause, and (for an emulated access) the value */
+static void expect_ma(uint32_t cause, uint32_t off, int emulated, int ok, const char *what)
+{
+    printf("  %-28s scause %u stval buf+%u", what, last_cause, last_tval - (uint32_t)buf);
+    verdict(n_traps == 1 && last_cause == cause && last_tval == (uint32_t)buf + off &&
+            n_emulated == (uint32_t)emulated && ok);
+    n_traps = 0; n_emulated = 0; last_cause = 0; last_tval = 0;
+}
+
+static void misaligned(void)
+{
+    printf("\n[misaligned: trap and emulate]\n");
+    csr_write(stvec, (uint32_t)&ma_trap);
+    uint8_t *b = buf;
+    uint32_t v;
+
+    reset_buf();
+    __asm__ volatile("lw %0, 1(%1)" : "=r"(v) : "r"(b) : "memory");
+    expect_ma(4, 1, 1, v == 0x14131211u, "lw  at buf+1 -> 0x14131211");
+    __asm__ volatile("lw %0, 3(%1)" : "=r"(v) : "r"(b) : "memory");
+    expect_ma(4, 3, 1, v == 0x16151413u, "lw  at buf+3 -> 0x16151413");
+    buf[6] = 0x80;
+    __asm__ volatile("lh %0, 5(%1)" : "=r"(v) : "r"(b) : "memory");
+    expect_ma(4, 5, 1, v == 0xffff8015u, "lh  at buf+5 -> 0xffff8015");
+    __asm__ volatile("lhu %0, 5(%1)" : "=r"(v) : "r"(b) : "memory");
+    expect_ma(4, 5, 1, v == 0x00008015u, "lhu at buf+5 -> 0x00008015");
+
+    reset_buf();
+    __asm__ volatile("sw %0, 2(%1)" :: "r"(0xa1b2c3d4u), "r"(b) : "memory");
+    expect_ma(6, 2, 1, buf[1] == 0x11 && buf[2] == 0xd4 && buf[3] == 0xc3 &&
+                       buf[4] == 0xb2 && buf[5] == 0xa1 && buf[6] == 0x16,
+              "sw  at buf+2, bytes ok");
+    __asm__ volatile("sh %0, 7(%1)" :: "r"(0xbeefu), "r"(b) : "memory");
+    expect_ma(6, 7, 1, buf[6] == 0x16 && buf[7] == 0xef && buf[8] == 0xbe && buf[9] == 0x19,
+              "sh  at buf+7, bytes ok");
+
+    /* atomics: trap, not emulated -- and memory is untouched */
+    reset_buf();
+    __asm__ volatile("amoadd.w %0, %2, (%1)" : "=r"(v) : "r"(b + 2), "r"(1) : "memory");
+    expect_ma(6, 2, 0, buf[2] == 0x12 && buf[5] == 0x15, "amoadd.w at buf+2");
+    __asm__ volatile("lr.w %0, (%1)" : "=r"(v) : "r"(b + 1) : "memory");
+    expect_ma(4, 1, 0, 1, "lr.w at buf+1");
+    v = 7;
+    __asm__ volatile("sc.w %0, %2, (%1)" : "+r"(v) : "r"(b + 3), "r"(0) : "memory");
+    expect_ma(6, 3, 0, v == 7 && buf[3] == 0x13, "sc.w at buf+3, rd kept");
+
+    /* a jump / branch to a target that is not 4-byte aligned */
+    uint32_t target, rd = 0x5a5a5a5au;
+    __asm__ volatile("la   t0, 1f\n\t"
+                     "addi %1, t0, 2\n\t"
+                     "jalr %0, 2(t0)\n"
+                     "1:  nop" : "+r"(rd), "=&r"(target) :: "t0", "memory");
+    printf("  %-28s scause %u stval %s", "jalr to 1f+2, rd kept", last_cause,
+           last_tval == target ? "= target" : "!= target");
+    verdict(n_traps == 1 && last_cause == 0 && last_tval == target && rd == 0x5a5a5a5au);
+    n_traps = 0;
+    __asm__ volatile("la   %0, 1f + 2\n\t"
+                     "beq  zero, zero, 1f + 2\n"
+                     "1:  nop\n\t"
+                     "nop" : "=&r"(target) :: "memory");
+    printf("  %-28s scause %u stval %s", "beq to 1f+2", last_cause,
+           last_tval == target ? "= target" : "!= target");
+    verdict(n_traps == 1 && last_cause == 0 && last_tval == target);
+    n_traps = 0;
+
+    /* aligned, and a byte anywhere: no trap */
+    reset_buf();
+    __asm__ volatile("lw  %0, 4(%1)\n\t"
+                     "lhu t0, 6(%1)\n\t"
+                     "lbu t0, 7(%1)\n\t"
+                     "sb  t0, 9(%1)" : "=r"(v) : "r"(b) : "t0", "memory");
+    printf("  %-28s no trap", "aligned lw/lhu, any lbu/sb");
+    verdict(n_traps == 0 && v == 0x17161514u);
+    csr_write(stvec, (uint32_t)&s_trap);
 }
 
 /* ---- 2. A/D bits under Sv32 ------------------------------------------ */
@@ -237,6 +387,7 @@ int main(uint32_t hartid, const void *fdt)
     uint32_t rom = 0x00001000u;     /* a test address, like HOLE: the ROM is not in the tree */
 
     access_faults(rom);
+    misaligned();
     ad_bits(ram_base, uart.base, plic_base);
     external_irqs(fdt, plic, plic_base, con);
 

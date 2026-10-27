@@ -242,10 +242,12 @@ KNOWN_GAPS = {
                         "pipe_u", "pipe_u_vm", "pipe_u_uni", "pipe_c", "pipe_c_vm", "pipe_c_uni"},
         "misaligned load/store. The mc cores select a sub-word inside one RAM "
         "word, so any access not aligned to its own width reads or writes the "
-        "wrong bytes -- silently, with no trap. The s6 core instead raises the "
-        "architecturally correct misaligned exception, and the `p` environment "
-        "has nothing to emulate it with. The byte-addressed dmem.v cores "
-        "(sc, pipe) index bytes and pass this test."),
+        "wrong bytes -- silently, with no trap. The s6 core and, since Step 52, "
+        "the pipe_u / pipe_c cores instead raise the architecturally correct "
+        "misaligned exception (cause 4 / 6), and the `p` environment has "
+        "nothing to emulate it with (sw/boot/kdemo.c shows the trap-and-emulate "
+        "a kernel does). The byte-addressed dmem.v cores (sc, pipe) index bytes "
+        "and pass this test."),
     "rv32uf-fmadd": ({"mc_f"},
         "fused multiply-add. fmadd/fmsub/fnmadd/fnmsub are out of scope for "
         "the Step 35 FPU (single rounding needs a wide product); they decode "
