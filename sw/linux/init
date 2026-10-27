@@ -1,0 +1,10 @@
+#!/bin/sh
+# /init of the Step 53 initramfs: mount the kernel's filesystems, then a
+# shell on the console (cttyhack gives it a controlling tty)
+mount -t proc proc /proc
+mount -t sysfs sysfs /sys
+mount -t devtmpfs devtmpfs /dev
+echo
+echo "rvfs: Linux $(uname -r) on $(uname -m), busybox ash"
+export PS1='rvfs# ' HOME=/ PATH=/bin
+exec setsid cttyhack /bin/sh
