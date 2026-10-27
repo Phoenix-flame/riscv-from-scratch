@@ -191,10 +191,15 @@ for `fpga_top_boot`:
 | | LUTs | FFs | CARRY4 |
 |---|---:|---:|---:|
 | Step 51 | 14,009 | 7,347 | 1,240 |
-| Step 52 | (synthesis pending) | | |
+| Step 52 | 14,141 | 7,349 | 1,260 |
 
 The logic is two small address checks, a little extra cause and tval
-selection, and two gates on translation. It adds no state.
+selection, and two gates on translation. It adds no state; the two extra
+flip-flops are the optimiser's doing. Block RAMs stay at 36. The +132
+LUTs is an upper bound. ABC aborted in one of its passes on this run
+(Yosys reports return code 134 and carries on), so that pass's logic may
+be less optimised than in the Step 51 run. Every cell in the result is
+still a mapped primitive.
 
 ## Honest status
 
