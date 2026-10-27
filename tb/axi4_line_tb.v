@@ -10,8 +10,12 @@
 // some and checks again; then reads outside the window and checks that
 // the SLVERR comes back as `err`. The slave counts protocol errors
 // (WLAST placement, burst type, size); there must be none.
+//
+// DATA_W = 64 (Step 54, -P axi4_line_tb.DATA_W=64): the same against a
+// 64-bit slave, as on a Zynq S_AXI_HP port -- 4 beats of 8 bytes a line.
 // =====================================================================
 module axi4_line_tb;
+    parameter  DATA_W = 32;
     localparam LW = 8, W = 32 * LW, N = 64;
     reg clk = 0, rst = 1;
     always #5 clk = ~clk;
@@ -22,15 +26,17 @@ module axi4_line_tb;
     wire         done, err;
     wire [W-1:0] rdata;
 
-    wire [31:0] awaddr, wd, araddr, rd;
+    wire [31:0] awaddr, araddr;
+    wire [DATA_W-1:0]   wd, rd;
+    wire [DATA_W/8-1:0] wstrb;
     wire [7:0]  awlen, arlen;
     wire [2:0]  awsize, arsize, awprot, arprot;
     wire [1:0]  awburst, arburst, bresp, rresp;
-    wire [3:0]  awcache, arcache, wstrb;
+    wire [3:0]  awcache, arcache;
     wire        awvalid, awready, wlast, wvalid, wready, bvalid, bready,
                 arvalid, arready, rlast, rvalid, rready;
 
-    axi4_line_master #(.LINE_WORDS(LW), .ADDR_OFFSET(32'h9000_0000)) dut (
+    axi4_line_master #(.LINE_WORDS(LW), .ADDR_OFFSET(32'h9000_0000), .DATA_W(DATA_W)) dut (
         .clk(clk), .rst(rst), .req(req), .we(we), .addr(addr), .wdata(wdata),
         .done(done), .rdata(rdata), .err(err),
         .m_axi_awaddr(awaddr), .m_axi_awlen(awlen), .m_axi_awsize(awsize), .m_axi_awburst(awburst),
@@ -41,7 +47,7 @@ module axi4_line_tb;
         .m_axi_arcache(arcache), .m_axi_arprot(arprot), .m_axi_arvalid(arvalid), .m_axi_arready(arready),
         .m_axi_rdata(rd), .m_axi_rresp(rresp), .m_axi_rlast(rlast), .m_axi_rvalid(rvalid),
         .m_axi_rready(rready));
-    axi4_mem #(.WORDS(1 << 16), .BASE(32'h1000_0000), .LATENCY(7), .STALL(1)) mem (
+    axi4_mem #(.WORDS(1 << 16), .BASE(32'h1000_0000), .LATENCY(7), .STALL(1), .DATA_W(DATA_W)) mem (
         .clk(clk), .rst(rst),
         .awaddr(awaddr), .awlen(awlen), .awsize(awsize), .awburst(awburst), .awvalid(awvalid),
         .awready(awready), .wdata(wd), .wstrb(wstrb), .wlast(wlast), .wvalid(wvalid),
@@ -51,7 +57,7 @@ module axi4_line_tb;
         .rready(rready));
 
     // AXI's rule: once valid is up it stays up, with stable payload, until ready
-    reg aw_q = 0, w_q = 0, ar_q = 0; reg [31:0] awaddr_q, araddr_q, wd_q;
+    reg aw_q = 0, w_q = 0, ar_q = 0; reg [31:0] awaddr_q, araddr_q; reg [DATA_W-1:0] wd_q;
     integer viol = 0;
     always @(posedge clk) if (!rst) begin
         if (aw_q && !awvalid) viol = viol + 1;
@@ -94,8 +100,8 @@ module axi4_line_tb;
             xfer(0, la[i], 0);
             if (rdata !== model[i]) fails = fails + 1;
         end
-        $display("  %0d lines written, read back, a quarter rewritten, read again: %0d mismatches",
-                 N, fails);
+        $display("  %0d-bit beats, %0d a line: %0d lines written, read back, a quarter rewritten, read again: %0d mismatches",
+                 DATA_W, awlen + 1, N, fails);
         $display("  %0d writes + %0d reads in %0d cycles (%0d per line, latency 7, stalls on)",
                  N, N, (cyc1 - cyc0) / 10, (cyc1 - cyc0) / 10 / (2 * N));
         if (err) fails = fails + 1;
@@ -104,8 +110,8 @@ module axi4_line_tb;
         if (!err) fails = fails + 1;
         $display("  slave protocol errors %0d, valid-dropped-before-ready %0d", mem.errors, viol);
         fails = fails + mem.errors + viol;
-        if (fails == 0) $display("AXI4-LINE: ALL PASS");
-        else            $display("AXI4-LINE: %0d FAIL", fails);
+        if (fails == 0) $display("AXI4-LINE (%0d-bit): ALL PASS", DATA_W);
+        else            $display("AXI4-LINE (%0d-bit): %0d FAIL", DATA_W, fails);
         $finish;
     end
 endmodule

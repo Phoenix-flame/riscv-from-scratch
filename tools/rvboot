@@ -11,6 +11,8 @@
 # The image (sw/boot/bootimg.h) is a one-way stream -- no handshake --
 # so on real hardware any serial program can send it:
 #   stty -F /dev/ttyUSB0 115200 raw && cat prog.rvbi > /dev/ttyUSB0
+# or, waiting for the prompt and staying on as a terminal (Step 54):
+#   tools/rvboot send /dev/ttyUSB0 prog.rvbi
 #
 # And it runs the platform's system test (`make boot`):
 #
@@ -158,11 +160,18 @@ MEMSYS = {
                   desc="2+2 KiB caches, block RAM, 256 KiB"),
     "ddr":   dict(memsys=2, ram_words=1 << 24,
                   desc="2+2 KiB caches, 64 MiB of DDR over AXI4 (latency 20, stalls)"),
+    # ... over a 64-bit AXI3-shaped port, as a Zynq S_AXI_HP port (Step 54)
+    "ddr64": dict(memsys=2, ram_words=1 << 24, axi_data_w=64,
+                  desc="2+2 KiB caches, 64 MiB of DDR over a 64-bit (S_AXI_HP) port"),
     # fpga_top_boot's configuration: the board ROM (115200 baud from 50 MHz,
     # divisor 27 -- 432 clocks a bit, so only a short stream: a bad image,
     # then libc_demo), checked line by line rather than against the file
     "board": dict(memsys=1, ram_words=1 << 15, divisor=27, rom="board/rom.hex", short=True,
                   desc="the board build: caches + 128 KiB block RAM, 115200 baud"),
+    # the Linux board build (Step 54): the board ROM, PS DDR through S_AXI_HP0
+    "board-ddr": dict(memsys=2, ram_words=1 << 24, axi_data_w=64, divisor=27,
+                      rom="board/rom.hex", short=True,
+                      desc="the Linux board build: caches + 64 MiB of DDR over HP0, 115200 baud"),
 }
 
 
@@ -171,17 +180,19 @@ def build_sim(sim, variant):
     files = ([str(REPO / "rtl" / f"{m}.v") for m in RTL] +
              [str(REPO / "tb" / "axi4_mem.v"), str(REPO / "tb" / "boot_tb.v")])
     div = v.get("divisor", 1)
+    axw = v.get("axi_data_w", 32)
     if sim == "verilator":
         obj = BUILD / f"vobj_{variant}"
         check(["verilator", "--binary", "--timing", "-O3", "-Wno-fatal", "-Wno-lint",
                "-Wno-style", "--top-module", "boot_tb", "-Mdir", str(obj), "-o", "boot_tb",
-               f"-GMEMSYS={v['memsys']}", f"-GRAM_WORDS={v['ram_words']}", f"-GDIVISOR={div}"]
+               f"-GMEMSYS={v['memsys']}", f"-GRAM_WORDS={v['ram_words']}", f"-GDIVISOR={div}",
+               f"-GAXI_DATA_W={axw}"]
               + files, "verilator")
         return [str(obj / "boot_tb")]
     vvp = BUILD / f"boot_tb_{variant}.vvp"
     check(["iverilog", "-g2012", "-o", str(vvp),
            f"-Pboot_tb.MEMSYS={v['memsys']}", f"-Pboot_tb.RAM_WORDS={v['ram_words']}",
-           f"-Pboot_tb.DIVISOR={div}"]
+           f"-Pboot_tb.DIVISOR={div}", f"-Pboot_tb.AXI_DATA_W={axw}"]
           + files, "iverilog")
     return ["vvp", "-n", str(vvp)]
 
@@ -350,6 +361,100 @@ def cmd_test(args):
     print(f"BOOT: ALL PASS ({', '.join(variants)})")
 
 
+# ---- a real board (Step 54) -------------------------------------------
+BAUDS = {9600: "B9600", 19200: "B19200", 38400: "B38400", 57600: "B57600",
+         115200: "B115200", 230400: "B230400", 460800: "B460800", 921600: "B921600"}
+
+
+def cmd_send(args):
+    """Wait for the ROM's prompt on a serial port, send an image, then be a terminal.
+
+    The image is a one-way stream, so this is all a loader needs: raw 8N1 at
+    the ROM's baud rate. The ROM keeps up with a full-rate stream (its
+    receive loop is in registers, Step 51), so there is no pacing. Then
+    everything the machine prints goes to stdout and every key typed goes
+    to it, until Ctrl-] (0x1d)."""
+    import os
+    import select
+    import termios
+    import time
+    import tty
+    img = Path(args.image).read_bytes()
+    if struct.unpack_from("<I", img)[0] != MAGIC:
+        die(f"{args.image}: not an RVBI image (make one with `rvboot image`)")
+    if args.baud not in BAUDS:
+        die(f"baud must be one of {sorted(BAUDS)}")
+    fd = os.open(args.port, os.O_RDWR | os.O_NOCTTY)
+    if os.isatty(fd):
+        a = termios.tcgetattr(fd)
+        a[0] = 0                                           # iflag: raw
+        a[1] = 0                                           # oflag
+        a[2] = termios.CS8 | termios.CREAD | termios.CLOCAL  # 8N1, no flow control
+        a[3] = 0                                           # lflag: no echo, no lines
+        speed = getattr(termios, BAUDS[args.baud])
+        a[4] = a[5] = speed
+        a[6][termios.VMIN], a[6][termios.VTIME] = 0, 0
+        termios.tcsetattr(fd, termios.TCSANOW, a)
+        termios.tcflush(fd, termios.TCIOFLUSH)
+
+    def pump(timeout):
+        """Copy whatever the machine sent to stdout; return it."""
+        r, _, _ = select.select([fd], [], [], timeout)
+        if not r:
+            return b""
+        data = os.read(fd, 4096)
+        sys.stdout.buffer.write(data)
+        sys.stdout.flush()
+        return data
+
+    out = sys.stdout.buffer
+    if not args.no_wait:
+        print(f"[rvboot] waiting for \"boot> \" on {args.port} (press K1 to restart the ROM) ...",
+              flush=True)
+        seen = b""
+        while not seen.endswith(b"boot> "):
+            seen = (seen + pump(1.0))[-64:]
+    secs = len(img) * 10 / args.baud
+    print(f"\n[rvboot] sending {args.image}: {len(img):,} bytes, about {secs / 60:.1f} minutes "
+          f"at {args.baud}", flush=True)
+    t0, sent, chunk = time.time(), 0, 4096
+    while sent < len(img):
+        n = os.write(fd, img[sent:sent + chunk])
+        sent += n
+        if os.isatty(fd):
+            termios.tcdrain(fd)                            # progress is what left the port
+        el = time.time() - t0
+        print(f"\r[rvboot] {sent * 100 // len(img):3d}%  {sent:,} bytes  {el:5.0f}s", end="",
+              file=sys.stderr, flush=True)
+    print(file=sys.stderr)
+    if args.no_term:
+        end = time.time() + args.listen
+        while time.time() < end:
+            pump(0.2)
+        os.close(fd)
+        return
+    print("[rvboot] terminal: Ctrl-] quits", flush=True)
+    term = sys.stdin.isatty()
+    saved = termios.tcgetattr(sys.stdin.fileno()) if term else None
+    try:
+        if term:
+            tty.setraw(sys.stdin.fileno())
+        while True:
+            r, _, _ = select.select([fd, sys.stdin], [], [])
+            if fd in r:
+                pump(0)
+            if sys.stdin in r:
+                key = os.read(sys.stdin.fileno(), 64)
+                if not key or b"\x1d" in key:
+                    break
+                os.write(fd, key.replace(b"\n", b"\r"))
+    finally:
+        if saved is not None:
+            termios.tcsetattr(sys.stdin.fileno(), termios.TCSADRAIN, saved)
+        os.close(fd)
+    out.write(b"\n")
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[2] if __doc__ else None)
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -364,10 +469,17 @@ def main():
     p.add_argument("--sim", choices=["auto", "verilator", "iverilog"], default="auto")
     p.add_argument("--max-cycles", type=int, default=40000000)
     p.add_argument("--memsys", choices=["all"] + list(MEMSYS), default="all",
-                   help="soc_boot memory system(s) to run (default: ideal, bram, ddr)")
+                   help="soc_boot memory system(s) to run (default: ideal, bram, ddr, ddr64)")
     p.add_argument("-v", "--verbose", action="store_true", help="echo the simulation")
     p.add_argument("--update", action="store_true",
                    help="rewrite tb/boot_expected.txt from this run (check the diff!)")
+    p = sub.add_parser("send", help="send an image to a board's ROM over a serial port, then be a terminal")
+    p.add_argument("port", help="e.g. /dev/ttyUSB0")
+    p.add_argument("image")
+    p.add_argument("--baud", type=int, default=115200)
+    p.add_argument("--no-wait", action="store_true", help="send at once, without waiting for boot>")
+    p.add_argument("--no-term", action="store_true", help="after sending, only listen (see --listen)")
+    p.add_argument("--listen", type=float, default=5.0, help="seconds to listen with --no-term")
     args = ap.parse_args()
 
     if args.cmd == "image":
@@ -376,6 +488,8 @@ def main():
         print(describe(img))
     elif args.cmd == "info":
         print(describe(Path(args.image).read_bytes()))
+    elif args.cmd == "send":
+        cmd_send(args)
     else:
         cmd_test(args)
 

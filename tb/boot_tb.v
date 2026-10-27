@@ -18,7 +18,8 @@
 //
 // MEMSYS picks soc_boot's memory system (Step 51): 0 ideal, 1 caches +
 // block RAM, 2 caches + DDR over AXI4 -- for which this bench supplies
-// the DDR: axi4_mem, RAM_WORDS deep, with DDR-like latency and stalls.
+// the DDR: axi4_mem, RAM_WORDS deep, with DDR-like latency and stalls --
+// AXI_DATA_W bits wide: 64 is a Zynq S_AXI_HP port (Step 54).
 //
 // For a Linux shell (Step 53, tools/rvlinux), all off by default:
 //   +PROMPT=s     one more prompt to send a chunk at (the shell's "rvfs# ")
@@ -33,6 +34,7 @@ module boot_tb;
     parameter MEMSYS    = 0;
     parameter RAM_WORDS = 65536;          // 256 KiB (the ROM finds the size itself)
     parameter DIVISOR   = 1;              // platform.h UART_DIVISOR
+    parameter AXI_DATA_W = 32;            // MEMSYS 2: 32, or 64 (S_AXI_HP)
     localparam [31:0] DDR_BASE = 32'h1000_0000;     // where RAM sits on the AXI side
     localparam CPB = 16 * DIVISOR;        // clocks per bit
 
@@ -43,15 +45,17 @@ module boot_tb;
     wire tx, halted, warm_reset;
     wire [15:0] exit_code;
 
-    wire [31:0] awaddr, wdata, araddr, rdata;
+    wire [31:0] awaddr, araddr;
+    wire [AXI_DATA_W-1:0]   wdata, rdata;
+    wire [AXI_DATA_W/8-1:0] wstrb;
     wire [7:0]  awlen, arlen;
     wire [2:0]  awsize, arsize;
     wire [1:0]  awburst, arburst, bresp, rresp;
-    wire [3:0]  wstrb;
     wire        awvalid, awready, wlast, wvalid, wready, bvalid, bready,
                 arvalid, arready, rlast, rvalid, rready;
 
-    soc_boot #(.RAM_WORDS(RAM_WORDS), .MEMSYS(MEMSYS), .AXI_OFFSET(DDR_BASE)) dut (
+    soc_boot #(.RAM_WORDS(RAM_WORDS), .MEMSYS(MEMSYS), .AXI_OFFSET(DDR_BASE),
+               .AXI_DATA_W(AXI_DATA_W)) dut (
         .clk(clk), .rst(rst), .uart_rx_pin(rx), .uart_tx_pin(tx),
         .halted(halted), .exit_code(exit_code), .warm_reset(warm_reset),
         .m_axi_awaddr(awaddr), .m_axi_awlen(awlen), .m_axi_awsize(awsize), .m_axi_awburst(awburst),
@@ -69,7 +73,8 @@ module boot_tb;
     integer dfd, w;
     reg [31:0] word;
     generate if (MEMSYS == 2) begin : g_ddr
-        axi4_mem #(.WORDS(RAM_WORDS), .BASE(DDR_BASE), .LATENCY(20), .STALL(1)) u_ddr (
+        axi4_mem #(.WORDS(RAM_WORDS), .BASE(DDR_BASE), .LATENCY(20), .STALL(1),
+                   .DATA_W(AXI_DATA_W)) u_ddr (
             .clk(clk), .rst(rst),
             .awaddr(awaddr), .awlen(awlen), .awsize(awsize), .awburst(awburst), .awvalid(awvalid),
             .awready(awready), .wdata(wdata), .wstrb(wstrb), .wlast(wlast), .wvalid(wvalid),
@@ -92,7 +97,7 @@ module boot_tb;
     end else begin : g_local
         assign awready = 1'b0; assign wready = 1'b0; assign bvalid = 1'b0; assign bresp = 2'b00;
         assign arready = 1'b0; assign rvalid = 1'b0; assign rlast = 1'b0; assign rresp = 2'b00;
-        assign rdata = 32'd0;
+        assign rdata = {AXI_DATA_W{1'b0}};
         initial if ($value$plusargs("PRELOAD=%s", preloadf)) begin
             #1 $readmemh(preloadf, dut.ram);
         end

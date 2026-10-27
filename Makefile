@@ -469,16 +469,18 @@ uart16550: ## ns16550a UART: divisor, framing, FIFOs, overrun, errors, interrupt
 plic-sifive: ## standard-layout PLIC (Step 50): M + S contexts, enables, thresholds, claim/complete
 	$(IV) -o $(B)/plic_sifive_tb.vvp rtl/plic_sifive.v tb/plic_sifive_tb.v && $(VVP) $(B)/plic_sifive_tb.vvp | grep -v '\$$finish'
 
-axi4-line: ## AXI4 burst master (Step 51): cache lines vs a stalling AXI slave, error responses, protocol checks
+axi4-line: ## AXI4 burst master (Steps 51, 54): cache lines vs a stalling AXI slave, 32- and 64-bit (HP0), error responses, protocol checks
 	$(IV) -o $(B)/axi4_line_tb.vvp rtl/axi4_line_master.v tb/axi4_mem.v tb/axi4_line_tb.v && $(VVP) $(B)/axi4_line_tb.vvp | grep -v '\$$finish'
+	$(IV) -P axi4_line_tb.DATA_W=64 -o $(B)/axi4_line_tb64.vvp rtl/axi4_line_master.v tb/axi4_mem.v tb/axi4_line_tb.v && $(VVP) $(B)/axi4_line_tb64.vvp | grep -v '\$$finish'
 
 boot-sw: $(BB)/rom.hex $(BB)/dtdemo.elf $(BB)/kdemo.elf $(BB)/mhello.elf $(BB)/libc_demo.elf
 
 boot: boot-sw ## boot ROM + DT + SBI + PLIC/faults/Svade, on ideal memory, caches + BRAM, and caches + DDR (AXI4)
 	python3 tools/rvboot test $(ARGS)
 
-boot-board: boot-sw $(BBB)/rom.hex ## the board build (115200 baud, 128 KiB BRAM) in simulation: banner, a bad image, libc_demo
+boot-board: boot-sw $(BBB)/rom.hex ## the board builds in simulation (115200 baud; 128 KiB BRAM, and 64 MiB of DDR over HP0): banner, a bad image, libc_demo
 	python3 tools/rvboot test --memsys board $(ARGS)
+	python3 tools/rvboot test --memsys board-ddr $(ARGS)
 
 boot-synth: $(BBB)/rom.hex ## Yosys: fpga_top_boot for the Zynq-7010 (LUTs, FFs, block RAMs)
 	yosys -q -p "read_verilog $(RTL_BOOT) rtl/fpga_top_boot.v; synth_xilinx -flatten -abc9 -arch xc7 -top fpga_top_boot; tee -o $(BBB)/synth.txt stat"
@@ -497,6 +499,36 @@ linux: boot-sw ## Linux 6.18 + busybox from source, booted on soc_boot (DDR) ove
 
 linux-fast: boot-sw ## ... the same with the kernel preloaded into the DDR model instead of sent (~5 min)
 	python3 tools/rvlinux all --fast $(ARGS)
+
+# ---- Step 54: Linux on the Mitra-7010, its RAM in PS DDR over S_AXI_HP0 ---
+# make linux-board          Linux on the board's configuration, in simulation:
+#                           the board ROM, 115200 baud, 64 MiB over a 64-bit
+#                           HP0-shaped port (the kernel preloaded)
+# make linux-oz OZ=<dir>    write projects/riscv_linux into an OpenZynq checkout
+#                           (rtl/fpga_top_linux.v on its ps7_gp0 with HP0, pins,
+#                           the PS program, a testbench), build the board's
+#                           kernel image, and simulate that top (verilator)
+.PHONY: linux-board linux-oz
+linux-board: boot-sw $(BBB)/rom.hex ## Linux on the board configuration (board ROM, 115200, 64-bit HP0 port), simulated
+	python3 tools/rvlinux all --board $(ARGS)
+
+linux-oz: boot-sw $(BBB)/rom.hex ## export the Linux board project into OpenZynq (OZ=...) and simulate its top on OZ's ps7_gp0
+	@test -n "$(OZ)" || { echo "usage: make linux-oz OZ=/path/to/OpenZynq"; exit 1; }
+	python3 tools/rvlinux oz-export $(OZ) $(ARGS)
+	python3 tools/rvlinux oz-sim $(OZ)
+
+# ---- Step 55: U-Boot in front of Linux --------------------------------
+# make uboot          fetch (pinned, hash-checked) + build U-Boot v2024.10 for
+#                     soc_boot, a sim and a board build, and the images: U-Boot
+#                     alone, and U-Boot + Linux in one image (build/linux/)
+# make linux-uboot    U-Boot boots, autoboots Linux with booti, the shell is
+#                     checked as in make linux (kernel and U-Boot preloaded)
+.PHONY: uboot linux-uboot
+uboot: ## fetch + build U-Boot for soc_boot (sim + board builds) and the U-Boot(+Linux) boot images
+	python3 tools/rvlinux uboot $(ARGS)
+
+linux-uboot: boot-sw ## U-Boot boots Linux (booti) on soc_boot (DDR), then the shell checks of make linux
+	python3 tools/rvlinux run --fast --uboot $(ARGS)
 
 # ---- Step 45: menuconfig -> a generated RISC-V project for OpenZynq ------
 # make menuconfig                         edit .config (curses menu, Kconfig)
