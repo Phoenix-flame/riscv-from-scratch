@@ -70,6 +70,19 @@
 // never a load that quietly reads 0. PMA_N=0 allows everything (the old
 // behaviour). SVADE=1: the walker faults on clear A / D bits (ptw.v).
 //
+// Misaligned addresses (Step 52). The D-port moves one aligned word, so a
+// halfword at an odd address, or a word / LR / SC / AMO not on a 4-byte
+// boundary, cannot be done in one access -- and until now it was done
+// wrongly (the store mask and the load extract assume alignment). It now
+// traps in EX: load address misaligned (cause 4, LR included) or store/AMO
+// address misaligned (6), mtval = the virtual address. It is checked
+// BEFORE translation (the spec allows either order), so a misaligned
+// access never walks, faults on a page, or reaches the bus; software
+// (an SBI, or the kernel the trap is delegated to) emulates it with byte
+// accesses. Likewise a taken branch / jump whose target is not 4-byte
+// aligned (there is no C extension) traps on the jump itself: instruction
+// address misaligned (cause 0), mtval = the target, rd not written.
+//
 // Translation. With satp.MODE=1 in S- or U-mode, IF looks up the I-TLB with
 // the PC and EX looks up the D-TLB with the effective address; a hit
 // costs nothing. A miss asks the shared walker (ptw.v), which borrows
@@ -436,6 +449,11 @@ module cpu_pipe_u #(
     wire [31:0] ex_va    = ex_amo ? opA : alu_result;       // atomics: (rs1), no offset
     wire        need_r   = (idex_mem_read & ~idex_sc) ;     // load, LR, AMO
     wire        need_w   = idex_mem_write | idex_sc | idex_rmw;
+    // misaligned (Step 52): halfword on an odd address, word / atomic off
+    // a 4-byte boundary; decided before translation, so it never walks
+    wire        ex_misal = ex_mem & ((idex_funct3[1:0] == 2'b01) ? ex_va[0] :
+                                     (idex_funct3[1:0] == 2'b10) ? (ex_va[1:0] != 2'b00) : 1'b0);
+    wire        ex_imisal = idex_valid & ex_taken & ex_target[1];   // no C: IALIGN = 32
 
     wire        dtlb_hit; wire [31:0] dtlb_pa; wire [3:0] dtlb_perm;
     generate if (MMU) begin : g_dtlb
@@ -449,7 +467,7 @@ module cpu_pipe_u #(
     end else begin : g_no_dtlb
         assign dtlb_hit = 1'b0; assign dtlb_pa = ex_va; assign dtlb_perm = 4'b0;
     end endgenerate
-    wire ex_xlate      = ex_mem & vm_on;
+    wire ex_xlate      = ex_mem & vm_on & ~ex_misal;
     wire ex_wres_fault = wres_valid & ~wres_i & (wres_vpn == ex_va[31:12]);
     // ---- vector element translation (the D-TLB is the vector unit's while it
     //      runs a memory instruction: the scalar pipe is held, MEM is empty) ----
@@ -469,7 +487,7 @@ module cpu_pipe_u #(
     // does not allow the access (loads need R; stores, SC and AMOs need W)
     wire [2:0]  ex_pma = pma(ex_pa);
     wire ex_daf_walk   = ex_dfault & ~dtlb_hit & wres_af;
-    wire ex_daf_pma    = ex_mem & ~ex_dfault & ~ex_dwalk &
+    wire ex_daf_pma    = ex_mem & ~ex_misal & ~ex_dfault & ~ex_dwalk &
                          ((need_r & ~ex_pma[0]) | (need_w & ~ex_pma[1]));
     wire ex_daf        = ex_daf_walk | ex_daf_pma;
     wire v_perm_ok     = user_ok & (v_mem_store ? dtlb_perm[1] : readable);
@@ -508,7 +526,7 @@ module cpu_pipe_u #(
     wire [31:0] v_fault_tval, v_scalar, v_cfg_vl;
     wire v_fault_now = idex_vec & v_done & v_fault;
     wire exception = idex_ifault | ex_illegal | idex_ecall | idex_ebreak | ex_dfault | ex_daf_pma |
-                     v_fault_now;
+                     ex_misal | ex_imisal | v_fault_now;
     wire v_wait    = idex_valid & idex_vec & ~v_is_cfg & ~v_done &
                      (v_busy | (~exception & ~irq_pending));
     // FENCE.I waits in EX while the SoC writes back / invalidates its caches;
@@ -530,6 +548,8 @@ module cpu_pipe_u #(
                              ex_illegal  ? 32'd2  :
                              idex_ecall  ? (in_user ? 32'd8 : in_m ? 32'd11 : 32'd9) :
                              idex_ebreak ? 32'd3  :
+                             ex_imisal   ? 32'd0  :
+                             ex_misal    ? (need_w ? 32'd6  : 32'd4)  :
                              ex_daf      ? (need_w ? 32'd7  : 32'd5)  :
                              ex_dfault   ? (need_w ? 32'd15 : 32'd13) :
                              v_fault_now ? {28'd0, v_fault_cause} :
@@ -538,7 +558,8 @@ module cpu_pipe_u #(
     wire [31:0] trap_val   = idex_ifault ? idex_pc    :
                              ex_illegal  ? idex_instr :
                              idex_ebreak ? idex_pc    :
-                             (ex_dfault | ex_daf) ? ex_va :
+                             ex_imisal   ? ex_target  :
+                             (ex_misal | ex_dfault | ex_daf) ? ex_va :
                              v_fault_now ? v_fault_tval : 32'd0;
 
     csr_s #(.HAS_S(HAS_S), .HAS_U(HAS_U), .HAS_SATP(MMU), .HAS_V(V_EXT)) u_csr (

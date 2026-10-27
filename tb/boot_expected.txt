@@ -181,6 +181,20 @@ kdemo: S-mode on hart 0, dtb {DTB}
   jump into a hole                   scause  1 stval 0x40000100  ok
   load from the ROM: no trap         ok
 
+[misaligned: trap and emulate]
+  lw  at buf+1 -> 0x14131211   scause 4 stval buf+1  ok
+  lw  at buf+3 -> 0x16151413   scause 4 stval buf+3  ok
+  lh  at buf+5 -> 0xffff8015   scause 4 stval buf+5  ok
+  lhu at buf+5 -> 0x00008015   scause 4 stval buf+5  ok
+  sw  at buf+2, bytes ok       scause 6 stval buf+2  ok
+  sh  at buf+7, bytes ok       scause 6 stval buf+7  ok
+  amoadd.w at buf+2            scause 6 stval buf+2  ok
+  lr.w at buf+1                scause 4 stval buf+1  ok
+  sc.w at buf+3, rd kept       scause 6 stval buf+3  ok
+  jalr to 1f+2, rd kept        scause 0 stval = target  ok
+  beq to 1f+2                  scause 0 stval = target  ok
+  aligned lw/lhu, any lbu/sb   no trap  ok
+
 [A/D bits: Svade]
   read  (A clear): 1 load page fault, A set,  read 0xa5a5a5a5  ok
   write (D clear): 1 store page fault, D set  ok
