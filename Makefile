@@ -484,6 +484,20 @@ boot-synth: $(BBB)/rom.hex ## Yosys: fpga_top_boot for the Zynq-7010 (LUTs, FFs,
 	yosys -q -p "read_verilog $(RTL_BOOT) rtl/fpga_top_boot.v; synth_xilinx -flatten -abc9 -arch xc7 -top fpga_top_boot; tee -o $(BBB)/synth.txt stat"
 	@grep -E "LUT[1-6]|FD[RSCE]|RAMB|CARRY4|RAM32|RAM64" $(BBB)/synth.txt
 
+# ---- Step 53: Linux from source on the boot platform -------------------
+# make linux         fetch (third_party/, pinned + hash-checked), build musl,
+#                    busybox, an initramfs and Linux 6.18 (build/linux/), boot
+#                    it on soc_boot with 64 MiB of DDR, type at its shell and
+#                    check the transcript (tools/rvlinux; ~2 GB of sources,
+#                    ~15 min: the kernel goes over the serial line)
+# make linux-fast    the same, but the bench preloads the kernel (~5 min)
+.PHONY: linux linux-fast
+linux: boot-sw ## Linux 6.18 + busybox from source, booted on soc_boot (DDR) over the serial port; checks its shell (~15 min)
+	python3 tools/rvlinux all $(ARGS)
+
+linux-fast: boot-sw ## ... the same with the kernel preloaded into the DDR model instead of sent (~5 min)
+	python3 tools/rvlinux all --fast $(ARGS)
+
 # ---- Step 45: menuconfig -> a generated RISC-V project for OpenZynq ------
 # make menuconfig                         edit .config (curses menu, Kconfig)
 # make defconfig DEFCONFIG=configs/...    start from a preset

@@ -1,0 +1,520 @@
+#!/usr/bin/env python3
+# =====================================================================
+# rvlinux  -  Linux on the boot platform, from source (Step 53)
+# ---------------------------------------------------------------------
+#   tools/rvlinux all [--fast]     fetch + build + run   (make linux)
+#   tools/rvlinux fetch            pinned sources into third_party/
+#   tools/rvlinux build            musl, busybox, initramfs, kernel -> build/linux/
+#   tools/rvlinux run [--fast]     boot it on soc_boot (DDR), type at the shell, check
+#
+# fetch   clones Linux, busybox and musl at pinned tags and checks each
+#         commit hash, so a mirror cannot hand over anything else.
+# build   musl as an rv32ima ilp32 (soft-float) libc; busybox, static,
+#         from sw/linux/busybox.config; an initramfs of busybox, /init and
+#         matest; the kernel from tinyconfig + sw/linux/kernel.config.
+# run     wraps the kernel's Image as a boot image (tools/rvboot's format)
+#         for 0x80400000 (RAM + 4 MiB: Sv32 wants the kernel 4 MiB
+#         aligned), boots soc_boot with 64 MiB of DDR under tb/boot_tb.v,
+#         and at each "rvfs# " prompt types the next command. Then checks
+#         the transcript: the boot, each command's output, a clean power-off.
+#         The whole kernel goes over the simulated serial line, 160 clocks
+#         a byte: ~420M cycles before Linux runs, ~15 minutes in all.
+#         --fast: the bench preloads the kernel into the DDR model and the
+#         ROM receives only its first 4 KiB (~5 minutes). Everything after
+#         the ROM is the same.
+#
+# Requires: git, make, flex, bison, bc, rsync; riscv64-linux-gnu-gcc (the
+# kernel and musl); riscv64-unknown-elf-gcc (its rv32im/ilp32 libgcc, which
+# the Linux toolchain lacks); verilator 5.x; and build/boot/rom.hex (make
+# boot-sw). Sources: ~2 GB, build: ~0.5 GB.
+# =====================================================================
+import argparse
+import hashlib
+import importlib.machinery
+import importlib.util
+import os
+import re
+import shutil
+import struct
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+REPO = Path(__file__).resolve().parent.parent
+TP = REPO / "third_party"
+OUT = REPO / "build" / "linux"
+SWL = REPO / "sw" / "linux"
+
+# Pinned sources. kernel.org, musl-libc.org and busybox.net may be swapped
+# in with RVLINUX_<NAME>_URL; the commit hash is checked either way.
+SOURCES = {
+    "linux":   ("https://github.com/torvalds/linux.git", "v6.18",
+                "7d0a66e4bb9081d75c82ec4957c50034cb0ea449"),
+    "busybox": ("https://github.com/mirror/busybox.git", "1_36_1",
+                "1a64f6a20aaf6ea4dbba68bbfa8cc1ab7e5c57c4"),
+    "musl":    ("https://github.com/kraj/musl.git", "v1.2.5",
+                "0784374d561435f7c787a555aeab8ede699ed298"),
+}
+
+CROSS = "riscv64-linux-gnu-"
+MARCH, MABI = "rv32ima_zicsr_zifencei", "ilp32"
+RAM_BASE = 0x80000000
+KERNEL_BASE = 0x80400000
+BOOTARGS = "console=ttyS0,3000000 earlycon=sbi"
+PROMPT = "rvfs# "
+TYPEGAP = 16000                 # cycles between typed keys
+MAX_CYCLES = 1_500_000_000      # under 2**31: the bench's counters are integers
+
+# What is typed at the shell, and what its output must contain (regexes,
+# per line, in the transcript after the command).
+COMMANDS = [
+    ("uname -a", [r"^Linux \S+ 6\.18\.0 .* riscv32$"]),
+    ("cat /proc/cpuinfo", [r"^isa\s+: rv32ima", r"^mmu\s+: sv32$", r"^uarch\s+: rvfs,cpu-pipe-u$"]),
+    ("free", [r"^Mem:\s+\d+"]),
+    ("cat /proc/interrupts", [r"^\s*\d+:\s+[1-9]\d*\s+SiFive PLIC\s+10\s+\w+\s+ttyS0$",
+                              r"^\s*\d+:\s+[1-9]\d*\s+RISC-V INTC\s+5\s+\w+\s+riscv-timer$"]),
+    ("echo $((6*7)) > /tmp/x; cat /tmp/x", [r"^42$"]),
+    ("matest", [r"^lw @\+1 = 14131211, lh @\+3 = 00001413, lhu @\+7 = 00001817, "
+                r"sw @\+9 -> d4 c3 b2 a1: ok$",
+                r"^amoadd\.w @\+2 in a child: SIGBUS  ok$"]),
+    ("poweroff -f", [r"reboot: Power down$"]),
+]
+# ... and the boot itself
+BOOT_LINES = [
+    r"^\[ *[\d.]+\] Linux version 6\.18\.0 ",
+    r"^\[ *[\d.]+\] Machine model: riscv-from-scratch boot platform$",
+    r"^\[ *[\d.]+\] riscv-plic: interrupt-controller@c000000: mapped 31 interrupts",
+    r"^\[ *[\d.]+\] 10000000\.serial: ttyS0 at MMIO 0x10000000 .* is a 16550A$",
+    r"^\[ *[\d.]+\] Run /init as init process$",
+    r"^rvfs: Linux 6\.18\.0 on riscv32, busybox ash$",
+]
+NEVER = r"Kernel panic|Oops|BUG:|Unable to handle kernel"
+
+
+def say(msg):
+    print(f"[rvlinux] {msg}", flush=True)
+
+
+def die(msg):
+    sys.exit(f"[rvlinux] error: {msg}")
+
+
+def jobs():
+    return str(os.cpu_count() or 2)
+
+
+def sh(cmd, log, cwd=None, env=None, stdin=None):
+    """Run a build step, its output to `log`; on failure show the tail."""
+    log.parent.mkdir(parents=True, exist_ok=True)
+    with open(log, "a") as f:
+        f.write("\n$ " + " ".join(map(str, cmd)) + "\n")
+        f.flush()
+        r = subprocess.run(cmd, cwd=cwd, env=env, stdout=f, stderr=subprocess.STDOUT,
+                           input=stdin, text=True)
+    if r.returncode:
+        tail = "".join(log.read_text(errors="replace").splitlines(True)[-25:])
+        die(f"{' '.join(map(str, cmd[:3]))} ... failed (log: {log.relative_to(REPO)}):\n{tail}")
+
+
+def load_rvboot():
+    loader = importlib.machinery.SourceFileLoader("rvboot", str(REPO / "tools" / "rvboot"))
+    spec = importlib.util.spec_from_loader("rvboot", loader)
+    mod = importlib.util.module_from_spec(spec)
+    loader.exec_module(mod)
+    return mod
+
+
+def need_tools(names):
+    missing = [t for t in names if shutil.which(t) is None]
+    if missing:
+        die("not on PATH: " + ", ".join(missing) + " (see docs/53-linux.md, Requirements)")
+
+
+def rv32_libgcc():
+    r = subprocess.run(["riscv64-unknown-elf-gcc", "-march=rv32im", "-mabi=ilp32",
+                        "-print-libgcc-file-name"], capture_output=True, text=True)
+    p = Path(r.stdout.strip())
+    if r.returncode or not p.exists() or "rv32im" not in str(p):
+        die("riscv64-unknown-elf-gcc has no rv32im/ilp32 libgcc multilib")
+    return p
+
+
+def stamp_ok(name, key):
+    s = OUT / f".{name}.stamp"
+    return s.exists() and s.read_text() == key
+
+
+def stamp(name, key):
+    (OUT / f".{name}.stamp").write_text(key)
+
+
+def digest(*paths):
+    h = hashlib.sha256()
+    for p in paths:
+        h.update(Path(p).read_bytes())
+    return h.hexdigest()
+
+
+# ---- fetch ------------------------------------------------------------
+def head_of(d):
+    r = subprocess.run(["git", "-C", str(d), "rev-parse", "HEAD"], capture_output=True, text=True)
+    return r.stdout.strip() if r.returncode == 0 else None
+
+
+def cmd_fetch(_args=None):
+    need_tools(["git"])
+    for name, (url, tag, sha) in SOURCES.items():
+        url = os.environ.get(f"RVLINUX_{name.upper()}_URL", url)
+        dest = TP / name
+        if dest.exists():
+            got = head_of(dest)
+            if got != sha:
+                die(f"{dest.relative_to(REPO)} is at {got}, not {name} {tag} ({sha[:12]}): "
+                    f"remove it and fetch again")
+            say(f"{name} {tag} present ({sha[:12]})")
+            continue
+        TP.mkdir(exist_ok=True)
+        say(f"fetching {name} {tag} from {url} ...")
+        for attempt in range(4):
+            r = subprocess.run(["git", "-c", "advice.detachedHead=false", "clone", "--quiet",
+                                "--depth", "1", "--branch", tag, url, str(dest)],
+                               capture_output=True, text=True)
+            if r.returncode == 0:
+                break
+            shutil.rmtree(dest, ignore_errors=True)
+            if attempt == 3:
+                die(f"git clone {url} failed:\n{r.stderr.strip()}")
+            say(f"  clone failed ({r.stderr.strip().splitlines()[-1]}); retrying")
+            time.sleep(2 ** (attempt + 1))
+        got = head_of(dest)
+        if got != sha:
+            shutil.rmtree(dest, ignore_errors=True)
+            die(f"{name} {tag} from {url} is commit {got}, expected {sha}: refusing it")
+        say(f"  {name} {tag} ok ({sha[:12]})")
+
+
+# ---- build ------------------------------------------------------------
+SYSROOT = OUT / "sysroot"
+WRAPPER = OUT / "bin" / "rv32-musl-gcc"
+
+
+def build_musl(libgcc):
+    key = SOURCES["musl"][2] + str(libgcc)
+    if stamp_ok("musl", key) and (SYSROOT / "lib" / "libc.a").exists():
+        say("musl: up to date")
+        return
+    say("musl: configure + build (rv32ima, ilp32 soft-float, static)")
+    b = OUT / "musl"
+    shutil.rmtree(b, ignore_errors=True)
+    b.mkdir(parents=True)
+    log = OUT / "musl.log"
+    log.write_text("")
+    sh([str(TP / "musl" / "configure"), "--target=riscv32-linux-musl", f"--prefix={SYSROOT}",
+        "--disable-shared", f"CC={CROSS}gcc -march={MARCH} -mabi={MABI}",
+        f"LIBCC={libgcc}", f"CROSS_COMPILE={CROSS}"], log, cwd=b)
+    sh(["make", f"-j{jobs()}"], log, cwd=b)
+    sh(["make", "install"], log, cwd=b)
+    stamp("musl", key)
+
+
+def write_wrapper(libgcc):
+    """gcc for rv32 static musl programs: compile, or link with crt + libc."""
+    WRAPPER.parent.mkdir(parents=True, exist_ok=True)
+    WRAPPER.write_text(f"""#!/bin/sh
+# generated by tools/rvlinux: {CROSS}gcc as an rv32 musl compiler (static only)
+SYS={SYSROOT}
+GI=$({CROSS}gcc -print-file-name=include)
+link=1
+for a in "$@"; do case "$a" in -c|-S|-E|-M|-MM|-r|-Wl,-r|-nostdlib) link=0;; esac; done
+F="-march={MARCH} -mabi={MABI} -nostdinc -isystem $SYS/include -isystem $GI"
+if [ $link = 1 ]; then
+  exec {CROSS}gcc $F -static -nostdlib $SYS/lib/crt1.o $SYS/lib/crti.o "$@" \\
+       -L$SYS/lib -Wl,--start-group -lc {libgcc} -Wl,--end-group $SYS/lib/crtn.o
+else
+  exec {CROSS}gcc $F "$@"
+fi
+""")
+    WRAPPER.chmod(0o755)
+
+
+def kmake(*targets, log, env=None):
+    sh(["make", "-C", str(TP / "linux"), f"O={OUT / 'kernel'}", "ARCH=riscv",
+        f"CROSS_COMPILE={CROSS}", *targets], log, env=env)
+
+
+def build_headers():
+    key = SOURCES["linux"][2]
+    if stamp_ok("headers", key) and (SYSROOT / "include" / "linux" / "version.h").exists():
+        return
+    say("kernel headers -> sysroot")
+    kmake("headers_install", f"INSTALL_HDR_PATH={SYSROOT}", log=OUT / "headers.log")
+    stamp("headers", key)
+
+
+def fragment(path):
+    """[(option, value)]: value 'y'/'n'/number/"string" from CONFIG_X=... and # CONFIG_X is not set."""
+    out = []
+    for line in Path(path).read_text().splitlines():
+        m = re.match(r"^CONFIG_(\w+)=(.*)$", line) or re.match(r"^# CONFIG_(\w+) is not set$", line)
+        if m:
+            out.append((m.group(1), m.group(2) if m.lastindex == 2 else "n"))
+    return out
+
+
+def config_holds(cfg_text, frag):
+    bad = []
+    for opt, val in frag:
+        m = re.search(rf"^CONFIG_{opt}=(.*)$", cfg_text, re.M)
+        if val == "n":
+            if m:
+                bad.append(f"CONFIG_{opt}={m.group(1)} (wanted not set)")
+        elif not m or m.group(1) != val:
+            bad.append(f"CONFIG_{opt}: {m.group(1) if m else 'not set'} (wanted {val})")
+    return bad
+
+
+def build_busybox():
+    b = OUT / "busybox"
+    frag_file = SWL / "busybox.config"
+    frag = fragment(frag_file)
+    log = OUT / "busybox.log"
+    key = SOURCES["busybox"][2] + digest(frag_file)
+    cfg = b / ".config"
+    if not (stamp_ok("busybox-config", key) and cfg.exists()):
+        say("busybox: allnoconfig + sw/linux/busybox.config")
+        log.write_text("")
+        b.mkdir(parents=True, exist_ok=True)
+        sh(["make", "-C", str(TP / "busybox"), f"O={b}", "allnoconfig"], log)
+        t = cfg.read_text()
+        for opt, val in frag:
+            new = f"CONFIG_{opt}={val}" if val != "n" else f"# CONFIG_{opt} is not set"
+            t, n = re.subn(rf"^(# CONFIG_{opt} is not set|CONFIG_{opt}=.*)$", new, t, flags=re.M)
+            if n == 0:
+                t += new + "\n"
+        cfg.write_text(t)
+        sh(["make", "oldconfig"], log, cwd=b, stdin="\n" * 2000)
+        bad = config_holds(cfg.read_text(), frag)
+        if bad:
+            die("busybox config did not take:\n  " + "\n  ".join(bad))
+        stamp("busybox-config", key)
+    say("busybox: build")
+    sh(["make", f"-j{jobs()}", f"CC={WRAPPER}", f"CROSS_COMPILE={CROSS}"], log, cwd=b)
+    sh(["make", f"CC={WRAPPER}", f"CROSS_COMPILE={CROSS}", "busybox.links"], log, cwd=b)
+
+
+def build_matest():
+    exe = OUT / "matest"
+    sh([str(WRAPPER), "-O2", "-Wall", str(SWL / "matest.c"), "-o", str(exe)], OUT / "matest.log")
+    sh([f"{CROSS}strip", str(exe)], OUT / "matest.log")
+    return exe
+
+
+def write_initramfs_list(matest):
+    applets = sorted({Path(l).name for l in (OUT / "busybox" / "busybox.links").read_text().split()})
+    lines = [f"dir /{d} 755 0 0" for d in ("bin", "dev", "proc", "sys", "root")]
+    lines += ["dir /tmp 1777 0 0", "nod /dev/console 600 0 0 c 5 1",
+              f"file /bin/busybox {OUT / 'busybox' / 'busybox'} 755 0 0",
+              f"file /init {SWL / 'init'} 755 0 0",
+              f"file /bin/matest {matest} 755 0 0"]
+    lines += [f"slink /bin/{a} busybox 777 0 0" for a in applets if a != "busybox"]
+    lst = OUT / "initramfs.list"
+    new = "\n".join(lines) + "\n"
+    if not lst.exists() or lst.read_text() != new:
+        lst.write_text(new)
+    say(f"initramfs: busybox ({len(applets)} applets), /init, matest")
+    return lst
+
+
+def build_kernel(lst):
+    k = OUT / "kernel"
+    frag_file = SWL / "kernel.config"
+    frag = fragment(frag_file)
+    log = OUT / "kernel.log"
+    cfg = k / ".config"
+    key = SOURCES["linux"][2] + digest(frag_file)
+    if not (stamp_ok("kernel-config", key) and cfg.exists()):
+        say("kernel: tinyconfig + sw/linux/kernel.config")
+        log.write_text("")
+        if cfg.exists():
+            cfg.unlink()
+        kmake("tinyconfig", log=log)
+        args = []
+        for opt, val in frag:
+            if val == "y":
+                args += ["--enable", opt]
+            elif val == "n":
+                args += ["--disable", opt]
+            elif val.startswith('"'):
+                args += ["--set-str", opt, val.strip('"')]
+            else:
+                args += ["--set-val", opt, val]
+        args += ["--set-str", "INITRAMFS_SOURCE", str(lst)]
+        for _ in range(2):            # twice: a choice can need its menu's option first
+            sh([str(TP / "linux" / "scripts" / "config"), "--file", str(cfg)] + args, log)
+            kmake("olddefconfig", log=log)
+        bad = config_holds(cfg.read_text(), frag)
+        if bad:
+            die("kernel config did not take:\n  " + "\n  ".join(bad))
+        stamp("kernel-config", key)
+    say(f"kernel: build Image (-j{jobs()})")
+    env = dict(os.environ, KBUILD_BUILD_USER="rvfs", KBUILD_BUILD_HOST="riscv-from-scratch")
+    kmake(f"-j{jobs()}", "Image", log=log, env=env)
+    img = k / "arch" / "riscv" / "boot" / "Image"
+    shutil.copy(img, OUT / "Image")
+    return OUT / "Image"
+
+
+def cmd_build(_args=None):
+    need_tools(["make", "flex", "bison", "bc", "rsync", f"{CROSS}gcc", "riscv64-unknown-elf-gcc"])
+    for name in SOURCES:
+        if head_of(TP / name) != SOURCES[name][2]:
+            die(f"third_party/{name} missing or at the wrong commit -- run `tools/rvlinux fetch`")
+    OUT.mkdir(parents=True, exist_ok=True)
+    libgcc = rv32_libgcc()
+    build_musl(libgcc)
+    write_wrapper(libgcc)
+    build_headers()
+    build_busybox()
+    lst = write_initramfs_list(build_matest())
+    img = build_kernel(lst)
+    hdr = img.read_bytes()[:64]
+    size = struct.unpack_from("<Q", hdr, 16)[0]
+    say(f"kernel: {img.relative_to(REPO)}, {img.stat().st_size} bytes "
+        f"({size} with bss), entry 0x{KERNEL_BASE:08x}")
+
+
+# ---- run --------------------------------------------------------------
+def image_parts():
+    img = (OUT / "Image").read_bytes()
+    if img[0x38:0x3c] != b"RSC\x05":
+        die("build/linux/Image is not a RISC-V Linux Image")
+    return img, struct.unpack_from("<Q", img, 16)[0]
+
+
+def cmd_run(args):
+    need_tools(["verilator"])
+    rom = REPO / "build" / "boot" / "rom.hex"
+    if not rom.exists():
+        die("build/boot/rom.hex missing -- run `make boot-sw`")
+    if not (OUT / "Image").exists():
+        die("build/linux/Image missing -- run `tools/rvlinux build`")
+    rvboot = load_rvboot()
+    img, size = image_parts()
+    if args.fast:
+        head = img[:4096]          # over 256 bytes: sent at line rate, not typed
+        boot = rvboot.make_image(KERNEL_BASE, [(KERNEL_BASE, head, len(head))], BOOTARGS.encode())
+        words = img + b"\0" * (-len(img) % 4)
+        pre = OUT / "preload.hex"
+        with open(pre, "w") as f:
+            f.write(f"@{(KERNEL_BASE - RAM_BASE) // 4:08x}\n")
+            for i in range(0, len(words), 4):
+                f.write(f"{struct.unpack_from('<I', words, i)[0]:08x}\n")
+    else:
+        boot = rvboot.make_image(KERNEL_BASE, [(KERNEL_BASE, img, size)], BOOTARGS.encode())
+    (OUT / "linux.rvbi").write_bytes(boot)
+    chunks = [boot] + [(c + "\r").encode() for c, _ in COMMANDS]
+    stream = OUT / "stream.bin"
+    stream.write_bytes(b"".join(struct.pack("<I", len(c)) + c for c in chunks))
+
+    say("building the bench (soc_boot, caches + 64 MiB DDR) with verilator")
+    exe = rvboot.build_sim("verilator", "ddr")
+    log, out = OUT / "linux.log", OUT / "sim.out"
+    cmd = exe + [f"+ROM={rom}", f"+STREAM={stream}", f"+LOG={log}", f"+MAXCYC={args.max_cycles}",
+                 f"+PROMPT={PROMPT}", f"+TYPEGAP={TYPEGAP}"]
+    if args.fast:
+        cmd.append(f"+PRELOAD={OUT / 'preload.hex'}")
+    how = ("--fast: the kernel preloaded, the ROM sent its first 4 KiB" if args.fast else
+           f"the whole kernel over the serial line ({len(boot)} bytes, ~{len(boot) * 160 // 10**6}M cycles)")
+    say(f"booting: {how}; console in {log.relative_to(REPO)}")
+    t0 = time.time()
+    with open(out, "w") as f:
+        p = subprocess.Popen(cmd, cwd=REPO, stdout=f, stderr=subprocess.STDOUT)
+        last = None
+        while p.poll() is None:
+            time.sleep(15)
+            lines = log.read_text(errors="replace").replace("\r", "").split("\n") if log.exists() else []
+            now = next((l for l in reversed(lines) if l.strip()), None)
+            if now and now != last:
+                say(f"  {int(time.time() - t0):5d}s  {now[:100]}")
+                last = now
+    say(f"simulation done in {int(time.time() - t0)}s")
+    sys.exit(check(out.read_text(errors="replace"), log.read_text(errors="replace"), len(chunks)))
+
+
+def check(sim, console, nchunks):
+    fails = []
+    m = re.search(r"BOOT-TB: (\w+) exit=(\d+) cycles=(\d+) resets=(\d+) chunks=(\d+)", sim)
+    if not m:
+        print(sim[-3000:])
+        die("no summary from the bench")
+    state, code, cycles, _, chunks = m.group(1), *map(int, m.groups()[1:])
+    text = console.replace("\r", "")
+    lines = text.split("\n")
+    for pat in BOOT_LINES:
+        if not any(re.search(pat, l) for l in lines):
+            fails.append(f"boot: no line matching {pat!r}")
+    # each command's output: from its echo to the next prompt
+    pos = 0
+    for cmd, pats in COMMANDS:
+        at = text.find(PROMPT + cmd, pos)
+        if at < 0:
+            fails.append(f"`{cmd}` was never echoed at a prompt")
+            continue
+        end = text.find(PROMPT, at + len(PROMPT))
+        seg = text[at:end if end >= 0 else len(text)].split("\n")[1:]
+        for pat in pats:
+            if not any(re.search(pat, l) for l in seg):
+                fails.append(f"`{cmd}`: no output line matching {pat!r}")
+        pos = at + 1
+    bad = [l for l in lines if re.search(NEVER, l)]
+    if bad:
+        fails.append(f"the kernel complained: {bad[0]!r}")
+    if state != "halted" or code != 0:
+        fails.append(f"the machine did not power off cleanly ({state}, exit code {code})")
+    if chunks != nchunks:
+        fails.append(f"sent {chunks} of {nchunks} chunks")
+
+    load = re.search(r"data: (\d+) bytes, CRC32 0x[0-9a-f]+ ok \((\d+) cycles", text)
+    rom = re.search(r"BOOT-TB prompt 1 at cycle (\d+)", sim)
+    shell = re.search(r"BOOT-TB prompt 2 at cycle (\d+)", sim)
+    say(f"{state}, exit code {code}, {cycles:,} cycles in all")
+    if load:
+        say(f"  {int(load.group(2)):>11,} cycles: the ROM receiving the image ({int(load.group(1)):,} bytes)")
+    if shell and load and rom:
+        entry = int(rom.group(1)) + int(load.group(2))      # "boot> ", then the image
+        say(f"  {int(shell.group(1)) - entry:>11,} cycles: kernel entry to the shell prompt "
+            f"(cycle {int(shell.group(1)):,})")
+    say(f"  {len(COMMANDS)} commands typed; "
+        f"{sum(len(p) for _, p in COMMANDS) + len(BOOT_LINES)} output checks")
+    for f in fails:
+        say(f"FAIL: {f}")
+    print("LINUX: FAIL" if fails else "LINUX: ALL PASS")
+    return 1 if fails else 0
+
+
+def main():
+    ap = argparse.ArgumentParser(description="Linux on the boot platform, from source")
+    sub = ap.add_subparsers(dest="cmd", required=True)
+    sub.add_parser("fetch", help="clone the pinned sources into third_party/")
+    sub.add_parser("build", help="musl, busybox, initramfs, kernel -> build/linux/")
+    for name in ("run", "all"):
+        p = sub.add_parser(name, help="boot it and check" if name == "run" else "fetch + build + run")
+        p.add_argument("--fast", action="store_true",
+                       help="preload the kernel into the DDR model instead of sending it")
+        p.add_argument("--max-cycles", type=int, default=MAX_CYCLES)
+    args = ap.parse_args()
+    if args.cmd == "fetch":
+        cmd_fetch()
+    elif args.cmd == "build":
+        cmd_build()
+    elif args.cmd == "run":
+        cmd_run(args)
+    else:
+        cmd_fetch()
+        cmd_build()
+        cmd_run(args)
+
+
+if __name__ == "__main__":
+    main()

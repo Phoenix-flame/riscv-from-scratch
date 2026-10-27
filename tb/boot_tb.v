@@ -19,6 +19,15 @@
 // MEMSYS picks soc_boot's memory system (Step 51): 0 ideal, 1 caches +
 // block RAM, 2 caches + DDR over AXI4 -- for which this bench supplies
 // the DDR: axi4_mem, RAM_WORDS deep, with DDR-like latency and stalls.
+//
+// For a Linux shell (Step 53, tools/rvlinux), all off by default:
+//   +PROMPT=s     one more prompt to send a chunk at (the shell's "rvfs# ")
+//   +TYPEGAP=n    wait n cycles after each byte of a short chunk (< 256
+//                 bytes: typed input), as a person would -- a shell that
+//                 echoes every key cannot keep up with a line at full rate
+//   +PRELOAD=f    $readmemh f into RAM before the ROM runs (word addresses
+//                 from RAM_BASE). A test shortcut, not a boot path: the ROM
+//                 still receives, checks and enters an image -- a short one.
 // =====================================================================
 module boot_tb;
     parameter MEMSYS    = 0;
@@ -56,7 +65,7 @@ module boot_tb;
 
     // the DTB the ROM left in the last 8 KiB of RAM, wherever the RAM is
     reg  dump_req = 1'b0;
-    reg  [8*256-1:0] dtbf;
+    reg  [8*256-1:0] dtbf, preloadf;
     integer dfd, w;
     reg [31:0] word;
     generate if (MEMSYS == 2) begin : g_ddr
@@ -68,6 +77,9 @@ module boot_tb;
             .araddr(araddr), .arlen(arlen), .arsize(arsize), .arburst(arburst), .arvalid(arvalid),
             .arready(arready), .rdata(rdata), .rresp(rresp), .rlast(rlast), .rvalid(rvalid),
             .rready(rready));
+        initial if ($value$plusargs("PRELOAD=%s", preloadf)) begin
+            #1 $readmemh(preloadf, u_ddr.mem);
+        end
         always @(posedge dump_req) begin
             dfd = $fopen(dtbf, "wb");
             for (w = RAM_WORDS - 2048; w < RAM_WORDS; w = w + 1) begin
@@ -81,6 +93,9 @@ module boot_tb;
         assign awready = 1'b0; assign wready = 1'b0; assign bvalid = 1'b0; assign bresp = 2'b00;
         assign arready = 1'b0; assign rvalid = 1'b0; assign rlast = 1'b0; assign rresp = 2'b00;
         assign rdata = 32'd0;
+        initial if ($value$plusargs("PRELOAD=%s", preloadf)) begin
+            #1 $readmemh(preloadf, dut.ram);
+        end
         always @(posedge dump_req) begin
             dfd = $fopen(dtbf, "wb");
             for (w = RAM_WORDS - 2048; w < RAM_WORDS; w = w + 1) begin
@@ -116,6 +131,7 @@ module boot_tb;
 
     // ---- receive: decode the TX line (8N1) ----
     reg [47:0] last6 = 48'd0;             // the last six characters seen
+    reg [47:0] prompt_x = 48'd0, prompt_m = 48'd0;   // +PROMPT, and its byte mask
     integer prompts = 0, nrx = 0;
     reg [7:0] ch;
     integer i;
@@ -130,10 +146,14 @@ module boot_tb;
                 end
                 repeat (CPB) @(posedge clk);           // stop bit
                 if (ch != 8'h0d) $write("%c", ch);
-                if (logfd != 0) $fwrite(logfd, "%c", ch);
+                if (logfd != 0) begin $fwrite(logfd, "%c", ch); $fflush(logfd); end
                 nrx = nrx + 1;
                 last6 = {last6[39:0], ch};
-                if (last6 == "boot> " || last6 == "type> ") prompts = prompts + 1;
+                if (last6 == "boot> " || last6 == "type> " ||
+                    (prompt_m != 0 && (last6 & prompt_m) == prompt_x)) begin
+                    prompts = prompts + 1;
+                    $display("\nBOOT-TB prompt %0d at cycle %0d", prompts, cyc);
+                end
             end
         end
     end
@@ -145,12 +165,15 @@ module boot_tb;
         rx = 1'b1; repeat (CPB) @(posedge clk);
     end endtask
 
-    integer sfd, len, n, c, chunk = 0, sent = 0;
+    integer sfd, len, n, c, chunk = 0, sent = 0, typegap = 0;
     initial begin
         if (!$value$plusargs("ROM=%s", romf)) begin $display("boot_tb: need +ROM="); $finish; end
         $readmemh(romf, dut.rom);
         if ($value$plusargs("MAXCYC=%d", maxcyc)) ;
         if ($value$plusargs("LOG=%s", logf)) logfd = $fopen(logf, "w");
+        if ($value$plusargs("TYPEGAP=%d", typegap)) ;
+        if ($value$plusargs("PROMPT=%s", prompt_x))
+            for (n = 0; n < 6; n = n + 1) if (prompt_x[8*n +: 8] != 8'd0) prompt_m[8*n +: 8] = 8'hff;
         sfd = 0;
         if ($value$plusargs("STREAM=%s", streamf)) sfd = $fopen(streamf, "rb");
         repeat (3) @(posedge clk);
@@ -164,7 +187,10 @@ module boot_tb;
                 len = len | ($fgetc(sfd) << 24);
                 while (prompts <= chunk) @(posedge clk);
                 repeat (4 * CPB) @(posedge clk);
-                for (n = 0; n < len; n = n + 1) send_byte($fgetc(sfd));
+                for (n = 0; n < len; n = n + 1) begin
+                    send_byte($fgetc(sfd));
+                    if (len < 256 && typegap > 0) repeat (typegap) @(posedge clk);
+                end
                 sent = sent + len;
                 chunk = chunk + 1;
                 c = $fgetc(sfd);
