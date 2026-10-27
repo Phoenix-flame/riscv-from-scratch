@@ -530,6 +530,23 @@ uboot: ## fetch + build U-Boot for soc_boot (sim + board builds) and the U-Boot(
 linux-uboot: boot-sw ## U-Boot boots Linux (booti) on soc_boot (DDR), then the shell checks of make linux
 	python3 tools/rvlinux run --fast --uboot $(ARGS)
 
+# ---- Step 56: booting with no PC: flash -> the PS -> DDR -> the ROM ------
+# make boot-mem       the ROM boots an image it finds in memory, refuses a
+#                     corrupt one, and gives the serial prompt on a key
+# make ps-test        the PS program's BOOT.BIN parser and QSPI flash writer,
+#                     on this PC against a model of the controller and flash
+# make linux-frommem  U-Boot + Linux as the board boots from flash: the image
+#                     at 0x8300_0000, nothing sent, the board configuration
+.PHONY: boot-mem ps-test linux-frommem
+boot-mem: boot-sw ## the ROM boots an RVBI image left in RAM (as the PS leaves one from flash); bad image and key-press fallbacks
+	python3 tools/rvboot test-bootmem $(ARGS)
+
+ps-test: ## the PS program's BOOT.BIN parser + QSPI writer against a controller/flash model (host C)
+	$(MAKE) -C sw/linux/board/ps test
+
+linux-frommem: boot-sw $(BBB)/rom.hex ## U-Boot + Linux booted from memory, as from flash on the board (board configuration), shell checks
+	python3 tools/rvlinux run --frommem --uboot --board $(ARGS)
+
 # ---- Step 45: menuconfig -> a generated RISC-V project for OpenZynq ------
 # make menuconfig                         edit .config (curses menu, Kconfig)
 # make defconfig DEFCONFIG=configs/...    start from a preset

@@ -16,10 +16,10 @@ and get a busybox shell.
 > Linux boots to its shell, directly and through U-Boot, on the board's
 > exact configuration in simulation. **None of it has run on a real
 > board yet**, and the design hasn't been placed or routed, so whether it
-> meets 50 MHz is unknown. Section 11 lists what to watch for. The
-> "flashing" question has its own answer in section 10: today the board
-> is loaded over JTAG and serial on every power-up. Nothing here is
-> written to flash yet.
+> meets 50 MHz is unknown. Section 11 lists what to watch for. Section 10
+> makes the board boot from its QSPI flash with no PC. Its ROM side is
+> simulated; its FSBL code (PCAP, QSPI) has only run against a model.
+> Bring the board up over JTAG and serial first (sections 7–9).
 
 ## Contents
 
@@ -32,7 +32,7 @@ and get a busybox shell.
 7. [Bring the board up](#7-bring-the-board-up)
 8. [Boot Linux](#8-boot-linux)
 9. [Boot U-Boot, then Linux](#9-boot-u-boot-then-linux)
-10. [Flashing: what persists, and what doesn't yet](#10-flashing-what-persists-and-what-doesnt-yet)
+10. [Flashing: boot with no PC attached](#10-flashing-boot-with-no-pc-attached)
 11. [Troubleshooting](#11-troubleshooting)
 12. [Reference: addresses and files](#12-reference-addresses-and-files)
 
@@ -68,6 +68,10 @@ Every power-up goes through the same sequence:
 4. **You send an image**, Linux or U-Boot + Linux, with
    `tools/rvboot send`. The ROM checks its CRCs, writes a device tree,
    and starts it in S-mode, staying resident as the SBI.
+
+Section 10 replaces steps 1 and 4 with the flash. The BootROM starts the
+same PS program from a `BOOT.BIN`, and the program programs the PL itself
+and leaves the image in DDR for the ROM.
 
 ## 2. What you need
 
@@ -233,12 +237,18 @@ and starts it. Check each stage before going on.
 
 ```
 riscv_linux: the PS side
+  JTAG boot
   ps7_init + ps7_post_config: ok (clocks, DDR trained, PL level shifters on)
   bitstream: RVFS
   DDR at 0x10000000..0x13ffffff: ok
+  flash: no boot header (0xaa995566, "XNLX" at 0x20)
   RISC-V released: its console is JM1 pin 21 (TX) / 22 (RX), 115200 8N1
   send it an image: tools/rvboot send /dev/ttyUSB0 build/linux/linux-board.rvbi
+  write BOOT.BIN to flash from here: tools/rvboot flash <this port> BOOT.BIN
 ```
+
+The `flash:` line reports what the QSPI flash holds (section 10). An
+empty flash, or one holding some other `BOOT.BIN`, is fine in JTAG mode.
 
 **LED2** starts blinking: the RISC-V is out of reset.
 
@@ -384,44 +394,156 @@ device tree's clock. The `-board` images are built for 115200, and the
 `-sim` images run at 3.125 Mbaud for the simulator, so on a board a
 `-sim` image prints garbage.
 
-## 10. Flashing: what persists, and what doesn't yet
+## 10. Flashing: boot with no PC attached
 
-**Today, nothing in this setup survives a power cycle.** The bitstream
-and the PS program come over JTAG (`make run`), and the RISC-V's images
-come over its serial port. Writing a file to flash won't change that,
-for two reasons:
+Once sections 7–9 work over JTAG and serial, the board can boot on its
+own from its 16 MiB QSPI flash into U-Boot and Linux (Step 56,
+`docs/56-boot-from-flash.md`). Nothing is written to flash until you run
+`rvboot flash` below.
 
-1. **A Zynq doesn't boot a raw bitstream from flash.** The BootROM loads
-   a `BOOT.BIN` from QSPI or SD. That file holds a first-stage boot
-   loader (FSBL), which runs `ps7_init`, programs the PL from a
-   bitstream partition, and starts the next program. OpenZynq's
-   `make flash` writes a raw `.bit`, which the BootROM ignores (its own
-   `docs/03` says so). This design's PS program initialises the PS, but
-   it doesn't program the PL, so it can't serve as that FSBL yet.
-2. **The RISC-V can't reach the flash.** QSPI and SD are PS peripherals.
-   The RISC-V's ROM boots only what arrives on its UART. U-Boot on the
-   RISC-V has no driver for them either, and it couldn't reach them if
-   it had one.
+**How it boots.** A Zynq's BootROM doesn't load a raw bitstream from
+flash. It loads a `BOOT.BIN`, whose first partition is a first-stage boot
+loader (FSBL). Here the FSBL is the same PS program as before:
 
-**What a persistent setup would take:**
+1. In QSPI boot mode, the BootROM loads it from `BOOT.BIN` into OCM.
+2. It runs `ps7_init`, programs the PL from the `BOOT.BIN` bitstream
+   through PCAP, and runs `ps7_post_config`.
+3. It checks the bitstream ID and the DDR, as in JTAG mode.
+4. It copies the `BOOT.BIN`'s RISC-V image (U-Boot + Linux) to DDR
+   `0x1300_0000` and releases the RISC-V.
+5. The RISC-V's ROM finds the image at `0x8300_0000`. It waits 1 s (a key
+   on JM1 gets `boot> ` instead), checks the image's CRCs and boots it.
+   U-Boot then autoboots Linux.
 
-| piece | what | where it can be tested |
-|---|---|---|
-| a. `BOOT.BIN` | the PS program as the FSBL, plus the bitstream, plus `uboot-linux-board.rvbi` as data partitions, assembled with `mkbootimage` (in OpenZynq's container; its `docs/04` shows a `.bif`) | the board |
-| b. the PS program as an FSBL | after `ps7_init`: program the PL through PCAP from the bitstream partition, copy the image from QSPI (linear reads at `0xFC00_0000`) or SD into the RISC-V's DDR window, then write "run" | the board |
-| c. "boot from memory" in the ROM | at reset, look for a valid image (magic, header CRC, data CRC) at a fixed DDR address. If there is one, boot it as if it had arrived over the UART; if not, prompt as now. | simulation, fully |
-| d. U-Boot's environment | lives only in RAM: the board's flash isn't reachable from the RISC-V. `bootcmd` and `bootargs` are compiled in (`sw/uboot/uboot.config`). | — |
+The RISC-V never touches the flash. U-Boot's environment stays in RAM, and
+its `bootcmd` and `bootargs` are compiled in (`sw/uboot/uboot.config`).
+`saveenv` has nowhere to go.
 
-With a–c in place, the boot-mode straps go to QSPI or SD, and the board
-powers up into U-Boot and Linux with no PC attached. Piece c is a small
-ROM change. Pieces a and b are new PS-side code that can only be proven
-on hardware. Ask, and I'll build them in that order, with c tested in
-simulation first.
+**What's been checked.**
 
-**What you can flash today** is OpenZynq's own PS-only material, such as
-a `BOOT.BIN` with U-Boot for the Cortex-A9 (its `docs/04`). That runs
-ARM Linux on the PS. It's a different computer from the RISC-V in this
-guide.
+- The ROM half, and U-Boot + Linux booting from memory on the board
+  configuration, are simulated: `make boot-mem`, `make linux-frommem`.
+- The FSBL's `BOOT.BIN` parser and its flash writer have run on a PC
+  against a model of the QSPI controller and flash: `make ps-test`.
+- Its PCAP and QSPI register sequences have **not run on silicon**. Expect
+  this part to need debugging on the first board. That's safe: JTAG boot
+  mode never reads the flash, so you can always go back to sections 7–9.
+
+### 10.1 Build `BOOT.BIN`
+
+Build U-Boot and the board images first (`make uboot`), then regenerate
+the OpenZynq project. It now also writes `projects/riscv_linux/boot.bif`
+and copies `uboot-linux-board.rvbi` to `projects/riscv_linux/fw/boot.rvbi`:
+
+```bash
+make uboot
+make linux-oz OZ=../OpenZynq
+```
+
+`linux-oz` prints `projects/riscv_linux/fw/boot.rvbi:
+build/linux/uboot-linux-board.rvbi, for BOOT.BIN (boot.bif)`. Then, in
+OpenZynq:
+
+```bash
+cd ../OpenZynq
+docker compose run --rm oz make -C projects/riscv_linux/ps vivado-init   # if not done yet
+docker compose run --rm oz make -C projects/riscv_linux/ps               # the FSBL: ps/build/riscv_linux.elf
+docker compose run --rm oz make bit PROJECT=riscv_linux                  # if not built yet
+docker compose run --rm oz mkbootimage projects/riscv_linux/boot.bif BOOT.BIN
+```
+
+`BOOT.BIN` comes out at about 5.3 MB: the FSBL (19 KB), the bitstream
+(about 2.1 MB) and the RISC-V image (3.2 MB). It must stay under 16 MiB.
+Optionally, `make -C projects/riscv_linux/ps test` re-runs the parser and
+flash-writer checks.
+
+### 10.2 Write it to the flash
+
+Use JTAG boot mode and `make run`, as in section 7:
+
+```bash
+docker compose run --rm oz make run PROJECT=riscv_linux
+```
+
+The PS console now prints two extra lines: what the flash holds, and that
+it accepts a `BOOT.BIN`:
+
+```
+  flash: no boot header (0xaa995566, "XNLX" at 0x20)
+  ...
+  write BOOT.BIN to flash from here: tools/rvboot flash <this port> BOOT.BIN
+```
+
+Close any terminal on the PS console, then, from riscv-from-scratch, give
+`rvboot flash` the **CH340's** port. That's the PS console, not the JM1
+adapter:
+
+```bash
+tools/rvboot flash /dev/ttyUSB1 ../OpenZynq/BOOT.BIN
+```
+
+```
+[ps] flash: receiving 5312356 bytes
+[rvboot] sending ../OpenZynq/BOOT.BIN: 5,312,356 bytes, about 7.7 minutes at 115200
+[rvboot] 100%  5,312,356 bytes    461s
+[ps] flash: CRC ok, BOOT.BIN: bitstream 2083856 bytes, RISC-V image 3232149 bytes
+[ps] flash: JEDEC ID 0x00ef4018; erasing and writing
+[ps] flash: 1024 of 5187 KiB
+...
+[ps] flash: done, 5312356 bytes written and read back. Set the boot mode to QSPI and power-cycle.
+[rvboot] flash written: set the boot mode to QSPI and power-cycle
+```
+
+The JEDEC ID tells you the flash part. The last two hex digits should be
+`18` (16 MiB). The sizes above are illustrative. The PS program checks the
+file's CRC, and that it's a `BOOT.BIN` holding both a bitstream and an
+RVBI image, **before** it erases anything. Afterwards it reads the whole
+image back. A failure prints `flash: FAILED: <why>`. Before the erase,
+the flash is left as it was. During the write, what's left fails one of
+the boot-time checks (the FSBL's, PCAP's or the ROM's CRCs), so write it
+again. The RISC-V keeps running throughout; flashing doesn't touch its
+DDR.
+
+Run `make run` again in JTAG mode, and the PS console now reports
+`flash holds a riscv_linux BOOT.BIN: bitstream … bytes, RISC-V image …
+bytes (it boots with the boot mode on QSPI)`. That shows that QSPI reads
+and parsing work on your board before you change the straps.
+
+### 10.3 Boot from it
+
+Power off, set the boot mode to **QSPI**, and power on. UG585 table 6-4
+gives the boot-mode pins: MIO[5:3] = `000` for JTAG, `100` for QSPI. Find
+which switch or jumpers drive them on the Mitra's schematic. Have both
+consoles open. The PS console prints:
+
+```
+riscv_linux: the PS side
+  QSPI boot: this is the FSBL
+  PL programmed from flash (PCAP, 2083856 bytes)
+  ps7_init + ps7_post_config: ok (clocks, DDR trained, PL level shifters on)
+  bitstream: RVFS
+  DDR at 0x10000000..0x13ffffff: ok
+  RISC-V image copied from flash to 0x13000000 (3232149 bytes)
+  RISC-V released: its console is JM1 pin 21 (TX) / 22 (RX), 115200 8N1
+  its ROM boots the image in 1 s; a key on its console first gets "boot> "
+```
+
+Then JM1 shows the ROM banner and `image in memory at 0x83000000: booting
+it in 1 s`. After about 5 s of checking it prints `data: … ok`, then U-Boot,
+its 2-second autoboot, and Linux to `rvfs# `. Expect roughly 15–20 s from
+power to shell, an estimate from the simulated cycle counts plus the flash
+reads.
+
+- **To get the serial prompt instead**, press a key on JM1 within that
+  second. K1 resets only the RISC-V. By then U-Boot and Linux have
+  probably reused the memory the image was in, so the ROM's CRC check
+  usually fails and it prompts `boot> `. A power-cycle always boots from
+  flash again.
+- **To change what boots**, rebuild `BOOT.BIN` and flash it again
+  (section 10.2, in JTAG mode).
+- **To go back to the JTAG workflow**, set the straps to JTAG. The flash is
+  ignored, and `make run` clears the image from DDR, so the ROM prompts as
+  before.
 
 ## 11. Troubleshooting
 
@@ -441,6 +563,12 @@ guide.
 | `error: header …` before any data | the ROM saw line noise before the magic | harmless if the next image is good; the ROM resynchronises on the magic |
 | Linux stops early, or random Oops/panics | timing not met, or DDR | trust the timing report; then `make ddr-test` |
 | U-Boot: `Bad Linux RISCV Image magic!` | no kernel at `0x81000000` | send `uboot-linux-board.rvbi`, not `u-boot-board.rvbi`, or `loady` one first |
+| `rvboot flash`: `no answer on … in 5 s` | the wrong port (JM1's adapter instead of the CH340), the PS program not running, or another terminal holding the port | `make run` in JTAG mode; the CH340 is the `ch341` driver's node (section 6); close picocom |
+| `flash: FAILED: CRC-32 …` | bytes lost on the PS console | nothing was written; run it again with nothing else on the port |
+| `flash: FAILED: the flash ignores write enable` | the flash's block protection is set, or the QSPI wiring/clocks differ from what `qspi.c` assumes | note the JEDEC ID it printed and report it; the flash is untouched |
+| QSPI boot: the PS console is silent | the BootROM didn't take the `BOOT.BIN`: the straps, or a bad image | back to JTAG mode; `make run` reports what the flash holds |
+| QSPI boot: `PL: …` and a stop | PCAP failed: a bitstream for another part, or an untested register sequence | report the message; JTAG mode still works |
+| QSPI boot: the PS is fine, but JM1 shows `boot> ` | the ROM refused the image (its CRC line says why), or a key arrived during its second | rebuild and reflash `BOOT.BIN`; check nothing is typing on JM1 |
 
 ## 12. Reference: addresses and files
 
@@ -456,9 +584,13 @@ guide.
 | `0x8000_0000` | RAM: the first 16 KiB in block RAM (firmware, reserved in the DT), the rest PS DDR `0x1000_4000…` |
 | `0x8040_0000` | Linux runs here (RAM + 4 MiB, a Sv32 megapage). U-Boot is loaded here too, and relocates itself to the top of RAM. |
 | `0x8100_0000` | where `uboot-linux-board.rvbi` puts the kernel for `booti` |
+| `0x8300_0000` | where the ROM looks for an image at reset: PS DDR `0x1300_0000`, filled by the FSBL from flash (Step 56) |
 | `0x83ff_e000` | the device tree the ROM writes, the last 8 KiB of RAM |
 
 **The PS side:** DDR `0x1000_0000..0x13ff_ffff` belongs to the RISC-V.
+The PS program uses `0x0100_0000` (the bitstream on its way to PCAP) and
+`0x0200_0000` (a `BOOT.BIN` on its way to the flash). The flash is read at
+`0xfc00_0000`.
 `M_AXI_GP0` at `0x4000_0000`: reading it returns `RVFS`, writing bit 0
 sets run; `0x4000_0004` reads back run (bit 0) and powered-off (bit 1).
 
@@ -467,8 +599,9 @@ sets run; `0x4000_0004` reads back run (bit 0) and powered-off (bit 1).
 | file | |
 |---|---|
 | `rtl/fpga_top_linux.v`, `constraints/openzynq_linux.xdc` | the board top and its pins |
-| `sw/linux/board/ps/main.c` | the PS program |
+| `sw/linux/board/ps/main.c` | the PS program, and the FSBL of `BOOT.BIN` (Step 56) |
+| `sw/linux/board/ps/{bootbin,qspi,pcap}.c`, `test/` | `BOOT.BIN` parsing, the QSPI flash, PL programming; `make ps-test` |
 | `sw/linux/kernel.config`, `sw/linux/busybox.config`, `sw/uboot/uboot.config` | what is built |
 | `tools/rvlinux` | fetch, build, `board-image`, `uboot`, `oz-export`, `oz-sim`, `run` |
-| `tools/rvboot` | `image`, `info`, `send` |
-| `docs/53-linux.md`, `docs/54-linux-on-the-board.md`, `docs/55-u-boot.md` | the steps behind this guide |
+| `tools/rvboot` | `image`, `info`, `send`, `flash` |
+| `docs/53-linux.md`, `docs/54-linux-on-the-board.md`, `docs/55-u-boot.md`, `docs/56-boot-from-flash.md` | the steps behind this guide |

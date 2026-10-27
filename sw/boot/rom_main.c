@@ -112,6 +112,24 @@ static uint32_t drain(void)
     return n;
 }
 
+/* Where the image comes from (Step 56): the UART, or an image already in
+ * memory at BOOTMEM_ADDR. Either way it goes through the same checks. */
+static const uint8_t *msrc;               /* 0: the UART; else the next byte in memory */
+static uint32_t payload_end;              /* segments must end below this: DTB_ADDR, or
+                                             BOOTMEM_ADDR for an image read from there */
+
+static uint32_t get_bytes(void *dst, uint32_t n, uint32_t crc)
+{
+    if (!msrc) return rx_bytes(dst, n, crc);
+    uint8_t *p = dst;
+    while (n--) {
+        uint8_t b = *msrc++;
+        *p++ = b;
+        crc = crc32_byte(crc, b);
+    }
+    return crc;
+}
+
 static struct rvbi_header hdr;
 static struct rvbi_seg    seg[RVBI_MAX_SEGS];
 static char               cmdline[RVBI_MAX_CMD + 1];
@@ -129,19 +147,20 @@ static int load_image(void)
 {
     uint32_t w = 0;
     line_err = 0;
-    while (w != RVBI_MAGIC) w = (w >> 8) | ((uint32_t)rx() << 24);   /* skip line noise */
+    if (msrc) { w = *(const uint32_t *)msrc; msrc += 4; }     /* in memory: it is there or not */
+    else while (w != RVBI_MAGIC) w = (w >> 8) | ((uint32_t)rx() << 24);   /* skip line noise */
     hdr.magic = w;
     /* the header CRC covers the header with hdr_crc itself as zero */
     const unsigned pre = offsetof(struct rvbi_header, hdr_crc);
     uint32_t crc = crc32(0, &hdr, 4) ^ 0xFFFFFFFFu;
-    crc = rx_bytes((uint8_t *)&hdr + 4, pre - 4, crc);
-    rx_bytes(&hdr.hdr_crc, 4, 0);
+    crc = get_bytes((uint8_t *)&hdr + 4, pre - 4, crc);
+    get_bytes(&hdr.hdr_crc, 4, 0);
     for (int i = 0; i < 4; i++) crc = crc32_byte(crc, 0);
-    if (hdr.version != RVBI_VERSION || hdr.nseg == 0 || hdr.nseg > RVBI_MAX_SEGS ||
-        hdr.cmdline_len > RVBI_MAX_CMD)
+    if (hdr.magic != RVBI_MAGIC || hdr.version != RVBI_VERSION || hdr.nseg == 0 ||
+        hdr.nseg > RVBI_MAX_SEGS || hdr.cmdline_len > RVBI_MAX_CMD)
         return IMG_BAD_HDR;
-    crc = rx_bytes(seg, hdr.nseg * sizeof seg[0], crc);
-    crc = rx_bytes(cmdline, hdr.cmdline_len, crc);
+    crc = get_bytes(seg, hdr.nseg * sizeof seg[0], crc);
+    crc = get_bytes(cmdline, hdr.cmdline_len, crc);
     cmdline[hdr.cmdline_len] = '\0';
     crc_got = ~crc;
     if (crc_got != hdr.hdr_crc) return IMG_HDR_CRC;
@@ -151,7 +170,7 @@ static int load_image(void)
     int entry_ok = 0;
     for (int i = 0; i < hdr.nseg; i++) {
         uint32_t a = seg[i].addr, end = a + seg[i].memsz;
-        if (seg[i].filesz > seg[i].memsz || end < a || a < PAYLOAD_BASE || end > DTB_ADDR) {
+        if (seg[i].filesz > seg[i].memsz || end < a || a < PAYLOAD_BASE || end > payload_end) {
             bad_seg = i;
             return IMG_RANGE;
         }
@@ -165,7 +184,7 @@ static int load_image(void)
     crc = 0xFFFFFFFFu;
     for (int i = 0; i < hdr.nseg; i++) {
         uint8_t *p = (uint8_t *)seg[i].addr;
-        crc = rx_bytes(p, seg[i].filesz, crc);
+        crc = get_bytes(p, seg[i].filesz, crc);
         memset(p + seg[i].filesz, 0, seg[i].memsz - seg[i].filesz);       /* .bss */
     }
     crc_got   = ~crc;
@@ -196,7 +215,7 @@ static void report(int err)
     switch (err) {
     case IMG_RANGE:
         printf("  error: segment %u [0x%08x, 0x%08x) is outside the payload area [0x%08x, 0x%08x)\n",
-               bad_seg, seg[bad_seg].addr, seg[bad_seg].addr + seg[bad_seg].memsz, PAYLOAD_BASE, DTB_ADDR);
+               bad_seg, seg[bad_seg].addr, seg[bad_seg].addr + seg[bad_seg].memsz, PAYLOAD_BASE, payload_end);
         break;
     case IMG_SIZES: printf("  error: segment sizes do not add up to the data size\n"); break;
     case IMG_ENTRY: printf("  error: the entry point is not in a loaded segment\n"); break;
@@ -230,13 +249,40 @@ void rom_main(void)
 {
     lib_putc = rom_putc;
     ram_size = probe_ram();
+    payload_end = DTB_ADDR;
     ns16550_init(&rom_uart, UART_DIVISOR);
 
     printf("\nrvfs boot ROM (Step 49), hart %u\n", csr_read(mhartid));
     printf("  RAM      0x%08x, %u KiB (probed)\n", RAM_BASE, ram_size >> 10);
     printf("  payloads [0x%08x, 0x%08x), DTB at 0x%08x\n", PAYLOAD_BASE, DTB_ADDR, DTB_ADDR);
     printf("  SBI v2.0 resident: BASE TIME DBCN SRST + legacy 0.1\n");
-    for (;;) {
+
+    /* an image already in memory (Step 56)? Booted after BOOTMEM_WAIT,
+     * unless a key arrives first -- or it fails a check -- in which case
+     * the serial prompt, as always */
+    int booted = 0;
+    if (BOOTMEM_ADDR + sizeof hdr <= RAM_BASE + ram_size - DTB_AREA &&
+        *(volatile uint32_t *)BOOTMEM_ADDR == RVBI_MAGIC) {
+        printf("  image in memory at 0x%08x: booting it in 1 s, any key for the serial prompt\n",
+               BOOTMEM_ADDR);
+        uint64_t t0 = rdtime();
+        int key = 0;
+        while (!key && rdtime() - t0 < BOOTMEM_WAIT) key = ns16550_getc(&rom_uart) >= 0;
+        if (key) {
+            drain();
+            printf("  key pressed: not booting it\n");
+        } else {
+            msrc = (const uint8_t *)BOOTMEM_ADDR;
+            payload_end = BOOTMEM_ADDR;
+            int err = load_image();
+            msrc = 0;
+            payload_end = DTB_ADDR;
+            report(err);
+            if (err == IMG_OK) booted = 1;
+            else printf("  (not booting it)\n");
+        }
+    }
+    while (!booted) {
         puts_raw("boot> ");
         int err = load_image();
         if (err == IMG_OK) { report(err); break; }

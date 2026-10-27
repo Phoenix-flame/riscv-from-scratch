@@ -106,8 +106,9 @@ after setting `/chosen/bootargs` from its environment.
 - **The environment lives only in RAM** (`ENV_IS_NOWHERE`). Nothing
   persistent is reachable from the RISC-V: the board's QSPI and SD
   belong to the PS. `saveenv` has nowhere to go, so `bootcmd` and
-  `bootargs` are compiled in. The board guide's section 10 lays out what
-  persistence would take.
+  `bootargs` are compiled in. Step 56 boots the board from flash anyway:
+  the PS copies U-Boot + Linux from `BOOT.BIN` into DDR for the ROM
+  (`docs/56-boot-from-flash.md`); the environment still isn't saved.
 - `loady` is configured but has not been tried, not even in simulation.
 - U-Boot's `usbkbd`/`vidconsole` stdio entries come from the `qemu`
   defaults. They're harmless here, but they are part of why U-Boot spends

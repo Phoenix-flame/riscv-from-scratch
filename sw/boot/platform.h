@@ -39,6 +39,13 @@
 /* The DTB handed to the payload lives in the last DTB_AREA bytes of RAM
  * (room for the fixed-up tree to grow). */
 #define DTB_AREA         0x00002000   /* 8 KiB */
+/* Boot from memory (Step 56): an image something else left in RAM -- on
+ * the board, the PS program copies one there from flash before it
+ * releases the RISC-V. The ROM boots it, after BOOTMEM_WAIT ticks in which
+ * a key on the UART gets the serial prompt instead. Only with RAM past it;
+ * the image's segments must all load below it. */
+#define BOOTMEM_ADDR     0x83000000   /* RAM_BASE + 48 MiB = PS DDR 0x1300_0000 */
+#define BOOTMEM_WAIT     PLAT_CLOCK_HZ /* 1 s of mtime */
 
 #define TEST_PASS        0x5555
 #define TEST_FAIL        0x3333       /* | exit code << 16 */

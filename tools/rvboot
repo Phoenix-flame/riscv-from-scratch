@@ -13,10 +13,13 @@
 #   stty -F /dev/ttyUSB0 115200 raw && cat prog.rvbi > /dev/ttyUSB0
 # or, waiting for the prompt and staying on as a terminal (Step 54):
 #   tools/rvboot send /dev/ttyUSB0 prog.rvbi
+# and the board's QSPI flash is written through its PS program (Step 56):
+#   tools/rvboot flash /dev/ttyUSB1 BOOT.BIN
 #
 # And it runs the platform's system test (`make boot`):
 #
 #   tools/rvboot test [--sim auto|verilator|iverilog]
+#   tools/rvboot test-bootmem      the ROM booting an image left in RAM (make boot-mem)
 #
 # which boots soc_boot in simulation with tb/boot_tb.v on the other end
 # of the UART, sends it a sequence of images -- two that must be
@@ -361,9 +364,94 @@ def cmd_test(args):
     print(f"BOOT: ALL PASS ({', '.join(variants)})")
 
 
+# ---- boot from memory (Step 56) -----------------------------------------
+BOOTMEM_ADDR = 0x83000000       # must match sw/boot/platform.h
+
+
+def write_preload(path, chunks):
+    """A $readmemh file for boot_tb's +PRELOAD: (RISC-V address, bytes) pairs."""
+    with open(path, "w") as f:
+        for addr, data in chunks:
+            d = bytes(data) + b"\0" * (-len(data) % 4)
+            f.write(f"@{(addr - 0x80000000) // 4:08x}\n")
+            for i in range(0, len(d), 4):
+                f.write(f"{struct.unpack_from('<I', d, i)[0]:08x}\n")
+
+
+def cmd_test_bootmem(args):
+    """The ROM and an image left in memory: booted, refused, or skipped for a key.
+
+    On the board the PS copies the image there from flash; here the bench
+    preloads it into the DDR model at BOOTMEM_ADDR (64 MiB of DDR, MEMSYS 2)."""
+    for f in ["rom.hex", "libc_demo.elf"]:
+        if not (BUILD / f).exists():
+            die(f"build/boot/{f} missing -- run `make boot-sw`")
+    sim = "verilator" if args.sim == "auto" and shutil.which("verilator") else args.sim
+    if sim == "auto":
+        sim = "iverilog"
+    exe = build_sim(sim, "ddr")
+    img = image_from_elf(BUILD / "libc_demo.elf", "rvfs.payload=libc_demo")
+    bad = bytearray(img)
+    bad[-5] ^= 0x40                                       # one data bit
+    ran = [r"^picolibc on rv32im: printf \+ malloc$", r"^squares sum=140$", r"^DONE$"]
+    found = r"^  image in memory at 0x83000000: booting it in 1 s, any key for the serial prompt$"
+    cases = [
+        # name, image in memory, chunks to send, extra prompt, lines the transcript must have
+        ("a valid image: booted from memory, nothing sent", img, [], None,
+         [found, r"^  data: \d+ bytes, CRC32 0x[0-9a-f]+ ok"] + ran),
+        ("one bit flipped: refused, then the serial prompt", bad, [img], None,
+         [found, r"^  error: data CRC32 0x[0-9a-f]+, image says", r"^  \(not booting it\)$", r"^boot> "] + ran),
+        ("a key within the second: the serial prompt", img, [b"x", img], "prompt",
+         [found, r"^  key pressed: not booting it$", r"^boot> "] + ran),
+    ]
+    failed = 0
+    for name, mem, send, prompt, want in cases:
+        pre, stream, log = BUILD / "bootmem.hex", BUILD / "bootmem_stream.bin", BUILD / "bootmem.log"
+        write_preload(pre, [(BOOTMEM_ADDR, mem)])
+        stream.write_bytes(b"".join(struct.pack("<I", len(c)) + c for c in send))
+        cmd = exe + [f"+ROM={BUILD / 'rom.hex'}", f"+STREAM={stream}", f"+LOG={log}",
+                     f"+PRELOAD={pre}", "+MAXCYC=80000000"]
+        if prompt:
+            cmd.append(f"+PROMPT={prompt}")
+        r = run(cmd, cwd=REPO)
+        m = re.search(r"BOOT-TB: (\w+) exit=(\d+) cycles=(\d+) resets=(\d+) chunks=(\d+)", r.stdout)
+        text = log.read_text(errors="replace").replace("\r", "").split("\n") if log.exists() else []
+        fails = [f"no line matching {p!r}" for p in want if not any(re.search(p, l) for l in text)]
+        if not m:
+            fails.append("no summary from the bench")
+        elif m.group(1) != "halted" or m.group(2) != "0" or int(m.group(5)) != len(send):
+            fails.append(f"{m.group(1)}, exit {m.group(2)}, {m.group(5)} of {len(send)} chunks sent")
+        print(f"[rvboot] {'ok  ' if not fails else 'FAIL'} {name}"
+              + (f" ({int(m.group(3)):,} cycles)" if m else ""))
+        for f in fails:
+            print(f"[rvboot]      {f}")
+        failed += bool(fails)
+    print("BOOTMEM: " + ("ALL PASS" if not failed else f"{failed} FAIL"))
+    sys.exit(1 if failed else 0)
+
+
 # ---- a real board (Step 54) -------------------------------------------
 BAUDS = {9600: "B9600", 19200: "B19200", 38400: "B38400", 57600: "B57600",
          115200: "B115200", 230400: "B230400", 460800: "B460800", 921600: "B921600"}
+
+
+def open_serial(port, baud):
+    """A raw 8N1 port, no flow control, nothing buffered from before."""
+    import os
+    import termios
+    fd = os.open(port, os.O_RDWR | os.O_NOCTTY)
+    if os.isatty(fd):
+        a = termios.tcgetattr(fd)
+        a[0] = 0                                           # iflag: raw
+        a[1] = 0                                           # oflag
+        a[2] = termios.CS8 | termios.CREAD | termios.CLOCAL  # 8N1, no flow control
+        a[3] = 0                                           # lflag: no echo, no lines
+        speed = getattr(termios, BAUDS[baud])
+        a[4] = a[5] = speed
+        a[6][termios.VMIN], a[6][termios.VTIME] = 0, 0
+        termios.tcsetattr(fd, termios.TCSANOW, a)
+        termios.tcflush(fd, termios.TCIOFLUSH)
+    return fd
 
 
 def cmd_send(args):
@@ -384,18 +472,7 @@ def cmd_send(args):
         die(f"{args.image}: not an RVBI image (make one with `rvboot image`)")
     if args.baud not in BAUDS:
         die(f"baud must be one of {sorted(BAUDS)}")
-    fd = os.open(args.port, os.O_RDWR | os.O_NOCTTY)
-    if os.isatty(fd):
-        a = termios.tcgetattr(fd)
-        a[0] = 0                                           # iflag: raw
-        a[1] = 0                                           # oflag
-        a[2] = termios.CS8 | termios.CREAD | termios.CLOCAL  # 8N1, no flow control
-        a[3] = 0                                           # lflag: no echo, no lines
-        speed = getattr(termios, BAUDS[args.baud])
-        a[4] = a[5] = speed
-        a[6][termios.VMIN], a[6][termios.VTIME] = 0, 0
-        termios.tcsetattr(fd, termios.TCSANOW, a)
-        termios.tcflush(fd, termios.TCIOFLUSH)
+    fd = open_serial(args.port, args.baud)
 
     def pump(timeout):
         """Copy whatever the machine sent to stdout; return it."""
@@ -455,6 +532,81 @@ def cmd_send(args):
     out.write(b"\n")
 
 
+# ---- writing BOOT.BIN to the board's flash (Step 56) -------------------
+FLASH_MAGIC = b"RVFLASH1"
+FLASH_BYTES = 16 << 20
+
+
+def cmd_flash(args):
+    """Write a BOOT.BIN to the Mitra's QSPI flash through the PS program.
+
+    The PS program (sw/linux/board/ps, started by `make run`) listens on
+    UART0, the on-board CH340, for "RVFLASH1", the length and the CRC-32.
+    It answers "flash: receiving N bytes", takes the bytes into DDR, checks
+    the CRC and that it is a BOOT.BIN with a bitstream and an RVBI image,
+    and only then erases, writes and reads back. Everything it prints is
+    copied here; "flash: done" ends it."""
+    import os
+    import select
+    import time
+    img = Path(args.bootbin).read_bytes()
+    if len(img) < 0xa0 or img[0x20:0x28] != struct.pack("<II", 0xAA995566, 0x584C4E58):
+        die(f"{args.bootbin}: not a BOOT.BIN (no width word and XNLX at 0x20)")
+    if len(img) > FLASH_BYTES:
+        die(f"{args.bootbin}: {len(img):,} bytes, more than the 16 MiB flash")
+    if struct.pack("<I", MAGIC) not in img:
+        die(f"{args.bootbin}: no RVBI image inside: build it from riscv_linux's boot.bif")
+    fd = open_serial(args.port, args.baud)
+    buf = b""
+
+    def lines(timeout):
+        """the PS program's complete lines, echoed, until timeout s of silence"""
+        nonlocal buf
+        r, _, _ = select.select([fd], [], [], timeout)
+        if not r:
+            return None
+        buf += os.read(fd, 4096)
+        *done, buf = buf.split(b"\n")
+        out = [l.decode(errors="replace").strip() for l in done]
+        for l in out:
+            print(f"[ps] {l}", flush=True)
+        return out
+
+    os.write(fd, FLASH_MAGIC + struct.pack("<II", len(img), crc32(img)))
+    t0 = time.time()
+    while True:
+        got = lines(max(0.1, 5 - (time.time() - t0)))
+        if got is None:
+            die(f"no answer on {args.port} in 5 s: is the PS program running (make run), "
+                "and is this the CH340 (UART0), not the RISC-V's console?")
+        if any(l.startswith("flash: refused") for l in got):
+            die("the PS program refused it")
+        if any(l.startswith("flash: receiving") for l in got):
+            break
+    secs = len(img) * 10 / args.baud
+    print(f"[rvboot] sending {args.bootbin}: {len(img):,} bytes, about {secs / 60:.1f} minutes "
+          f"at {args.baud}", flush=True)
+    t0, sent = time.time(), 0
+    while sent < len(img):
+        sent += os.write(fd, img[sent:sent + 4096])
+        if os.isatty(fd):
+            import termios
+            termios.tcdrain(fd)
+        print(f"\r[rvboot] {sent * 100 // len(img):3d}%  {sent:,} bytes  {time.time() - t0:5.0f}s",
+              end="", file=sys.stderr, flush=True)
+    print(file=sys.stderr)
+    while True:                    # erase + program + read back: a minute or two
+        got = lines(180)
+        if got is None:
+            die("the PS program went quiet for 3 minutes")
+        if any(l.startswith("flash: FAILED") for l in got):
+            die("writing the flash failed (above)")
+        if any(l.startswith("flash: done") for l in got):
+            print("[rvboot] flash written: set the boot mode to QSPI and power-cycle", flush=True)
+            os.close(fd)
+            return
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[2] if __doc__ else None)
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -473,6 +625,8 @@ def main():
     p.add_argument("-v", "--verbose", action="store_true", help="echo the simulation")
     p.add_argument("--update", action="store_true",
                    help="rewrite tb/boot_expected.txt from this run (check the diff!)")
+    p = sub.add_parser("test-bootmem", help="the ROM booting an image left in memory (Step 56)")
+    p.add_argument("--sim", choices=["auto", "verilator", "iverilog"], default="auto")
     p = sub.add_parser("send", help="send an image to a board's ROM over a serial port, then be a terminal")
     p.add_argument("port", help="e.g. /dev/ttyUSB0")
     p.add_argument("image")
@@ -480,6 +634,10 @@ def main():
     p.add_argument("--no-wait", action="store_true", help="send at once, without waiting for boot>")
     p.add_argument("--no-term", action="store_true", help="after sending, only listen (see --listen)")
     p.add_argument("--listen", type=float, default=5.0, help="seconds to listen with --no-term")
+    p = sub.add_parser("flash", help="write a BOOT.BIN to the board's QSPI flash, through the PS program")
+    p.add_argument("port", help="the PS console, the CH340 (UART0)")
+    p.add_argument("bootbin")
+    p.add_argument("--baud", type=int, default=115200)
     args = ap.parse_args()
 
     if args.cmd == "image":
@@ -490,6 +648,10 @@ def main():
         print(describe(Path(args.image).read_bytes()))
     elif args.cmd == "send":
         cmd_send(args)
+    elif args.cmd == "flash":
+        cmd_flash(args)
+    elif args.cmd == "test-bootmem":
+        cmd_test_bootmem(args)
     else:
         cmd_test(args)
 
