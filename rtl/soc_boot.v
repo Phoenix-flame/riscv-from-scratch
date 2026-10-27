@@ -41,6 +41,9 @@
 //      and stack, then the resident SBI), which stay in on-chip block RAM
 //      like the Zynq's OCM. The ROM's receive loop has to keep up with the
 //      UART; behind DDR latency its cache misses made it fall behind.
+//      AXI_DATA_W = 64 (Step 54) makes that port the shape of a Zynq
+//      S_AXI_HP port: 64-bit beats, 4 a line (AXI3 needs only the low 4 bits
+//      of the burst length, and IDs of 0).
 // With caches, FENCE.I is no longer just a refetch: the core holds it in EX
 // until the D-cache has written every dirty line back and the I-cache has
 // been invalidated (fencei_req / fencei_ack), so code stored through the
@@ -66,7 +69,8 @@ module soc_boot #(
     parameter I_LINES      = 64,          // 2 KiB I-cache
     parameter D_LINES      = 64,          // 2 KiB D-cache
     parameter [31:0] AXI_OFFSET = 32'd0,  // RAM_BASE + x appears at AXI address x + this
-    parameter OCM_WORDS    = 4096         // MEMSYS 2: on-chip RAM at RAM_BASE (16 KiB)
+    parameter OCM_WORDS    = 4096,        // MEMSYS 2: on-chip RAM at RAM_BASE (16 KiB)
+    parameter AXI_DATA_W   = 32           // MEMSYS 2: 32, or 64 for a Zynq S_AXI_HP port
 ) (
     input  wire        clk,
     input  wire        rst,
@@ -84,8 +88,8 @@ module soc_boot #(
     output wire [2:0]  m_axi_awprot,
     output wire        m_axi_awvalid,
     input  wire        m_axi_awready,
-    output wire [31:0] m_axi_wdata,
-    output wire [3:0]  m_axi_wstrb,
+    output wire [AXI_DATA_W-1:0]   m_axi_wdata,
+    output wire [AXI_DATA_W/8-1:0] m_axi_wstrb,
     output wire        m_axi_wlast,
     output wire        m_axi_wvalid,
     input  wire        m_axi_wready,
@@ -100,7 +104,7 @@ module soc_boot #(
     output wire [2:0]  m_axi_arprot,
     output wire        m_axi_arvalid,
     input  wire        m_axi_arready,
-    input  wire [31:0] m_axi_rdata,
+    input  wire [AXI_DATA_W-1:0]   m_axi_rdata,
     input  wire [1:0]  m_axi_rresp,
     input  wire        m_axi_rlast,
     input  wire        m_axi_rvalid,
@@ -273,7 +277,8 @@ module soc_boot #(
                 .ram_rdata(ram_q));
         end
         if (MEMSYS == 2) begin : g_axi
-            axi4_line_master #(.LINE_WORDS(LINE_WORDS), .ADDR_OFFSET(AXI_OFFSET - 32'h8000_0000)) u_axi (
+            axi4_line_master #(.LINE_WORDS(LINE_WORDS), .ADDR_OFFSET(AXI_OFFSET - 32'h8000_0000),
+                              .DATA_W(AXI_DATA_W)) u_axi (
                 .clk(clk), .rst(sys_rst), .req(lm_req & ~to_rom & ~to_local), .we(lm_we), .addr(lm_addr),
                 .wdata(lm_wdata), .done(axi_done), .rdata(axi_line), .err(),
                 .m_axi_awaddr(m_axi_awaddr), .m_axi_awlen(m_axi_awlen), .m_axi_awsize(m_axi_awsize),
@@ -296,7 +301,8 @@ module soc_boot #(
     generate if (MEMSYS != 2) begin : g_no_axi
         assign m_axi_awaddr = 32'd0; assign m_axi_awlen = 8'd0; assign m_axi_awsize = 3'd0;
         assign m_axi_awburst = 2'd0; assign m_axi_awcache = 4'd0; assign m_axi_awprot = 3'd0;
-        assign m_axi_awvalid = 1'b0; assign m_axi_wdata = 32'd0; assign m_axi_wstrb = 4'd0;
+        assign m_axi_awvalid = 1'b0; assign m_axi_wdata = {AXI_DATA_W{1'b0}};
+        assign m_axi_wstrb = {AXI_DATA_W/8{1'b0}};
         assign m_axi_wlast = 1'b0; assign m_axi_wvalid = 1'b0; assign m_axi_bready = 1'b0;
         assign m_axi_araddr = 32'd0; assign m_axi_arlen = 8'd0; assign m_axi_arsize = 3'd0;
         assign m_axi_arburst = 2'd0; assign m_axi_arcache = 4'd0; assign m_axi_arprot = 3'd0;

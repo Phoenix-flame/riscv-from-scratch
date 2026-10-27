@@ -17,13 +17,18 @@
 // ADDR_OFFSET relocates the window: the core's RAM at 0x8000_0000 can sit
 // anywhere in the slave's map (on a Zynq, somewhere in PS DDR behind an
 // S_AXI_HP port; those ports speak AXI3, which differs from this only in
-// the WID signal (0 here) and allows the same 8-beat bursts).
+// the WID signal (0 here) and a 4-bit burst length).
+//
+// DATA_W = 64 (Step 54) is the width of a Zynq S_AXI_HP port: a line is
+// LINE_WORDS/2 beats of 8 bytes (size 3), two words a beat, the lower
+// address in the low half. 32 is the original 32-bit master.
 // =====================================================================
 `default_nettype none
 
 module axi4_line_master #(
     parameter        LINE_WORDS  = 8,
-    parameter [31:0] ADDR_OFFSET = 32'd0      // added to every address
+    parameter [31:0] ADDR_OFFSET = 32'd0,     // added to every address
+    parameter        DATA_W      = 32         // 32, or 64 for an S_AXI_HP port
 ) (
     input  wire                     clk,
     input  wire                     rst,
@@ -44,8 +49,8 @@ module axi4_line_master #(
     output wire [2:0]               m_axi_awprot,
     output reg                      m_axi_awvalid,
     input  wire                     m_axi_awready,
-    output wire [31:0]              m_axi_wdata,
-    output wire [3:0]               m_axi_wstrb,
+    output wire [DATA_W-1:0]        m_axi_wdata,
+    output wire [DATA_W/8-1:0]      m_axi_wstrb,
     output wire                     m_axi_wlast,
     output reg                      m_axi_wvalid,
     input  wire                     m_axi_wready,
@@ -60,32 +65,34 @@ module axi4_line_master #(
     output wire [2:0]               m_axi_arprot,
     output reg                      m_axi_arvalid,
     input  wire                     m_axi_arready,
-    input  wire [31:0]              m_axi_rdata,
+    input  wire [DATA_W-1:0]        m_axi_rdata,
     input  wire [1:0]               m_axi_rresp,
     input  wire                     m_axi_rlast,
     input  wire                     m_axi_rvalid,
     output wire                     m_axi_rready
 );
-    localparam LB = $clog2(LINE_WORDS);
+    localparam LB    = $clog2(LINE_WORDS);           // byte address: line = LB+2 bits
+    localparam BEATS = LINE_WORDS * 32 / DATA_W;
+    localparam BB    = (BEATS > 1) ? $clog2(BEATS) : 1;
     localparam S_IDLE = 2'd0, S_READ = 2'd1, S_WRITE = 2'd2, S_RESP = 2'd3;
 
     reg [1:0]  state;
-    reg [LB:0] beat;
+    reg [BB:0] beat;
     reg [32*LINE_WORDS-1:0] l_wdata;
 
-    assign m_axi_awlen   = LINE_WORDS - 1;
-    assign m_axi_arlen   = LINE_WORDS - 1;
-    assign m_axi_awsize  = 3'd2;              // 4 bytes a beat
-    assign m_axi_arsize  = 3'd2;
+    assign m_axi_awlen   = BEATS - 1;
+    assign m_axi_arlen   = BEATS - 1;
+    assign m_axi_awsize  = (DATA_W == 64) ? 3'd3 : 3'd2;   // 8 or 4 bytes a beat
+    assign m_axi_arsize  = (DATA_W == 64) ? 3'd3 : 3'd2;
     assign m_axi_awburst = 2'b01;             // INCR
     assign m_axi_arburst = 2'b01;
     assign m_axi_awcache = 4'b0011;           // normal, non-cacheable, bufferable
     assign m_axi_arcache = 4'b0011;
     assign m_axi_awprot  = 3'b000;
     assign m_axi_arprot  = 3'b000;
-    assign m_axi_wdata   = l_wdata[32*beat[LB-1:0] +: 32];
-    assign m_axi_wstrb   = 4'b1111;
-    assign m_axi_wlast   = (beat == LINE_WORDS - 1);
+    assign m_axi_wdata   = l_wdata[DATA_W*beat[BB-1:0] +: DATA_W];
+    assign m_axi_wstrb   = {DATA_W/8{1'b1}};
+    assign m_axi_wlast   = (beat == BEATS - 1);
     assign m_axi_bready  = (state == S_RESP);
     assign m_axi_rready  = (state == S_READ);
 
@@ -112,7 +119,7 @@ module axi4_line_master #(
             S_READ: begin
                 if (m_axi_arready) m_axi_arvalid <= 1'b0;
                 if (m_axi_rvalid) begin
-                    rdata[32*beat[LB-1:0] +: 32] <= m_axi_rdata;
+                    rdata[DATA_W*beat[BB-1:0] +: DATA_W] <= m_axi_rdata;
                     if (m_axi_rresp != 2'b00) err <= 1'b1;
                     beat <= beat + 1'b1;
                     if (m_axi_rlast) begin done <= 1'b1; state <= S_IDLE; end

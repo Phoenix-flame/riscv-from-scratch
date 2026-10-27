@@ -7,3 +7,4 @@ third_party/
 .config.old
 defconfig
 __pycache__/
+sw/linux/board/ps/build/

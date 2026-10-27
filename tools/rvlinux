@@ -22,11 +22,27 @@
 #         --fast: the bench preloads the kernel into the DDR model and the
 #         ROM receives only its first 4 KiB (~5 minutes). Everything after
 #         the ROM is the same.
+#         --board (Step 54; implies --fast): the board's configuration
+#         instead -- the board ROM, 115200 baud from 50 MHz, and the 64 MiB
+#         over a 64-bit S_AXI_HP-shaped port at DDR 0x1000_0000.
+#         --frommem (Step 56): the whole image preloaded at 0x8300_0000, where
+#         the PS leaves it from flash; the ROM boots it with nothing sent.
+#
+# For the Mitra-7010 board (Step 54):
+#   tools/rvlinux board-image      build/linux/linux-board.rvbi (bootargs at 115200)
+#   tools/rvlinux oz-export OZ     write projects/riscv_linux into an OpenZynq
+#                                  checkout: rtl/fpga_top_linux.v on the PS7 with
+#                                  S_AXI_HP0, its pins, the PS program, a testbench,
+#                                  boot.bif and fw/boot.rvbi for BOOT.BIN (Step 56)
+#   tools/rvlinux oz-sim OZ        that top with the checkout's own ps7_gp0, a PS7
+#                                  model and a DDR model, under verilator: the ROM,
+#                                  a bad image, libc_demo from DDR (~1 minute)
 #
 # Requires: git, make, flex, bison, bc, rsync; riscv64-linux-gnu-gcc (the
 # kernel and musl); riscv64-unknown-elf-gcc (its rv32im/ilp32 libgcc, which
 # the Linux toolchain lacks); verilator 5.x; and build/boot/rom.hex (make
-# boot-sw). Sources: ~2 GB, build: ~0.5 GB.
+# boot-sw) -- or build/boot/board/rom.hex (make boot-board) for the board.
+# Sources: ~2 GB, build: ~0.5 GB.
 # =====================================================================
 import argparse
 import hashlib
@@ -57,13 +73,26 @@ SOURCES = {
                 "0784374d561435f7c787a555aeab8ede699ed298"),
 }
 
+# U-Boot (Step 55), fetched only by `rvlinux uboot`
+UBOOT = ("https://github.com/u-boot/u-boot.git", "v2024.10",
+         "f919c3a889f0ec7d63a48b5d0ed064386b0980bd")
+UBOOT_FLAVORS = {
+    # baud: U-Boot sets the UART divisor from it (50 MHz / 16 / baud)
+    "sim":   dict(baud=3125000, bootdelay=0, bootargs="console=ttyS0,3000000 earlycon=sbi"),
+    "board": dict(baud=115200,  bootdelay=2, bootargs="console=ttyS0,115200 earlycon=sbi"),
+}
+KERNEL_LOAD = 0x81000000        # where the combined image puts Linux; booti moves it
+
 CROSS = "riscv64-linux-gnu-"
 MARCH, MABI = "rv32ima_zicsr_zifencei", "ilp32"
 RAM_BASE = 0x80000000
 KERNEL_BASE = 0x80400000
 BOOTARGS = "console=ttyS0,3000000 earlycon=sbi"
+BOARD_BOOTARGS = "console=ttyS0,115200 earlycon=sbi"     # 50 MHz / 16 / 27
 PROMPT = "rvfs# "
 TYPEGAP = 16000                 # cycles between typed keys
+BOARD_TYPEGAP = 40000           # ... at 115200, where a key alone takes 4320
+OZ_PROJECT = "riscv_linux"
 MAX_CYCLES = 1_500_000_000      # under 2**31: the bench's counters are integers
 
 # What is typed at the shell, and what its output must contain (regexes,
@@ -90,6 +119,17 @@ BOOT_LINES = [
     r"^rvfs: Linux 6\.18\.0 on riscv32, busybox ash$",
 ]
 NEVER = r"Kernel panic|Oops|BUG:|Unable to handle kernel"
+# ... and with --uboot, U-Boot's own part: it ran, found the kernel, moved it
+UBOOT_LINES = [
+    r"^U-Boot 2024\.10 ",
+    r"^Moving Image from 0x81000000 to 0x80400000, end=",
+    r"^Starting kernel \.\.\.$",
+]
+# ... and with --frommem (Step 56), the ROM found the image in memory and took it
+BOOTMEM_LINES = [
+    r"^  image in memory at 0x83000000: booting it in 1 s, any key for the serial prompt$",
+    r"^  data: \d+ bytes, CRC32 0x[0-9a-f]+ ok",
+]
 
 
 def say(msg):
@@ -162,36 +202,40 @@ def head_of(d):
     return r.stdout.strip() if r.returncode == 0 else None
 
 
+def fetch_one(name, url, tag, sha):
+    url = os.environ.get(f"RVLINUX_{name.upper().replace('-', '')}_URL", url)
+    dest = TP / name
+    if dest.exists():
+        got = head_of(dest)
+        if got != sha:
+            die(f"{dest.relative_to(REPO)} is at {got}, not {name} {tag} ({sha[:12]}): "
+                f"remove it and fetch again")
+        say(f"{name} {tag} present ({sha[:12]})")
+        return
+    TP.mkdir(exist_ok=True)
+    say(f"fetching {name} {tag} from {url} ...")
+    for attempt in range(4):
+        r = subprocess.run(["git", "-c", "advice.detachedHead=false", "clone", "--quiet",
+                            "--depth", "1", "--branch", tag, url, str(dest)],
+                           capture_output=True, text=True)
+        if r.returncode == 0:
+            break
+        shutil.rmtree(dest, ignore_errors=True)
+        if attempt == 3:
+            die(f"git clone {url} failed:\n{r.stderr.strip()}")
+        say(f"  clone failed ({r.stderr.strip().splitlines()[-1]}); retrying")
+        time.sleep(2 ** (attempt + 1))
+    got = head_of(dest)
+    if got != sha:
+        shutil.rmtree(dest, ignore_errors=True)
+        die(f"{name} {tag} from {url} is commit {got}, expected {sha}: refusing it")
+    say(f"  {name} {tag} ok ({sha[:12]})")
+
+
 def cmd_fetch(_args=None):
     need_tools(["git"])
     for name, (url, tag, sha) in SOURCES.items():
-        url = os.environ.get(f"RVLINUX_{name.upper()}_URL", url)
-        dest = TP / name
-        if dest.exists():
-            got = head_of(dest)
-            if got != sha:
-                die(f"{dest.relative_to(REPO)} is at {got}, not {name} {tag} ({sha[:12]}): "
-                    f"remove it and fetch again")
-            say(f"{name} {tag} present ({sha[:12]})")
-            continue
-        TP.mkdir(exist_ok=True)
-        say(f"fetching {name} {tag} from {url} ...")
-        for attempt in range(4):
-            r = subprocess.run(["git", "-c", "advice.detachedHead=false", "clone", "--quiet",
-                                "--depth", "1", "--branch", tag, url, str(dest)],
-                               capture_output=True, text=True)
-            if r.returncode == 0:
-                break
-            shutil.rmtree(dest, ignore_errors=True)
-            if attempt == 3:
-                die(f"git clone {url} failed:\n{r.stderr.strip()}")
-            say(f"  clone failed ({r.stderr.strip().splitlines()[-1]}); retrying")
-            time.sleep(2 ** (attempt + 1))
-        got = head_of(dest)
-        if got != sha:
-            shutil.rmtree(dest, ignore_errors=True)
-            die(f"{name} {tag} from {url} is commit {got}, expected {sha}: refusing it")
-        say(f"  {name} {tag} ok ({sha[:12]})")
+        fetch_one(name, url, tag, sha)
 
 
 # ---- build ------------------------------------------------------------
@@ -260,6 +304,21 @@ def fragment(path):
         if m:
             out.append((m.group(1), m.group(2) if m.lastindex == 2 else "n"))
     return out
+
+
+def config_args(frag):
+    """scripts/config arguments that apply a fragment (Linux's and U-Boot's)."""
+    args = []
+    for opt, val in frag:
+        if val == "y":
+            args += ["--enable", opt]
+        elif val == "n":
+            args += ["--disable", opt]
+        elif val.startswith('"'):
+            args += ["--set-str", opt, val[1:-1]]
+        else:
+            args += ["--set-val", opt, val]
+    return args
 
 
 def config_holds(cfg_text, frag):
@@ -339,17 +398,7 @@ def build_kernel(lst):
         if cfg.exists():
             cfg.unlink()
         kmake("tinyconfig", log=log)
-        args = []
-        for opt, val in frag:
-            if val == "y":
-                args += ["--enable", opt]
-            elif val == "n":
-                args += ["--disable", opt]
-            elif val.startswith('"'):
-                args += ["--set-str", opt, val.strip('"')]
-            else:
-                args += ["--set-val", opt, val]
-        args += ["--set-str", "INITRAMFS_SOURCE", str(lst)]
+        args = config_args(frag) + ["--set-str", "INITRAMFS_SOURCE", str(lst)]
         for _ in range(2):            # twice: a choice can need its menu's option first
             sh([str(TP / "linux" / "scripts" / "config"), "--file", str(cfg)] + args, log)
             kmake("olddefconfig", log=log)
@@ -384,6 +433,311 @@ def cmd_build(_args=None):
         f"({size} with bss), entry 0x{KERNEL_BASE:08x}")
 
 
+# ---- U-Boot (Step 55) ---------------------------------------------------
+def uboot_elf(flavor):
+    return OUT / f"uboot-{flavor}" / "u-boot"
+
+
+def build_uboot(flavor, libgcc):
+    """qemu-riscv32_smode + sw/uboot/uboot.config + this flavor's baud, delay, bootargs."""
+    f = UBOOT_FLAVORS[flavor]
+    b = OUT / f"uboot-{flavor}"
+    frag_file = REPO / "sw" / "uboot" / "uboot.config"
+    frag = fragment(frag_file) + [("BAUDRATE", str(f["baud"])), ("BOOTDELAY", str(f["bootdelay"])),
+                                  ("BOOTARGS", '"%s"' % f["bootargs"])]
+    log = OUT / f"uboot-{flavor}.log"
+    key = UBOOT[2] + digest(frag_file) + repr(sorted(f.items()))
+    um = ["make", "-C", str(TP / "u-boot"), f"O={b}", f"CROSS_COMPILE={CROSS}"]
+    cfg = b / ".config"
+    if not (stamp_ok(f"uboot-{flavor}", key) and cfg.exists()):
+        say(f"u-boot ({flavor}): qemu-riscv32_smode_defconfig + sw/uboot/uboot.config, "
+            f"{f['baud']} baud")
+        log.write_text("")
+        b.mkdir(parents=True, exist_ok=True)
+        if cfg.exists():
+            cfg.unlink()
+        sh(um + ["qemu-riscv32_smode_defconfig"], log)
+        for _ in range(2):
+            sh([str(TP / "u-boot" / "scripts" / "config"), "--file", str(cfg)] + config_args(frag), log)
+            sh(um + ["olddefconfig"], log)
+        bad = config_holds(cfg.read_text(), frag)
+        if bad:
+            die(f"u-boot ({flavor}) config did not take:\n  " + "\n  ".join(bad))
+        stamp(f"uboot-{flavor}", key)
+    say(f"u-boot ({flavor}): build")
+    # the Linux toolchain links U-Boot's position-independent image; its
+    # 32-bit libgcc is the bare-metal toolchain's, as for musl
+    sh(um + [f"-j{jobs()}", f"PLATFORM_LIBGCC={libgcc}"], log)
+    return uboot_elf(flavor)
+
+
+def uboot_images(flavor):
+    """u-boot-<flavor>.rvbi, and uboot-linux-<flavor>.rvbi: U-Boot + the kernel at KERNEL_LOAD."""
+    rvboot = load_rvboot()
+    entry, segs = rvboot.elf_segments(uboot_elf(flavor))
+    bootargs = UBOOT_FLAVORS[flavor]["bootargs"].encode()
+    one = OUT / f"u-boot-{flavor}.rvbi"
+    one.write_bytes(rvboot.make_image(entry, segs, bootargs))
+    say(f"{one.relative_to(REPO)}: {one.stat().st_size:,} bytes, U-Boot at 0x{entry:08x}")
+    if not (OUT / "Image").exists():
+        return
+    img, _ = image_parts()
+    both = OUT / f"uboot-linux-{flavor}.rvbi"
+    both.write_bytes(rvboot.make_image(entry, segs + [(KERNEL_LOAD, img, len(img))], bootargs))
+    say(f"{both.relative_to(REPO)}: {both.stat().st_size:,} bytes, U-Boot + Linux at "
+        f"0x{KERNEL_LOAD:08x} ({both.stat().st_size * 10 / 115200 / 60:.1f} minutes at 115200)")
+
+
+def cmd_uboot(_args=None):
+    need_tools(["git", "make", "flex", "bison", "bc", f"{CROSS}gcc", "riscv64-unknown-elf-gcc"])
+    fetch_one("u-boot", *UBOOT)
+    OUT.mkdir(parents=True, exist_ok=True)
+    libgcc = rv32_libgcc()
+    for flavor in UBOOT_FLAVORS:
+        build_uboot(flavor, libgcc)
+        uboot_images(flavor)
+
+
+# ---- the board (Step 54) -----------------------------------------------
+def cmd_board_image():
+    """The kernel as the board's ROM wants it: bootargs at 115200."""
+    if not (OUT / "Image").exists():
+        die("build/linux/Image missing -- run `tools/rvlinux build`")
+    img, size = image_parts()
+    boot = load_rvboot().make_image(KERNEL_BASE, [(KERNEL_BASE, img, size)], BOARD_BOOTARGS.encode())
+    dst = OUT / "linux-board.rvbi"
+    dst.write_bytes(boot)
+    say(f"{dst.relative_to(REPO)}: {len(boot):,} bytes, bootargs \"{BOARD_BOOTARGS}\" "
+        f"({len(boot) * 10 / 115200 / 60:.1f} minutes at 115200)")
+    if uboot_elf("board").exists():
+        uboot_images("board")
+    return dst
+
+
+OZ_MARKER = ".rvlinux"          # marks an OpenZynq project this tool wrote
+PS_FILES = ("main.c", "Makefile", "zynq.h", "bootbin.c", "bootbin.h", "qspi.c", "qspi.h",
+            "pcap.c", "pcap.h", "test/host_test.c", "test/mkbootbin.py")
+BOOT_BIF = """// BOOT.BIN for {P} (riscv-from-scratch Step 56): the PS program as the
+// FSBL, the bitstream, and the RISC-V's boot image as a plain data partition.
+// The BootROM loads only the FSBL; it programs the PL from the bitstream and
+// copies the image to DDR 0x1300_0000, where the RISC-V's ROM boots it.
+//
+// From the repo root (mkbootimage resolves paths against the cwd):
+//     mkbootimage projects/{P}/boot.bif BOOT.BIN
+// then, with `make run PROJECT={P}` running, from riscv-from-scratch:
+//     tools/rvboot flash /dev/ttyUSB<CH340> BOOT.BIN
+//
+the_ROM_image:
+{
+    [bootloader] projects/{P}/ps/build/{P}.elf
+    build/{P}/{P}.bit
+    projects/{P}/fw/boot.rvbi
+}
+"""
+
+
+def cmd_oz_export(args):
+    """projects/riscv_linux in an OpenZynq checkout: the board top on the PS7."""
+    oz = Path(args.oz).resolve()
+    ps7 = oz / "rtl" / "ps7_gp0.v"
+    if not (oz / "boards" / "mitra7010" / "board.mk").exists():
+        die(f"{oz} does not look like an OpenZynq checkout (no boards/mitra7010/board.mk)")
+    if "HP0_ENABLE" not in ps7.read_text():
+        die(f"{ps7} has no HP0_ENABLE: this OpenZynq predates S_AXI_HP0 support")
+    rom = REPO / "build" / "boot" / "board" / "rom.hex"
+    if not rom.exists():
+        die("build/boot/board/rom.hex missing -- run `make boot-board` (make linux-oz does)")
+    dst = oz / "projects" / OZ_PROJECT
+    if dst.exists() and not (dst / OZ_MARKER).exists() and not args.force:
+        die(f"{dst} exists and was not written by rvlinux; use --force to replace it")
+    keep = {}
+    if dst.exists():
+        for f in ("ps7_init.c", "ps7_init.h"):            # the user's board init stays
+            if (dst / "ps" / f).exists():
+                keep[f] = (dst / "ps" / f).read_bytes()
+        shutil.rmtree(dst)
+    rvboot = load_rvboot()
+    for d in ("rtl", "fw", "sim", "ps"):
+        (dst / d).mkdir(parents=True)
+    rtl = []
+    for m in rvboot.RTL:
+        name = Path(m).name + ".v"
+        shutil.copy(REPO / "rtl" / f"{m}.v", dst / "rtl" / name)
+        rtl.append(f"rtl/{name}")
+    top = (REPO / "rtl" / "fpga_top_linux.v").read_text()
+    old = 'parameter BOOTROM_INIT = "build/boot/board/rom.hex"'
+    if old not in top:
+        die("rtl/fpga_top_linux.v: cannot find its BOOTROM_INIT default")
+    (dst / "fpga_top_linux.v").write_text(
+        top.replace(old, f'parameter BOOTROM_INIT = "projects/{OZ_PROJECT}/fw/rom.hex"'))
+    shutil.copy(REPO / "constraints" / "openzynq_linux.xdc", dst / f"{OZ_PROJECT}.xdc")
+    shutil.copy(rom, dst / "fw" / "rom.hex")
+    shutil.copy(REPO / "tb" / "fpga_top_linux_tb.v", dst / "tb_fpga_top_linux.v")
+    shutil.copy(REPO / "tb" / "ps7_hp0_model.v", dst / "sim" / "ps7_hp0_model.v")
+    shutil.copy(REPO / "tb" / "axi4_mem.v", dst / "sim" / "axi4_mem.v")
+    chunks = rvboot.test_chunks()
+    chunks = [chunks[0], chunks[-1]]                      # a bad image, then libc_demo
+    (dst / "sim" / "stream.bin").write_bytes(b"".join(struct.pack("<I", len(c)) + c for c in chunks))
+    for f in PS_FILES:
+        (dst / "ps" / f).parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy(SWL / "board" / "ps" / f, dst / "ps" / f)
+    for f in ("startup.S", "linker.ld", "xil_io.h"):        # OpenZynq's OCM startup
+        shutil.copy(oz / "projects" / "ddr_test" / "ps" / f, dst / "ps" / f)
+    for f, data in keep.items():
+        (dst / "ps" / f).write_bytes(data)
+    p = f"projects/{OZ_PROJECT}"
+    rtl_lines = " \\\n            ".join(rtl)
+    (dst / "project.mk").write_text(f"""# GENERATED by riscv-from-scratch tools/rvlinux (Step 54) -- regenerate with
+# `make linux-oz OZ=<this checkout>` there instead of editing.
+# soc_boot (MEMSYS 2) on the 50 MHz PL clock; its RAM is PS DDR 0x1000_0000
+# + 64 MiB over S_AXI_HP0; the PS program initialises DDR and says "run".
+TOP      := fpga_top_linux
+SIM_TOP  := fpga_top_linux
+XDC      := {p}/{OZ_PROJECT}.xdc
+
+RV_RTL   := {rtl_lines}
+RV_SRCS  := $(addprefix {p}/,$(RV_RTL)) {p}/fpga_top_linux.v rtl/ps7_gp0.v rtl/axi3_to_axilite.v
+SRCS     := $(RV_SRCS)
+# make sim: the same top with a PS7 model (FCLK0; HP0 -> a DDR model; the PS
+# program's GP0 accesses): a bad image, then libc_demo from DDR, at 115200
+SIM_SRCS := $(RV_SRCS) {p}/sim/ps7_hp0_model.v {p}/sim/axi4_mem.v
+
+# The ROM and the firmware RAM are block RAM: let Yosys infer them.
+SYNTH_OPTS := -flatten -abc9 -arch xc7
+# the core's clock, the 50 MHz PL oscillator (FCLK0 only clocks GP0's registers)
+NEXTPNR_OPTS := --freq 50
+""")
+    (dst / "boot.bif").write_text(BOOT_BIF.replace("{P}", OZ_PROJECT))
+    (dst / ".gitignore").write_text("fw/boot.rvbi\n")       # 2-3 MB, built here, not tracked
+    (dst / "README.md").write_text(README_OZ.replace("{P}", OZ_PROJECT))
+    (dst / OZ_MARKER).write_text("written by riscv-from-scratch tools/rvlinux oz-export\n")
+    say(f"wrote {dst} ({len(rtl)} RTL files, the board ROM, the PS program"
+        f"{', your ps7_init kept' if keep else ''})")
+    if (OUT / "Image").exists():
+        cmd_board_image()
+    else:
+        say("(no build/linux/Image yet: `tools/rvlinux build`, then `tools/rvlinux board-image`)")
+    # what BOOT.BIN carries for the RISC-V (Step 56): U-Boot + Linux if built
+    for name in ("uboot-linux-board.rvbi", "linux-board.rvbi"):
+        if (OUT / name).exists():
+            shutil.copy(OUT / name, dst / "fw" / "boot.rvbi")
+            say(f"{p}/fw/boot.rvbi: build/linux/{name}, for BOOT.BIN (boot.bif)")
+            break
+    else:
+        say(f"(no board image to put in {p}/fw/boot.rvbi for BOOT.BIN yet)")
+
+
+def cmd_oz_sim(args):
+    """fpga_top_linux_tb with the checkout's own ps7_gp0, under Verilator (~1 min)."""
+    need_tools(["verilator"])
+    oz = Path(args.oz).resolve()
+    shared = [oz / "rtl" / "ps7_gp0.v", oz / "rtl" / "axi3_to_axilite.v"]
+    for f in shared:
+        if not f.exists():
+            die(f"{f} missing: is {oz} an OpenZynq checkout?")
+    rom = REPO / "build" / "boot" / "board" / "rom.hex"
+    if not rom.exists():
+        die("build/boot/board/rom.hex missing -- run `make boot-board`")
+    rvboot = load_rvboot()
+    chunks = rvboot.test_chunks()
+    stream = OUT / "board_stream.bin"
+    OUT.mkdir(parents=True, exist_ok=True)
+    stream.write_bytes(b"".join(struct.pack("<I", len(c)) + c
+                                for c in (chunks[0], chunks[-1])))
+    files = ([str(REPO / "rtl" / f"{m}.v") for m in rvboot.RTL] +
+             [str(REPO / "rtl" / "fpga_top_linux.v")] + [str(f) for f in shared] +
+             [str(REPO / "tb" / f) for f in ("ps7_hp0_model.v", "axi4_mem.v", "fpga_top_linux_tb.v")])
+    obj = OUT / "vobj_top"
+    say(f"building fpga_top_linux_tb with {oz.name}'s ps7_gp0 (verilator)")
+    sh(["verilator", "--binary", "--timing", "-O3", "-Wno-fatal", "-Wno-lint", "-Wno-style",
+        "--top-module", "fpga_top_linux_tb", "-Mdir", str(obj), "-o", "tb"] + files, OUT / "oz-sim.log")
+    r = subprocess.run([str(obj / "tb"), f"+ROM={rom}", f"+STREAM={stream}"],
+                       cwd=REPO, capture_output=True, text=True)
+    for l in r.stdout.splitlines():
+        if l.startswith(("board:", "ps7 model:", "PASS", "FAIL")):
+            say(l)
+    ok = "\nPASS:" in r.stdout
+    print("LINUX-BOARD-TOP: " + ("ALL PASS" if ok else "FAIL"))
+    sys.exit(0 if ok else 1)
+
+
+README_OZ = """# {P} — Linux on the RISC-V from riscv-from-scratch, with PS DDR
+
+Generated by riscv-from-scratch (`make linux-oz OZ=...`, Step 54); regenerate
+it rather than editing it. The RISC-V is `soc_boot`: a 5-stage RV32IMA core
+with M/S/U and Sv32, 2 + 2 KiB caches, a 16 KiB boot ROM with a resident
+SBI, a 16550 UART, a CLINT and a PLIC. Its RAM is 64 MiB of the board's
+DDR3 (PS `0x1000_0000`..`0x13ff_ffff`), reached through `S_AXI_HP0`.
+
+| | |
+|---|---|
+| core clock | the 50 MHz PL oscillator (U18); HP0 runs on it too |
+| console | 115200 8N1 on JM1: pin 21 = TX (J18), pin 22 = RX (K19), GND on 3/4 |
+| K1 | resets the RISC-V (its ROM prompts `boot> ` again) |
+| LED1 | the RISC-V has powered off |
+| LED2 | heartbeat once the PS has released the RISC-V |
+| GP0 `0x4000_0000` | reads `RVFS`; write 1 = run, 0 = hold in reset |
+| GP0 `0x4000_0004` | bit 0 run, bit 1 powered off |
+
+## Run it
+
+```bash
+make -C projects/{P}/ps vivado-init     # the board's Vivado ps7_init (DDR training)
+make sim  PROJECT={P}                   # optional; slow under Icarus (about 1.5 hours)
+make bit  PROJECT={P}
+make run  PROJECT={P}                   # the PL, then the PS program: it initialises
+                                        # and checks DDR, then releases the RISC-V
+```
+
+The PS program reports on UART0 (the on-board USB-C, CH340). Then, from
+riscv-from-scratch, with a 3.3 V USB-serial adapter on JM1:
+
+```bash
+tools/rvboot send /dev/ttyUSB0 build/linux/linux-board.rvbi
+```
+
+It waits for `boot> `, sends the kernel (2.6 MB, about 4 minutes at 115200)
+and becomes a terminal: Linux boots to `rvfs# `.
+
+## Boot from flash, with no PC
+
+`boot.bif` puts the PS program (as the FSBL), the bitstream and
+`fw/boot.rvbi` (U-Boot + Linux, copied in by the export) in one BOOT.BIN.
+In QSPI boot mode the BootROM starts the PS program; it programs the PL
+through PCAP, copies the image to DDR `0x1300_0000` and releases the
+RISC-V, whose ROM boots it after a second (a key on JM1 first gets
+`boot> `). In JTAG mode the same program reports what the flash holds.
+
+```bash
+make -C projects/{P}/ps                 # the FSBL (needs ps7_init, as above)
+make bit PROJECT={P}
+mkbootimage projects/{P}/boot.bif BOOT.BIN
+make run PROJECT={P}                    # JTAG mode: the PS program listens on UART0
+```
+
+then, from riscv-from-scratch, on the CH340's port (not JM1's):
+
+```bash
+tools/rvboot flash /dev/ttyUSB1 BOOT.BIN   # about 7 minutes at 115200
+```
+
+It writes the flash only after the whole file arrived with the right CRC
+and parses as this project's BOOT.BIN, and reads it back. Then set the boot
+mode to QSPI and power-cycle. `make -C projects/{P}/ps test` checks the
+parser and the flash writer on a PC, against a model.
+
+## Status
+
+Simulated only: `make sim` here, and riscv-from-scratch's `tools/rvlinux
+run --board`, which boots Linux on this configuration (and `--frommem`,
+from the image where the FSBL leaves it). The FSBL's PCAP and QSPI code
+has only run against a model. No placement,
+routing or timing has been done for this design, and it has not run on a
+board; OpenZynq's DDR and HP0 path is not yet validated on hardware either.
+See riscv-from-scratch's `docs/54-linux-on-the-board.md`.
+"""
+
+
 # ---- run --------------------------------------------------------------
 def image_parts():
     img = (OUT / "Image").read_bytes()
@@ -394,38 +748,63 @@ def image_parts():
 
 def cmd_run(args):
     need_tools(["verilator"])
-    rom = REPO / "build" / "boot" / "rom.hex"
+    board = args.board
+    if board:                      # 2.6 MB at 115200 would be 11G cycles: preload
+        args.fast = True
+    if args.frommem:               # the whole image in memory: nothing to send but commands
+        args.fast = False
+    rom = REPO / "build" / "boot" / ("board/rom.hex" if board else "rom.hex")
     if not rom.exists():
-        die("build/boot/rom.hex missing -- run `make boot-sw`")
+        die(f"{rom.relative_to(REPO)} missing -- run `make {'boot-board' if board else 'boot-sw'}`")
     if not (OUT / "Image").exists():
         die("build/linux/Image missing -- run `tools/rvlinux build`")
+    bootargs = BOARD_BOOTARGS if board else BOOTARGS
     rvboot = load_rvboot()
     img, size = image_parts()
-    if args.fast:
-        head = img[:4096]          # over 256 bytes: sent at line rate, not typed
-        boot = rvboot.make_image(KERNEL_BASE, [(KERNEL_BASE, head, len(head))], BOOTARGS.encode())
-        words = img + b"\0" * (-len(img) % 4)
+    # what the image holds: the kernel at 0x80400000 -- or, with --uboot,
+    # U-Boot there and the kernel at KERNEL_LOAD for its booti to move down
+    entry, segs = KERNEL_BASE, [(KERNEL_BASE, img, size)]
+    if args.uboot:
+        flavor = "board" if board else "sim"
+        if not uboot_elf(flavor).exists():
+            die(f"{uboot_elf(flavor).relative_to(REPO)} missing -- run `tools/rvlinux uboot`")
+        entry, segs = rvboot.elf_segments(uboot_elf(flavor))
+        segs = segs + [(KERNEL_LOAD, img, len(img))]
+        bootargs = UBOOT_FLAVORS[flavor]["bootargs"]
+    if args.frommem:
+        # Step 56: where the PS program leaves it, copied from flash
+        boot = rvboot.make_image(entry, segs, bootargs.encode())
+        rvboot.write_preload(OUT / "preload.hex", [(rvboot.BOOTMEM_ADDR, boot)])
+    elif args.fast:
+        a0, d0, _ = segs[0]
+        head = d0[:4096]           # over 256 bytes: sent at line rate, not typed
+        boot = rvboot.make_image(entry, [(a0, head, len(head))], bootargs.encode())
         pre = OUT / "preload.hex"
         with open(pre, "w") as f:
-            f.write(f"@{(KERNEL_BASE - RAM_BASE) // 4:08x}\n")
-            for i in range(0, len(words), 4):
-                f.write(f"{struct.unpack_from('<I', words, i)[0]:08x}\n")
+            for a, d, _ in segs:
+                words = d + b"\0" * (-len(d) % 4)
+                f.write(f"@{(a - RAM_BASE) // 4:08x}\n")
+                for i in range(0, len(words), 4):
+                    f.write(f"{struct.unpack_from('<I', words, i)[0]:08x}\n")
     else:
-        boot = rvboot.make_image(KERNEL_BASE, [(KERNEL_BASE, img, size)], BOOTARGS.encode())
+        boot = rvboot.make_image(entry, segs, bootargs.encode())
     (OUT / "linux.rvbi").write_bytes(boot)
-    chunks = [boot] + [(c + "\r").encode() for c, _ in COMMANDS]
+    chunks = ([] if args.frommem else [boot]) + [(c + "\r").encode() for c, _ in COMMANDS]
     stream = OUT / "stream.bin"
     stream.write_bytes(b"".join(struct.pack("<I", len(c)) + c for c in chunks))
 
-    say("building the bench (soc_boot, caches + 64 MiB DDR) with verilator")
-    exe = rvboot.build_sim("verilator", "ddr")
+    variant = "board-ddr" if board else "ddr"
+    say(f"building the bench ({rvboot.MEMSYS[variant]['desc']}) with verilator")
+    exe = rvboot.build_sim("verilator", variant)
     log, out = OUT / "linux.log", OUT / "sim.out"
     cmd = exe + [f"+ROM={rom}", f"+STREAM={stream}", f"+LOG={log}", f"+MAXCYC={args.max_cycles}",
-                 f"+PROMPT={PROMPT}", f"+TYPEGAP={TYPEGAP}"]
-    if args.fast:
+                 f"+PROMPT={PROMPT}", f"+TYPEGAP={BOARD_TYPEGAP if board else TYPEGAP}"]
+    if args.fast or args.frommem:
         cmd.append(f"+PRELOAD={OUT / 'preload.hex'}")
-    how = ("--fast: the kernel preloaded, the ROM sent its first 4 KiB" if args.fast else
-           f"the whole kernel over the serial line ({len(boot)} bytes, ~{len(boot) * 160 // 10**6}M cycles)")
+    what = "U-Boot + the kernel" if args.uboot else "the kernel"
+    how = (f"--frommem: {what} as one image at 0x{rvboot.BOOTMEM_ADDR:08x}, nothing sent" if args.frommem else
+           f"--fast: {what} preloaded, the ROM sent its first 4 KiB" if args.fast else
+           f"{what} over the serial line ({len(boot)} bytes, ~{len(boot) * 160 // 10**6}M cycles)")
     say(f"booting: {how}; console in {log.relative_to(REPO)}")
     t0 = time.time()
     with open(out, "w") as f:
@@ -439,10 +818,12 @@ def cmd_run(args):
                 say(f"  {int(time.time() - t0):5d}s  {now[:100]}")
                 last = now
     say(f"simulation done in {int(time.time() - t0)}s")
-    sys.exit(check(out.read_text(errors="replace"), log.read_text(errors="replace"), len(chunks)))
+    extra = (UBOOT_LINES if args.uboot else []) + (BOOTMEM_LINES if args.frommem else [])
+    sys.exit(check(out.read_text(errors="replace"), log.read_text(errors="replace"), len(chunks),
+                   extra, rom_prompt=not args.frommem))
 
 
-def check(sim, console, nchunks):
+def check(sim, console, nchunks, extra=(), rom_prompt=True):
     fails = []
     m = re.search(r"BOOT-TB: (\w+) exit=(\d+) cycles=(\d+) resets=(\d+) chunks=(\d+)", sim)
     if not m:
@@ -451,7 +832,7 @@ def check(sim, console, nchunks):
     state, code, cycles, _, chunks = m.group(1), *map(int, m.groups()[1:])
     text = console.replace("\r", "")
     lines = text.split("\n")
-    for pat in BOOT_LINES:
+    for pat in list(extra) + BOOT_LINES:
         if not any(re.search(pat, l) for l in lines):
             fails.append(f"boot: no line matching {pat!r}")
     # each command's output: from its echo to the next prompt
@@ -476,17 +857,20 @@ def check(sim, console, nchunks):
         fails.append(f"sent {chunks} of {nchunks} chunks")
 
     load = re.search(r"data: (\d+) bytes, CRC32 0x[0-9a-f]+ ok \((\d+) cycles", text)
-    rom = re.search(r"BOOT-TB prompt 1 at cycle (\d+)", sim)
-    shell = re.search(r"BOOT-TB prompt 2 at cycle (\d+)", sim)
+    rom = re.search(r"BOOT-TB prompt 1 at cycle (\d+)", sim) if rom_prompt else None
+    shell = re.search(rf"BOOT-TB prompt {2 if rom_prompt else 1} at cycle (\d+)", sim)
     say(f"{state}, exit code {code}, {cycles:,} cycles in all")
     if load:
-        say(f"  {int(load.group(2)):>11,} cycles: the ROM receiving the image ({int(load.group(1)):,} bytes)")
+        say(f"  {int(load.group(2)):>11,} cycles: the ROM {'receiving' if rom_prompt else 'checking and copying'}"
+            f" the image ({int(load.group(1)):,} bytes)")
+    if shell and not rom_prompt:
+        say(f"  the shell prompt at cycle {int(shell.group(1)):,} (from reset, nothing sent)")
     if shell and load and rom:
         entry = int(rom.group(1)) + int(load.group(2))      # "boot> ", then the image
         say(f"  {int(shell.group(1)) - entry:>11,} cycles: kernel entry to the shell prompt "
             f"(cycle {int(shell.group(1)):,})")
     say(f"  {len(COMMANDS)} commands typed; "
-        f"{sum(len(p) for _, p in COMMANDS) + len(BOOT_LINES)} output checks")
+        f"{sum(len(p) for _, p in COMMANDS) + len(BOOT_LINES) + len(extra)} output checks")
     for f in fails:
         say(f"FAIL: {f}")
     print("LINUX: FAIL" if fails else "LINUX: ALL PASS")
@@ -502,7 +886,21 @@ def main():
         p = sub.add_parser(name, help="boot it and check" if name == "run" else "fetch + build + run")
         p.add_argument("--fast", action="store_true",
                        help="preload the kernel into the DDR model instead of sending it")
+        p.add_argument("--board", action="store_true",
+                       help="the board's configuration: board ROM, 115200, 64-bit HP0 port (implies --fast)")
+        p.add_argument("--uboot", action="store_true",
+                       help="boot U-Boot, which boots the kernel (needs `rvlinux uboot`)")
+        p.add_argument("--frommem", action="store_true",
+                       help="the whole image already in memory at 0x83000000, as the PS leaves it "
+                            "from flash: the ROM boots it with nothing sent (Step 56)")
         p.add_argument("--max-cycles", type=int, default=MAX_CYCLES)
+    sub.add_parser("board-image", help="build/linux/linux-board.rvbi, bootargs at 115200")
+    sub.add_parser("uboot", help="fetch + build U-Boot (sim and board builds) and its images")
+    p = sub.add_parser("oz-export", help="write projects/riscv_linux into an OpenZynq checkout")
+    p.add_argument("oz", help="the OpenZynq checkout")
+    p.add_argument("--force", action="store_true", help="replace a project rvlinux did not write")
+    p = sub.add_parser("oz-sim", help="the board top with an OpenZynq checkout's ps7_gp0, under verilator")
+    p.add_argument("oz", help="the OpenZynq checkout")
     args = ap.parse_args()
     if args.cmd == "fetch":
         cmd_fetch()
@@ -510,6 +908,14 @@ def main():
         cmd_build()
     elif args.cmd == "run":
         cmd_run(args)
+    elif args.cmd == "board-image":
+        cmd_board_image()
+    elif args.cmd == "uboot":
+        cmd_uboot()
+    elif args.cmd == "oz-export":
+        cmd_oz_export(args)
+    elif args.cmd == "oz-sim":
+        cmd_oz_sim(args)
     else:
         cmd_fetch()
         cmd_build()
