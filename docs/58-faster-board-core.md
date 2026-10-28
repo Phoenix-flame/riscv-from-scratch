@@ -59,9 +59,11 @@ time.
 | `REG_REDIRECT` | 41.12 MHz | forwarding → `opB` → branch compare → mispredict → the next-PC mux |
 | final build at `--freq 33.33` | **40.79 MHz** | — |
 
-The path now reported runs from the walker's state, through the D-port
-address mux and the SoC's address decode (`soc_boot.v`'s `in_rom`), to the
-I-TLB's fill: 24.5 ns, of which 22.1 ns is routing.
+The worst path in the final build runs from the MEM/WB forwarding compare
+(`memwb_rd`) through the ALU's A operand to a CSR write (`mstatus`): 24.5
+ns, of which 22.1 ns is routing. The build before it (41.12 MHz) ended
+somewhere else entirely: walker state → D-port address → the SoC's address
+decode (`soc_boot.v`'s `in_rom`) → the I-TLB fill.
 
 ### `AGU`, `MUL_2C` (committed first, `49864bc`)
 
