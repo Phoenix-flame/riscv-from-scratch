@@ -8,6 +8,8 @@
 // after `make run` (Step 54):
 //
 //   * FCLK_CLK0 at 100 MHz; FCLK_RESET0_N released after a while;
+//   * FCLK_CLK1 at 11.11 MHz, the RISC-V's clock (the PS program sets
+//     IO PLL / 90; Step 57);
 //   * S_AXI_HP0 held in reset until ps7_init() would have trained the
 //     DDR (HP0_READY_NS), then served by axi4_mem with 64-bit beats -- the
 //     DDR window of the PS map at DDR_BASE, with DDR-like latency and
@@ -17,7 +19,7 @@
 //     (gp0_run set from then on) to release the RISC-V. +NO_RUN skips the
 //     write: the negative control, in which the RISC-V must stay in reset.
 //
-// And BUFG, which ps7_gp0 puts on FCLK0.
+// And BUFG, which ps7_gp0 puts on FCLK0 and FCLK1.
 // =====================================================================
 module BUFG (input wire I, output wire O);
     assign O = I;
@@ -105,12 +107,14 @@ module PS7 #(
     // ---- clocks and resets ----
     reg fclk0 = 1'b0, fresetn = 1'b0;
     always #5 fclk0 = ~fclk0;                              // 100 MHz
+    reg fclk1 = 1'b0;
+    always #45 fclk1 = ~fclk1;                             // 11.11 MHz
     initial begin
         SAXIHP0ARESETN = 1'b0;
         #200 fresetn = 1'b1;
         #(HP0_READY_NS) SAXIHP0ARESETN = 1'b1;             // "ps7_init() is done"
     end
-    assign FCLKCLK = {3'b000, fclk0};
+    assign FCLKCLK = {2'b00, fclk1, fclk0};
     assign FCLKRESETN = {3'b111, fresetn};
     assign MAXIGP0ARESETN = fresetn;
 

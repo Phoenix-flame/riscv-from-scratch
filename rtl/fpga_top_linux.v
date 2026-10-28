@@ -10,8 +10,17 @@
 // program (it only initialises the PS and DDR, from OCM) touches none of it.
 //
 // The PS7 is OpenZynq's ps7_gp0 (rtl/ps7_gp0.v there) with HP0_ENABLE = 1.
-// Everything runs on the 50 MHz PL oscillator, HP0's clock included, so the
-// data path crosses no clock domain.
+// The RISC-V and HP0 run on one clock, so the data path crosses no clock
+// domain: FCLK1, which the PS program sets to IO PLL / 90 = 11.11 MHz
+// (Step 57). nextpnr-xilinx predicts about 15 MHz for this core, so the
+// board's 50 MHz oscillator is too fast, and 11.11 MHz is the IO-PLL
+// division nearest below it that keeps 115200 baud within 0.5 % (divisor
+// 6: 115,741 baud, the same as 50 MHz / 27). The board ROM, device tree and
+// U-Boot know it from PLAT_CLOCK_HZ (build/boot/linux-board/).
+//
+// Also for size, the board build leaves out what the boot chain never uses:
+// Zba/Zbb/Zbc/Zbs (the kernel, U-Boot and userland are rv32ima, and the DT
+// says so), and the branch predictor; and divides in 33 cycles (DIV_ITER).
 //
 // The DDR is usable only once the PS has run ps7_init() -- and an HP0
 // access to an untrained controller may never complete, which no PL reset
@@ -26,7 +35,6 @@
 //
 // Any other access completes too (reads 0), so no PS access can hang.
 //
-//   clk      U18  50 MHz PL oscillator
 //   resetn   U19  K1, active low: restarts the RISC-V (the ROM, then a new image)
 //   uart_tx  J18  JM1 pin 21 (3.3 V) -> a USB-serial adapter's RX
 //   uart_rx  K19  JM1 pin 22 (3.3 V) <- the adapter's TX; GND on JM1 pin 3/4
@@ -36,12 +44,14 @@
 `default_nettype none
 
 module fpga_top_linux #(
-    parameter BOOTROM_INIT = "build/boot/board/rom.hex",
+    parameter BOOTROM_INIT = "build/boot/linux-board/rom.hex",
     parameter RAM_WORDS    = 1 << 24,              // 64 MiB of DDR
     parameter [31:0] DDR_BASE = 32'h1000_0000,     // where it starts in the PS map
-    parameter DIV_ITER     = 1                     // the 32-cycle divider: the array divider does not fit (Step 57)
+    parameter DIV_ITER     = 1,                    // the 32-cycle divider: the array dividers do not fit (Step 57)
+    parameter ZB_EXT       = 0,                    // no Zba/Zbb/Zbc/Zbs: nothing that boots here uses them
+    parameter BPRED        = 0,                    // no branch predictor: area, not correctness
+    parameter [15:0] UART_DIV = 16'd6              // 11.11 MHz / 16 / 6 = 115,741 baud
 ) (
-    input  wire clk,
     input  wire resetn,
     input  wire uart_rx,
     output wire uart_tx,
@@ -50,6 +60,7 @@ module fpga_top_linux #(
 );
     // ---- the PS: FCLK0 + GP0 (unused), and S_AXI_HP0 into DDR ----
     wire        aclk, aresetn, hp_aresetn;
+    wire        clk;                              // FCLK1: the RISC-V's clock, and HP0's
     wire [31:0] gp_awaddr, gp_wdata, gp_araddr;
     wire [3:0]  gp_wstrb;
     wire        gp_awvalid, gp_wvalid, gp_bready, gp_arvalid, gp_rready;
@@ -70,7 +81,7 @@ module fpga_top_linux #(
     wire        arvalid, arready, rlast, rvalid, rready;
 
     ps7_gp0 #(.HP0_ENABLE(1)) u_ps7 (
-        .aclk(aclk), .aresetn(aresetn),
+        .aclk(aclk), .aresetn(aresetn), .fclk1(clk),
         .m_awaddr(gp_awaddr), .m_awvalid(gp_awvalid), .m_awready(gp_awready),
         .m_wdata(gp_wdata), .m_wstrb(gp_wstrb), .m_wvalid(gp_wvalid), .m_wready(gp_awready),
         .m_bresp(2'b00), .m_bvalid(gp_bvalid), .m_bready(gp_bready),
@@ -116,13 +127,13 @@ module fpga_top_linux #(
     always @(posedge clk) rs <= {rs[1:0], ~resetn | ~run | ~hp_aresetn};
     wire rst = rs[2];
 
-    reg [24:0] beat = 25'd0;
-    always @(posedge clk) beat <= beat + 25'd1;
-    assign led2 = beat[24] & ~rst;
+    reg [23:0] beat = 24'd0;                      // 2^23 / 11.11 MHz: 0.75 s
+    always @(posedge clk) beat <= beat + 24'd1;
+    assign led2 = beat[23] & ~rst;
 
     soc_boot #(.MEMSYS(2), .RAM_WORDS(RAM_WORDS), .BOOTROM_INIT(BOOTROM_INIT),
-               .UART_DIV(16'd27), .AXI_OFFSET(DDR_BASE), .AXI_DATA_W(64),
-               .DIV_ITER(DIV_ITER)) u_soc (
+               .UART_DIV(UART_DIV), .AXI_OFFSET(DDR_BASE), .AXI_DATA_W(64),
+               .DIV_ITER(DIV_ITER), .ZB_EXT(ZB_EXT), .BPRED(BPRED)) u_soc (
         .clk(clk), .rst(rst), .uart_rx_pin(uart_rx), .uart_tx_pin(uart_tx),
         .halted(halted), .exit_code(), .warm_reset(),
         .m_axi_awaddr(awaddr), .m_axi_awlen(awlen), .m_axi_awsize(awsize), .m_axi_awburst(awburst),

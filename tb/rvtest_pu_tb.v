@@ -31,7 +31,12 @@ module rvtest_pu_tb;
 `else
     localparam DIV_ITER = 0;
 `endif
-    cpu_pipe_u #(.DIV_ITER(DIV_ITER)) u_core (
+`ifdef RVT_BOARD
+    localparam ZB = 0, BP = 0;    // the Linux board core (Step 57): no Zb*, no branch predictor
+`else
+    localparam ZB = 1, BP = 1;
+`endif
+    cpu_pipe_u #(.DIV_ITER(DIV_ITER), .ZBA(ZB), .ZBB(ZB), .ZBC(ZB), .ZBS(ZB), .BPRED(BP)) u_core (
         .clk(clk), .rst(rst), .timer_irq(1'b0), .mtime(64'd0), .meip(1'b0), .seip(1'b0), .fencei_req(), .fencei_ack(1'b1), .halt(1'b0),
         .i_addr(iaddr), .i_req(ireq), .i_rdata(irdata), .i_ready(1'b1),
         .d_addr(daddr), .d_req(dreq), .d_we(dwe), .d_wdata(dwdata),

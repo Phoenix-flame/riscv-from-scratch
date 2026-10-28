@@ -171,10 +171,13 @@ MEMSYS = {
     # then libc_demo), checked line by line rather than against the file
     "board": dict(memsys=1, ram_words=1 << 15, divisor=27, rom="board/rom.hex", short=True,
                   desc="the board build: caches + 128 KiB block RAM, 115200 baud"),
-    # the Linux board build (Step 54): the board ROM, PS DDR through S_AXI_HP0
-    "board-ddr": dict(memsys=2, ram_words=1 << 24, axi_data_w=64, divisor=27, div_iter=1,
-                      rom="board/rom.hex", short=True,
-                      desc="the Linux board build: caches + 64 MiB of DDR over HP0, 115200 baud"),
+    # the Linux board build (Steps 54, 57): its own ROM (11.11 MHz FCLK1,
+    # divisor 6, no Zb* in the DT), PS DDR through S_AXI_HP0, and the core
+    # fpga_top_linux has: the iterative divider, no Zb*, no branch predictor
+    "board-ddr": dict(memsys=2, ram_words=1 << 24, axi_data_w=64, divisor=6,
+                      div_iter=1, zb=0, bpred=0, rom="linux-board/rom.hex", short=True,
+                      desc="the Linux board build: caches + 64 MiB of DDR over HP0, 115200 baud "
+                           "from 11.11 MHz, the board's core"),
 }
 
 
@@ -185,18 +188,21 @@ def build_sim(sim, variant):
     div = v.get("divisor", 1)
     axw = v.get("axi_data_w", 32)
     dit = v.get("div_iter", 0)
+    zb = v.get("zb", 1)
+    bp = v.get("bpred", 1)
     if sim == "verilator":
         obj = BUILD / f"vobj_{variant}"
         check(["verilator", "--binary", "--timing", "-O3", "-Wno-fatal", "-Wno-lint",
                "-Wno-style", "--top-module", "boot_tb", "-Mdir", str(obj), "-o", "boot_tb",
                f"-GMEMSYS={v['memsys']}", f"-GRAM_WORDS={v['ram_words']}", f"-GDIVISOR={div}",
-               f"-GAXI_DATA_W={axw}", f"-GDIV_ITER={dit}"]
+               f"-GAXI_DATA_W={axw}", f"-GDIV_ITER={dit}", f"-GZB_EXT={zb}", f"-GBPRED={bp}"]
               + files, "verilator")
         return [str(obj / "boot_tb")]
     vvp = BUILD / f"boot_tb_{variant}.vvp"
     check(["iverilog", "-g2012", "-o", str(vvp),
            f"-Pboot_tb.MEMSYS={v['memsys']}", f"-Pboot_tb.RAM_WORDS={v['ram_words']}",
-           f"-Pboot_tb.DIVISOR={div}", f"-Pboot_tb.AXI_DATA_W={axw}", f"-Pboot_tb.DIV_ITER={dit}"]
+           f"-Pboot_tb.DIVISOR={div}", f"-Pboot_tb.AXI_DATA_W={axw}", f"-Pboot_tb.DIV_ITER={dit}",
+           f"-Pboot_tb.ZB_EXT={zb}", f"-Pboot_tb.BPRED={bp}"]
           + files, "iverilog")
     return ["vvp", "-n", str(vvp)]
 

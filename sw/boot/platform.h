@@ -12,7 +12,12 @@
 #ifndef PLATFORM_H
 #define PLATFORM_H
 
-#define PLAT_CLOCK_HZ    50000000     /* nominal core clock (also mtime's) */
+/* the core clock, which is also mtime's: the 50 MHz oscillator, except in
+ * the Linux board build's ROM (build/boot/linux-board/): 11.11 MHz from the
+ * PS's FCLK1, Step 57) */
+#ifndef PLAT_CLOCK_HZ
+#define PLAT_CLOCK_HZ    50000000
+#endif
 
 #define ROM_BASE         0x00001000   /* boot ROM, reset vector */
 #define ROM_SIZE         0x00004000   /* 16 KiB */
@@ -27,7 +32,7 @@
 
 /* baud = clock / (16 * divisor): 1 in simulation (3.125 Mbaud, 16 clocks a
  * bit); the board build (make boot-board) passes 27 -> 115740 baud, 115200
- * within 0.5 % */
+ * within 0.5 %, and the Linux board build 6 at 11.11 MHz -> the same */
 #ifndef UART_DIVISOR
 #define UART_DIVISOR     1
 #endif

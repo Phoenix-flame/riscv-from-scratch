@@ -457,6 +457,22 @@ $(BBB)/rom.hex: sw/boot/rom_start.S sw/boot/rom_main.c sw/boot/rom_sbi.c sw/boot
 	riscv64-unknown-elf-objcopy -O binary $(BBB)/rom.elf $(BBB)/rom.bin
 	python3 sw/bin2hex.py $(BBB)/rom.bin > $@
 
+# The Linux board build (Step 57): fpga_top_linux runs on the PS's FCLK1 at
+# IO PLL / 90 = 11.11 MHz (divisor 6 is 115200 baud within 0.5 %) and has no
+# Zba/Zbb/Zbc/Zbs, so its ROM and DT say both. (fpga_top_boot keeps $(BBB).)
+BBL = $(BB)/linux-board
+BBL_DEFS = -DPLAT_CLOCK_HZ=11111111 -DUART_DIVISOR=6 -DPLAT_NO_ZB
+$(shell mkdir -p $(BBL))
+$(BBL)/rvfs-soc.dtb: sw/boot/rvfs-soc.dts sw/boot/platform.h
+	cpp -nostdinc -undef -x assembler-with-cpp $(BBL_DEFS) -I sw/boot $< | dtc -q -I dts -O dtb -o $@ -
+
+$(BBL)/rom.hex: sw/boot/rom_start.S sw/boot/rom_main.c sw/boot/rom_sbi.c sw/boot/rom.h sw/boot/rom.ld \
+               sw/boot/bootimg.h $(BOOT_LIB) $(BOOT_HDR) $(BBL)/rvfs-soc.dtb sw/bin2hex.py
+	$(BOOT_CC) $(BBL_DEFS) -DDTB_PATH='"$(BBL)/rvfs-soc.dtb"' -T sw/boot/rom.ld sw/boot/rom_start.S \
+	  sw/boot/rom_main.c sw/boot/rom_sbi.c $(BOOT_LIB) -lgcc -o $(BBL)/rom.elf
+	riscv64-unknown-elf-objcopy -O binary $(BBL)/rom.elf $(BBL)/rom.bin
+	python3 sw/bin2hex.py $(BBL)/rom.bin > $@
+
 RTL_BOOT = rtl/alu.v rtl/regfile.v rtl/immgen.v rtl/control.v rtl/csr_s.v rtl/branch_predictor.v \
            rtl/tlb.v rtl/ptw.v rtl/zb_unit.v rtl/vec_unit.v rtl/cpu_pipe_u.v rtl/uart_tx_cfg.v \
            rtl/uart_rx.v rtl/uart16550.v rtl/clint_sifive.v rtl/plic_sifive.v rtl/icache.v \
@@ -478,7 +494,7 @@ boot-sw: $(BB)/rom.hex $(BB)/dtdemo.elf $(BB)/kdemo.elf $(BB)/mhello.elf $(BB)/l
 boot: boot-sw ## boot ROM + DT + SBI + PLIC/faults/Svade, on ideal memory, caches + BRAM, and caches + DDR (AXI4)
 	python3 tools/rvboot test $(ARGS)
 
-boot-board: boot-sw $(BBB)/rom.hex ## the board builds in simulation (115200 baud; 128 KiB BRAM, and 64 MiB of DDR over HP0): banner, a bad image, libc_demo
+boot-board: boot-sw $(BBB)/rom.hex $(BBL)/rom.hex ## the board builds in simulation (115200 baud; 128 KiB BRAM, and 64 MiB of DDR over HP0): banner, a bad image, libc_demo
 	python3 tools/rvboot test --memsys board $(ARGS)
 	python3 tools/rvboot test --memsys board-ddr $(ARGS)
 
@@ -509,10 +525,10 @@ linux-fast: boot-sw ## ... the same with the kernel preloaded into the DDR model
 #                           the PS program, a testbench), build the board's
 #                           kernel image, and simulate that top (verilator)
 .PHONY: linux-board linux-oz
-linux-board: boot-sw $(BBB)/rom.hex ## Linux on the board configuration (board ROM, 115200, 64-bit HP0 port), simulated
+linux-board: boot-sw $(BBB)/rom.hex $(BBL)/rom.hex ## Linux on the board configuration (board ROM, 115200, 64-bit HP0 port), simulated
 	python3 tools/rvlinux all --board $(ARGS)
 
-linux-oz: boot-sw $(BBB)/rom.hex ## export the Linux board project into OpenZynq (OZ=...) and simulate its top on OZ's ps7_gp0
+linux-oz: boot-sw $(BBB)/rom.hex $(BBL)/rom.hex ## export the Linux board project into OpenZynq (OZ=...) and simulate its top on OZ's ps7_gp0
 	@test -n "$(OZ)" || { echo "usage: make linux-oz OZ=/path/to/OpenZynq"; exit 1; }
 	python3 tools/rvlinux oz-export $(OZ) $(ARGS)
 	python3 tools/rvlinux oz-sim $(OZ)
@@ -544,7 +560,7 @@ boot-mem: boot-sw ## the ROM boots an RVBI image left in RAM (as the PS leaves o
 ps-test: ## the PS program's BOOT.BIN parser + QSPI writer against a controller/flash model (host C)
 	$(MAKE) -C sw/linux/board/ps test
 
-linux-frommem: boot-sw $(BBB)/rom.hex ## U-Boot + Linux booted from memory, as from flash on the board (board configuration), shell checks
+linux-frommem: boot-sw $(BBB)/rom.hex $(BBL)/rom.hex ## U-Boot + Linux booted from memory, as from flash on the board (board configuration), shell checks
 	python3 tools/rvlinux run --frommem --uboot --board $(ARGS)
 
 # ---- Step 57: a divider that fits ---------------------------------------

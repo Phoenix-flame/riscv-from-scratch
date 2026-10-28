@@ -42,10 +42,17 @@
             reg = <0>;
             status = "okay";
             compatible = "rvfs,cpu-pipe-u", "riscv";
+#ifdef PLAT_NO_ZB   /* the Linux board build leaves Zba/Zbb/Zbc/Zbs out (Step 57) */
+            riscv,isa = "rv32ima_zicntr_zicsr_zifencei_zihpm";
+            riscv,isa-base = "rv32i";
+            riscv,isa-extensions = "i", "m", "a", "zicntr", "zicsr", "zifencei",
+                                   "zihpm";
+#else
             riscv,isa = "rv32ima_zicntr_zicsr_zifencei_zihpm_zba_zbb_zbc_zbs";
             riscv,isa-base = "rv32i";
             riscv,isa-extensions = "i", "m", "a", "zicntr", "zicsr", "zifencei",
                                    "zihpm", "zba", "zbb", "zbc", "zbs";
+#endif
             mmu-type = "riscv,sv32";
             clock-frequency = <PLAT_CLOCK_HZ>;
 

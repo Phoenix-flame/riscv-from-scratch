@@ -23,6 +23,7 @@ static inline void hw_wr(uint32_t a, uint32_t v) { *(volatile uint32_t *)(uintpt
 #define SLCR_FPGA_RST    UINT32_C(0xf8000240)   /* FCLK resets, 1 = asserted */
 #define SLCR_BOOT_MODE   UINT32_C(0xf800025c)   /* [2:0]: 0 JTAG, 1 QSPI, 5 SD */
 #define SLCR_LVL_SHFTR   UINT32_C(0xf8000900)   /* PS<->PL level shifters */
+#define SLCR_FPGA1_CLK   UINT32_C(0xf8000180)   /* FCLK1: [25:20] DIVISOR1, [13:8] DIVISOR0, [5:4] 0 = IO PLL */
 #define BOOT_MODE_JTAG   0
 #define BOOT_MODE_QSPI   1
 

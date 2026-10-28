@@ -62,6 +62,7 @@ module soc_boot #(
     parameter [15:0] UART_DIV = 16'd1,    // divisor latch at reset
     parameter TLB_ENTRIES  = 4,
     parameter BPRED        = 1,
+    parameter ZB_EXT       = 1,           // Zba/Zbb/Zbc/Zbs; 0 leaves them out (and the DT must say so)
     parameter V_EXT        = 0,           // no vectors: this platform is for scalar OSes
     parameter SVADE        = 1,           // page faults on clear A / D bits
     parameter MEMSYS       = 0,           // 0 ideal, 1 caches + block RAM, 2 caches + AXI4
@@ -137,7 +138,8 @@ module soc_boot #(
 
     wire [1:0] eip;                       // PLIC contexts: 0 = M, 1 = S
     cpu_pipe_u #(.RESET_PC(ROM_BASE), .TLB_ENTRIES(TLB_ENTRIES), .BPRED(BPRED),
-                 .V_EXT(V_EXT), .SVADE(SVADE), .DIV_ITER(DIV_ITER), .PMA_N(6), .PMA_BASE(PMA_BASE),
+                 .V_EXT(V_EXT), .SVADE(SVADE), .DIV_ITER(DIV_ITER),
+                 .ZBA(ZB_EXT), .ZBB(ZB_EXT), .ZBC(ZB_EXT), .ZBS(ZB_EXT), .PMA_N(6), .PMA_BASE(PMA_BASE),
                  .PMA_SIZE(PMA_SIZE), .PMA_ATTR(PMA_ATTR)) u_core (
         .clk(clk), .rst(sys_rst), .timer_irq(timer_irq), .mtime(mtime),
         .meip(eip[0]), .seip(eip[1]), .halt(halted),

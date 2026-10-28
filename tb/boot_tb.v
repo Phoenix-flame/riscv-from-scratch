@@ -36,6 +36,8 @@ module boot_tb;
     parameter DIVISOR   = 1;              // platform.h UART_DIVISOR
     parameter AXI_DATA_W = 32;            // MEMSYS 2: 32, or 64 (S_AXI_HP)
     parameter DIV_ITER   = 0;             // the 32-cycle divider (the Linux board build uses it)
+    parameter ZB_EXT     = 1;             // the Linux board build: 0 (no Zba/Zbb/Zbc/Zbs)
+    parameter BPRED      = 1;             //                        0 (no branch predictor)
     localparam [31:0] DDR_BASE = 32'h1000_0000;     // where RAM sits on the AXI side
     localparam CPB = 16 * DIVISOR;        // clocks per bit
 
@@ -56,7 +58,8 @@ module boot_tb;
                 arvalid, arready, rlast, rvalid, rready;
 
     soc_boot #(.RAM_WORDS(RAM_WORDS), .MEMSYS(MEMSYS), .AXI_OFFSET(DDR_BASE),
-               .AXI_DATA_W(AXI_DATA_W), .DIV_ITER(DIV_ITER)) dut (
+               .AXI_DATA_W(AXI_DATA_W), .DIV_ITER(DIV_ITER),
+               .ZB_EXT(ZB_EXT), .BPRED(BPRED)) dut (
         .clk(clk), .rst(rst), .uart_rx_pin(rx), .uart_tx_pin(tx),
         .halted(halted), .exit_code(exit_code), .warm_reset(warm_reset),
         .m_axi_awaddr(awaddr), .m_axi_awlen(awlen), .m_axi_awsize(awsize), .m_axi_awburst(awburst),
