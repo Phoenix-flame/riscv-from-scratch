@@ -15,6 +15,10 @@ second one did, with three changes to the board build only:
 
 Every other configuration is unchanged; each change is a parameter.
 
+> **Superseded clock:** Step 58 (`docs/58-faster-board-core.md`) shortens
+> the board core's critical path to about 41 MHz and moves FCLK1 to
+> 33.33 MHz (UART divisor 18). The figures below are Step 57's.
+
 ## The result
 
 `riscv_linux.bit`, 2,083,867 bytes, IDCODE `0x03722093` (the xc7z010),

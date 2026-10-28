@@ -11,12 +11,12 @@
 //
 // The PS7 is OpenZynq's ps7_gp0 (rtl/ps7_gp0.v there) with HP0_ENABLE = 1.
 // The RISC-V and HP0 run on one clock, so the data path crosses no clock
-// domain: FCLK1, which the PS program sets to IO PLL / 90 = 11.11 MHz
-// (Step 57). nextpnr-xilinx predicts about 15 MHz for this core, so the
-// board's 50 MHz oscillator is too fast, and 11.11 MHz is the IO-PLL
-// division nearest below it that keeps 115200 baud within 0.5 % (divisor
-// 6: 115,741 baud, the same as 50 MHz / 27). The board ROM, device tree and
-// U-Boot know it from PLAT_CLOCK_HZ (build/boot/linux-board/).
+// domain: FCLK1, which the PS program sets to IO PLL / 30 = 33.33 MHz
+// (Step 58). nextpnr-xilinx puts this core at about 41 MHz after routing,
+// so the board's 50 MHz oscillator is too fast, and 33.33 MHz is the
+// fastest IO-PLL division below that which keeps 115200 baud within 0.5 %
+// (divisor 18: 115,741 baud, the same as 50 MHz / 27). The board ROM,
+// device tree and U-Boot know it from PLAT_CLOCK_HZ (build/boot/linux-board/).
 //
 // Also for size, the board build leaves out what the boot chain never uses:
 // Zba/Zbb/Zbc/Zbs (the kernel, U-Boot and userland are rv32ima, and the DT
@@ -60,7 +60,7 @@ module fpga_top_linux #(
     parameter XLATE_2C     = 1,                    // a load/store: D-TLB lookup, registered, then its faults (Step 58)
     parameter VALID_FLUSH  = 1,                    // a flush clears the valid bits only (Step 58)
     parameter REG_REDIRECT = 1,                    // a taken branch redirects a cycle later (Step 58)
-    parameter [15:0] UART_DIV = 16'd6              // 11.11 MHz / 16 / 6 = 115,741 baud
+    parameter [15:0] UART_DIV = 16'd18             // 33.33 MHz / 16 / 18 = 115,741 baud
 ) (
     input  wire resetn,
     input  wire uart_rx,
@@ -137,9 +137,9 @@ module fpga_top_linux #(
     always @(posedge clk) rs <= {rs[1:0], ~resetn | ~run | ~hp_aresetn};
     wire rst = rs[2];
 
-    reg [23:0] beat = 24'd0;                      // 2^23 / 11.11 MHz: 0.75 s
-    always @(posedge clk) beat <= beat + 24'd1;
-    assign led2 = beat[23] & ~rst;
+    reg [24:0] beat = 25'd0;                      // 2^24 / 33.33 MHz: 0.5 s
+    always @(posedge clk) beat <= beat + 25'd1;
+    assign led2 = beat[24] & ~rst;
 
     soc_boot #(.MEMSYS(2), .RAM_WORDS(RAM_WORDS), .BOOTROM_INIT(BOOTROM_INIT),
                .UART_DIV(UART_DIV), .AXI_OFFSET(DDR_BASE), .AXI_DATA_W(64),

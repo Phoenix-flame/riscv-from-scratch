@@ -12,7 +12,7 @@
  *
  *   1. ps7_init(): clocks, MIO, DDR training (the board's Vivado-exported
  *      ps7_init, `make vivado-init` -- the one known to work on a Mitra);
- *      then FCLK1, the RISC-V's clock, to IO PLL / 90 = 11.11 MHz (Step 57);
+ *      then FCLK1, the RISC-V's clock, to IO PLL / 30 = 33.33 MHz (Step 58);
  *   2. QSPI boot only: find BOOT.BIN's bitstream and program the PL with it
  *      through PCAP (pcap.c);
  *   3. ps7_post_config(): the PL's level shifters and fabric resets;
@@ -49,15 +49,17 @@
 extern int ps7_init(void);
 extern int ps7_post_config(void);
 
-/* FCLK1 = IO PLL / (DIVISOR0 * DIVISOR1) = 1000 MHz / (9 * 10) = 11.11 MHz:
+/* FCLK1 = IO PLL / (DIVISOR0 * DIVISOR1) = 1000 MHz / (6 * 5) = 33.33 MHz:
  * the RISC-V's clock and HP0's, which its ROM, device tree, U-Boot and Linux
- * all assume (PLAT_CLOCK_HZ = 11111111; UART divisor 6 is 115,741 baud).
+ * all assume (PLAT_CLOCK_HZ = 33333333; UART divisor 18 is 115,741 baud).
+ * Step 57 ran it at IO PLL / 90 = 11.11 MHz; Step 58's core routes at
+ * about 41 MHz, so 33.33 MHz is the fastest baud-exact step with margin.
  * ps7_init leaves it at 125 MHz. The RISC-V is in reset until "run", so the
  * change cannot catch it mid-cycle. */
 static void fclk1_init(void)
 {
     hw_wr(SLCR_UNLOCK, 0xdf0d);
-    hw_wr(SLCR_FPGA1_CLK, (UINT32_C(10) << 20) | (UINT32_C(9) << 8));
+    hw_wr(SLCR_FPGA1_CLK, (UINT32_C(5) << 20) | (UINT32_C(6) << 8));
     hw_wr(SLCR_LOCK, 0x767b);
 }
 
@@ -212,7 +214,7 @@ int main(void)
     puts_("\nriscv_linux: the PS side\n");
     if (init) { puts_("  ps7_init failed: 0x"); hex((uint32_t)init); halt("\n"); }
     puts_(qspi_boot ? "  QSPI boot: this is the FSBL\n" : "  JTAG boot\n");
-    puts_("  FCLK1 (the RISC-V's clock): IO PLL / 90 = 11.11 MHz, reads back 0x");
+    puts_("  FCLK1 (the RISC-V's clock): IO PLL / 30 = 33.33 MHz, reads back 0x");
     hex(hw_rd(SLCR_FPGA1_CLK)); puts_("\n");
 
     int have = bootbin_parse(qspi_map(), QSPI_FLASH_BYTES, &b, &why) == 0;
