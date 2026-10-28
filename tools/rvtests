@@ -194,6 +194,30 @@ CORES = {
         "suites": ["rv32ui", "rv32um", "rv32ua"],
         "ram": "word",
     },
+    # ... and with the test body in U and Sv32 on: every access translated,
+    # so the board core's registered lookup, walks and page faults are used
+    "pipe_u_board_vm": {
+        "desc": "... the Linux board's core, body in U with Sv32 on",
+        "rtl": COMMON_RTL + ["csr_s", "branch_predictor", "tlb", "ptw", "zb_unit", "vec_unit", "cpu_pipe_u"],
+        "tb": "tb/rvtest_pu_tb.v",
+        "define": "RVT_DIV_ITER,RVT_BOARD",
+        "march": "rv32ima_zicsr_zifencei",
+        "cflags": ["-DRVTEST_VM"],
+        "abi": "ilp32",
+        "suites": ["rv32ui", "rv32um", "rv32ua"],
+        "ram": "word",
+    },
+    "pipe_c_board_vm": {
+        "desc": "... the Linux board's core behind the caches, body in U with Sv32 on",
+        "rtl": COMMON_RTL + ["csr_s", "branch_predictor", "tlb", "ptw", "zb_unit", "vec_unit", "cpu_pipe_u", "icache", "dcache", "mem_slow"],
+        "tb": "tb/rvtest_pc_tb.v",
+        "define": "RVT_DIV_ITER,RVT_BOARD",
+        "march": "rv32ima_zicsr_zifencei",
+        "cflags": ["-DRVTEST_VM"],
+        "abi": "ilp32",
+        "suites": ["rv32ui", "rv32um", "rv32ua"],
+        "ram": "word",
+    },
     "pipe_c_uni_board": {
         "desc": "... caches, one memory, the Linux board's core (DIV_ITER, MUL_2C, AGU, no Zb*, no BP)",
         "rtl": COMMON_RTL + ["csr_s", "branch_predictor", "tlb", "ptw", "zb_unit", "vec_unit", "cpu_pipe_u", "icache", "dcache", "mem_slow", "line_arb"],
@@ -277,7 +301,8 @@ RAM_BYTES = 65536         # 64 KB data RAM, as a byte array (dmem.v)
 KNOWN_GAPS = {
     # test            cores it applies to (None = all)
     "rv32ui-fence_i": ({"mc", "mc_c", "mc_f", "mc_tlb", "sc", "pipe",
-                        "pipe_u", "pipe_u_vm", "pipe_u_div", "pipe_u_board", "pipe_c", "pipe_c_vm"},
+                        "pipe_u", "pipe_u_vm", "pipe_u_div", "pipe_u_board", "pipe_u_board_vm",
+                        "pipe_c", "pipe_c_vm", "pipe_c_board_vm"},
         "self-modifying code. The instruction ROM is written once, at time "
         "zero; no store can ever become an instruction. (The s6 core has one "
         "unified dual-port memory, and so do pipe_u_uni, whose fence.i "
@@ -285,7 +310,8 @@ KNOWN_GAPS = {
         "and invalidates the I-cache -- all three pass.)"),
     "rv32ui-ma_data": ({"mc", "mc_c", "mc_f", "mc_tlb", "s6", "s6_sf",
                         "pipe_u", "pipe_u_vm", "pipe_u_uni", "pipe_u_div", "pipe_c", "pipe_c_vm", "pipe_c_uni",
-                        "pipe_c_uni_div", "pipe_c_uni_board", "pipe_u_board"},
+                        "pipe_c_uni_div", "pipe_c_uni_board", "pipe_u_board", "pipe_u_board_vm",
+                        "pipe_c_board_vm"},
         "misaligned load/store. The mc cores select a sub-word inside one RAM "
         "word, so any access not aligned to its own width reads or writes the "
         "wrong bytes -- silently, with no trap. The s6 core and, since Step 52, "

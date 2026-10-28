@@ -111,6 +111,13 @@ module cpu_pipe_u #(
     parameter MUL_2C      = 0,        // 1: multiplies in mul_2c, registered both sides: EX holds 2 cycles
     parameter AGU         = 0,        // 1: load/store addresses from their own adder (rs1 + imm), not the
                                       //    ALU result -- the multiplier and result mux leave the D-TLB's path
+    parameter XLATE_2C    = 0,        // 1: a load/store spends 2 cycles in EX: D-TLB lookup, registered,
+                                      //    then faults / region check / commit (Step 58; needs V_EXT = 0)
+    parameter VALID_FLUSH = 0,        // 1: a flush clears only IF/ID's and ID/EX's valid bits, not every
+                                      //    field -- EX acts only on a valid instruction (Step 58; V_EXT = 0)
+    parameter REG_REDIRECT = 0,       // 1: a mispredicted branch/jump redirects the PC a cycle later, from
+                                      //    a register; the wrong-path instruction then in EX is killed.
+                                      //    One more cycle per taken branch (Step 58)
     parameter A_EXT       = 1,        // RV32A atomics
     parameter HAS_U       = 1,        // user mode
     parameter HAS_S       = 1,        // supervisor mode + delegation (needs HAS_U)
@@ -166,7 +173,10 @@ module cpu_pipe_u #(
     wire [31:0] redirect_pc;
     wire        load_use;
     wire        take_trap;
-    wire        flush = redirect;
+    reg         rr_valid;             // REG_REDIRECT: a branch in MEM redirects to rr_pc
+    reg  [31:0] rr_pc;
+    wire        flush = redirect | rr_valid;
+    wire [31:0] flush_pc = rr_valid ? rr_pc : redirect_pc;
 
     wire [1:0]  cur_priv;
     wire [31:0] satp_val;
@@ -178,7 +188,7 @@ module cpu_pipe_u #(
     wire        vm_on   = (MMU != 0) & ~in_m & satp_val[31];   // S and U are translated
 
     // ---- walker <-> TLB plumbing (driven further down) ----
-    wire        ptw_busy, ptw_fill, ptw_fault, ptw_af, ptw_side_i, ptw_super;
+    wire        ptw_busy, ptw_req, ptw_fill, ptw_fault, ptw_af, ptw_side_i, ptw_super;
     wire [31:0] ptw_va, ptw_addr;
     wire [21:0] ptw_ppn;
     wire [3:0]  ptw_perm;
@@ -261,14 +271,16 @@ module cpu_pipe_u #(
     always @(posedge clk) begin
         if (rst) pc <= RESET_PC;
         else if (freeze)               pc <= pc;
-        else if (flush)                pc <= redirect_pc;
+        else if (flush)                pc <= flush_pc;
         else if (front_hold | ~if_ok)  pc <= pc;
         else                           pc <= pc_next;
     end
     always @(posedge clk) begin
-        if (rst || (flush && !freeze)) begin
+        if (rst || (VALID_FLUSH == 0 && flush && !freeze)) begin
             ifid_instr <= NOP; ifid_pc <= 32'd0; ifid_valid <= 1'b0; ifid_ifault <= 1'b0;
             ifid_iaf <= 1'b0; ifid_pred_taken <= 1'b0; ifid_pred_target <= 32'd0;
+        end else if (VALID_FLUSH != 0 && flush && !freeze) begin
+            ifid_valid <= 1'b0;                 // the rest is a dead instruction's
         end else if (freeze || front_hold) begin
             // hold
         end else if (if_ok) begin
@@ -372,12 +384,15 @@ module cpu_pipe_u #(
     reg        idex_reg_write, idex_alu_src_a, idex_alu_src_b,
                idex_mem_read, idex_mem_write, idex_branch, idex_jump, idex_jalr,
                idex_is_csr, idex_is_mret, idex_ecall, idex_ebreak, idex_illegal,
-               idex_sfence, idex_lr, idex_sc, idex_rmw, idex_ifault, idex_valid,
+               idex_sfence, idex_lr, idex_sc, idex_rmw, idex_ifault, idex_valid_q,
                idex_sret, idex_pred_taken, idex_fencei, idex_iaf;
+    // the wrong-path instruction in EX behind a registered redirect is dead
+    wire idex_valid = idex_valid_q & ~rr_valid;
     wire [31:0] opA, opB;               // forwarded operands (EX)
 
+    wire idex_kill = !freeze && !ex_hold && (flush || load_use);   // a bubble into EX
     always @(posedge clk) begin
-        if (rst || (!freeze && !ex_hold && (flush || load_use))) begin
+        if (rst || (VALID_FLUSH == 0 && idex_kill)) begin
             idex_reg_write<=0; idex_mem_read<=0; idex_mem_write<=0;
             idex_branch<=0; idex_jump<=0; idex_jalr<=0; idex_alu_src_a<=0;
             idex_alu_src_b<=0; idex_wb_sel<=WB_ALU; idex_alu_op<=0;
@@ -385,7 +400,7 @@ module cpu_pipe_u #(
             idex_pc<=0; idex_imm<=0; idex_rs1d<=0; idex_rs2d<=0;
             idex_is_csr<=0; idex_is_mret<=0; idex_ecall<=0; idex_ebreak<=0;
             idex_illegal<=0; idex_csr_addr<=0; idex_sfence<=0; idex_amo_f5<=0;
-            idex_lr<=0; idex_sc<=0; idex_rmw<=0; idex_ifault<=0; idex_valid<=0;
+            idex_lr<=0; idex_sc<=0; idex_rmw<=0; idex_ifault<=0; idex_valid_q<=0;
             idex_opcode<=0; idex_funct7<=0; idex_zb<=0; idex_vec<=0;
             idex_sret<=0; idex_instr<=0; idex_pred_taken<=0; idex_pred_target<=0;
             idex_fencei<=0; idex_iaf<=0;
@@ -406,7 +421,7 @@ module cpu_pipe_u #(
             idex_ebreak<=id_ebreak; idex_illegal<=~op_ok;
             idex_csr_addr<=ifid_instr[31:20]; idex_sfence<=id_sfence;
             idex_amo_f5<=id_amo_f5; idex_lr<=id_lr; idex_sc<=id_sc; idex_rmw<=id_rmw;
-            idex_ifault<=ifid_ifault; idex_iaf<=ifid_iaf; idex_valid<=ifid_valid;
+            idex_ifault<=ifid_ifault; idex_iaf<=ifid_iaf; idex_valid_q<=ifid_valid & ~((VALID_FLUSH != 0) & idex_kill);
             idex_sret<=id_sret; idex_instr<=ifid_instr; idex_fencei<=id_fencei;
             idex_opcode<=opcode; idex_funct7<=funct7; idex_zb<=id_zb; idex_vec<=id_vec;
             idex_pred_taken<=ifid_pred_taken; idex_pred_target<=ifid_pred_target;
@@ -482,13 +497,26 @@ module cpu_pipe_u #(
     // for them (ALU_ADD, alu_src_b); AGU gives it its own adder, so nothing
     // else the ALU result mux carries is on the path into the D-TLB
     wire [31:0] agu_va   = opA + idex_imm;
-    wire [31:0] ex_va    = ex_amo ? opA : (AGU ? agu_va : alu_result);  // atomics: (rs1), no offset
+    wire [31:0] ex_va_live = ex_amo ? opA : (AGU ? agu_va : alu_result);  // atomics: (rs1), no offset
+    // XLATE_2C (Step 58): the lookup and the decisions it feeds -- the faults,
+    // the region check, a walk, the commit -- in different cycles. Cycle A
+    // holds EX and registers the D-TLB's answer for this address (xl_*);
+    // cycle B decides from the registers. Without it, both in one cycle.
+    // A D-TLB fill or flush throws the registered lookup away, so after a
+    // walk the lookup is simply done again, and hits.
+    reg         xl_have, xl_hit;
+    reg  [31:0] xl_va, xl_pa, xl_epa;   // the TLB's PA; the PA the access uses
+    reg  [3:0]  xl_perm;
+    reg  [2:0]  xl_pma;                 // pma() of xl_epa
+    wire        xl_wait  = (XLATE_2C != 0) & ex_mem & ~xl_have;      // in ex_hold below
+    wire        ex_mem_d = ex_mem & ((XLATE_2C == 0) | xl_have);      // decisions may be made
+    wire [31:0] ex_va    = XLATE_2C ? xl_va : ex_va_live;
     wire        need_r   = (idex_mem_read & ~idex_sc) ;     // load, LR, AMO
     wire        need_w   = idex_mem_write | idex_sc | idex_rmw;
     // misaligned (Step 52): halfword on an odd address, word / atomic off
     // a 4-byte boundary; decided before translation, so it never walks
-    wire        ex_misal = ex_mem & ((idex_funct3[1:0] == 2'b01) ? ex_va[0] :
-                                     (idex_funct3[1:0] == 2'b10) ? (ex_va[1:0] != 2'b00) : 1'b0);
+    wire        ex_misal = ex_mem_d & ((idex_funct3[1:0] == 2'b01) ? ex_va[0] :
+                                       (idex_funct3[1:0] == 2'b10) ? (ex_va[1:0] != 2'b00) : 1'b0);
     wire        ex_imisal = idex_valid & ex_taken & ex_target[1];   // no C: IALIGN = 32
 
     wire        dtlb_hit; wire [31:0] dtlb_pa; wire [3:0] dtlb_perm;
@@ -501,32 +529,51 @@ module cpu_pipe_u #(
             .flush_all(tlb_flush_all), .flush_one(tlb_flush_one), .flush_va(tlb_flush_va)
         );
     end else begin : g_no_dtlb
-        assign dtlb_hit = 1'b0; assign dtlb_pa = ex_va; assign dtlb_perm = 4'b0;
+        assign dtlb_hit = 1'b0; assign dtlb_pa = dtlb_va; assign dtlb_perm = 4'b0;
     end endgenerate
-    wire ex_xlate      = ex_mem & vm_on & ~ex_misal;
+    // what the decisions below see: the lookup now, or the registered one
+    wire        d_hit  = XLATE_2C ? xl_hit  : dtlb_hit;
+    wire [31:0] d_pa   = XLATE_2C ? xl_pa   : dtlb_pa;
+    wire [3:0]  d_perm = XLATE_2C ? xl_perm : dtlb_perm;
+    always @(posedge clk)
+        if (rst || ex_go || !idex_valid || ptw_fill || tlb_flush_all || tlb_flush_one)
+            xl_have <= 1'b0;
+        else if (XLATE_2C && ex_mem && !xl_have && !freeze) begin
+            xl_have <= 1'b1;
+            xl_va   <= ex_va_live;
+            xl_hit  <= dtlb_hit;  xl_pa <= dtlb_pa;  xl_perm <= dtlb_perm;
+            xl_epa  <= xl_epa_a;  xl_pma <= pma(xl_epa_a);
+        end
+    wire ex_xlate      = ex_mem_d & vm_on & ~ex_misal;
+    // cycle A's view of ex_pa below: the same choice, on the live lookup
+    wire        misal_a  = (idex_funct3[1:0] == 2'b01) ? ex_va_live[0] :
+                           (idex_funct3[1:0] == 2'b10) ? (ex_va_live[1:0] != 2'b00) : 1'b0;
+    wire [31:0] xl_epa_a = (vm_on & ~misal_a) ? dtlb_pa : ex_va_live;
     wire ex_wres_fault = wres_valid & ~wres_i & (wres_vpn == ex_va[31:12]);
     // ---- vector element translation (the D-TLB is the vector unit's while it
     //      runs a memory instruction: the scalar pipe is held, MEM is empty) ----
     wire v_mem_active, v_mem_store, v_mem_want;
     wire [31:0] v_mem_va;
-    wire [31:0] dtlb_va = v_mem_active ? v_mem_va : ex_va;
+    wire [31:0] dtlb_va = v_mem_active ? v_mem_va : (XLATE_2C && xl_have) ? xl_va : ex_va_live;
     wire v_wres_fault  = wres_valid & ~wres_i & (wres_vpn == v_mem_va[31:12]);
     // {U,X,W,R}: U-mode needs a U page; S may use a U page only with SUM;
     // MXR lets loads read execute-only pages
-    wire user_ok       = in_user ? dtlb_perm[3] : (~dtlb_perm[3] | st_sum);
-    wire readable      = dtlb_perm[0] | (st_mxr & dtlb_perm[2]);
-    wire perm_ok       = user_ok & (~need_r | readable) & (~need_w | dtlb_perm[1]);
-    wire ex_dfault     = ex_xlate & (dtlb_hit ? ~perm_ok : ex_wres_fault);
-    wire ex_dwalk      = ex_xlate & ~dtlb_hit & ~ex_wres_fault;
-    wire [31:0] ex_pa  = ex_xlate ? dtlb_pa : ex_va;
+    wire user_ok       = in_user ? d_perm[3] : (~d_perm[3] | st_sum);
+    wire readable      = d_perm[0] | (st_mxr & d_perm[2]);
+    wire perm_ok       = user_ok & (~need_r | readable) & (~need_w | d_perm[1]);
+    wire ex_dfault     = ex_xlate & (d_hit ? ~perm_ok : ex_wres_fault);
+    wire ex_dwalk      = ex_xlate & ~d_hit & ~ex_wres_fault;
+    wire [31:0] ex_pa  = XLATE_2C ? xl_epa : ex_xlate ? d_pa : ex_va;
     // access faults: the walk could not read a PTE, or the physical address
     // does not allow the access (loads need R; stores, SC and AMOs need W)
-    wire [2:0]  ex_pma = pma(ex_pa);
-    wire ex_daf_walk   = ex_dfault & ~dtlb_hit & wres_af;
-    wire ex_daf_pma    = ex_mem & ~ex_misal & ~ex_dfault & ~ex_dwalk &
+    wire [2:0]  ex_pma = XLATE_2C ? xl_pma : pma(ex_pa);
+    wire ex_daf_walk   = ex_dfault & ~d_hit & wres_af;
+    wire ex_daf_pma    = ex_mem_d & ~ex_misal & ~ex_dfault & ~ex_dwalk &
                          ((need_r & ~ex_pma[0]) | (need_w & ~ex_pma[1]));
     wire ex_daf        = ex_daf_walk | ex_daf_pma;
-    wire v_perm_ok     = user_ok & (v_mem_store ? dtlb_perm[1] : readable);
+    wire v_user_ok     = in_user ? dtlb_perm[3] : (~dtlb_perm[3] | st_sum);
+    wire v_readable    = dtlb_perm[0] | (st_mxr & dtlb_perm[2]);
+    wire v_perm_ok     = v_user_ok & (v_mem_store ? dtlb_perm[1] : v_readable);
     wire v_xl_fault    = vm_on & (dtlb_hit ? ~v_perm_ok : v_wres_fault);
     wire v_xl_ok       = ~vm_on | (dtlb_hit & v_perm_ok);
     wire v_walk        = v_mem_active & v_mem_want & vm_on & ~dtlb_hit & ~v_wres_fault;
@@ -569,16 +616,25 @@ module cpu_pipe_u #(
     // it asks only once MEM is not waiting, so the older stores are in
     assign fencei_req = idex_valid & idex_fencei & ~freeze;
     wire   fencei_wait = idex_valid & idex_fencei & ~fencei_ack;
-    assign ex_hold = ex_dwalk | v_wait | fencei_wait | div_wait | mul_wait;   // (implies idex_valid)
+    assign ex_hold = ex_dwalk | v_wait | fencei_wait | div_wait | mul_wait | xl_wait;   // (implies idex_valid)
     assign ex_go   = idex_valid & ~freeze & ~ex_hold;
 
     wire irq_take  = irq_pending & ~exception & ~idex_is_mret & ~idex_sret & ~idex_is_csr &
                      ~(idex_vec & (v_busy | v_done));
     assign take_trap = ex_go & (exception | irq_take);
-    wire mret_ex   = ex_go & idex_is_mret & ~take_trap;
-    wire sret_ex   = ex_go & idex_sret    & ~take_trap;
-    wire csr_commit= ex_go & idex_is_csr  & ~take_trap;
-    wire sfence_ex = ex_go & idex_sfence  & ~take_trap;
+    // A SYSTEM instruction (mret, sret, a CSR access, sfence.vma) is never a
+    // branch, a jump or a memory access, so of `exception` only exc_sys can
+    // be true for it -- the same value, without the branch-target and
+    // memory-fault cones in front of the commits it gates (Step 58: those
+    // reached every TLB entry through sfence_ex). mret, sret and CSR
+    // accesses take no interrupt (irq_take above); sfence.vma can.
+    wire exc_sys   = idex_ifault | ex_illegal | idex_ecall | idex_ebreak | v_fault_now;
+    wire irq_sys   = irq_pending & ~exc_sys & ~idex_is_mret & ~idex_sret & ~idex_is_csr &
+                     ~(idex_vec & (v_busy | v_done));
+    wire mret_ex   = ex_go & idex_is_mret & ~exc_sys;
+    wire sret_ex   = ex_go & idex_sret    & ~exc_sys;
+    wire csr_commit= ex_go & idex_is_csr  & ~exc_sys;
+    wire sfence_ex = ex_go & idex_sfence  & ~(exc_sys | irq_sys);
 
     wire [31:0] trap_cause = idex_ifault ? (idex_iaf ? 32'd1 : 32'd12) :
                              ex_illegal  ? 32'd2  :
@@ -628,11 +684,18 @@ module cpu_pipe_u #(
     assign bp_upd_target = ex_target;
 
     // fence.i: refetch everything younger (its pc4 is the not-taken target)
-    assign redirect    = take_trap | mret_ex | sret_ex | (ex_go & (mispred | idex_fencei));
+    wire br_late = (REG_REDIRECT != 0) & ex_go & mispred & ~take_trap;
+    assign redirect    = take_trap | mret_ex | sret_ex |
+                         (ex_go & ((mispred & (REG_REDIRECT == 0)) | idex_fencei));
     assign redirect_pc = take_trap ? trap_vector :
                          mret_ex   ? mepc_out    :
                          sret_ex   ? sepc_out    :
-                         ex_taken  ? ex_target   : pc4_ex;
+                         (ex_taken & (REG_REDIRECT == 0)) ? ex_target : pc4_ex;
+    // REG_REDIRECT: the branch leaves EX; next cycle it is in MEM, and the
+    // instruction behind it in EX does nothing (idex_valid) while the PC moves
+    always @(posedge clk)
+        if (rst)          begin rr_valid <= 1'b0; rr_pc <= 32'd0; end
+        else if (!freeze) begin rr_valid <= br_late; rr_pc <= ex_taken ? ex_target : pc4_ex; end
 
     // ---- vector unit (Step 47) ----
     wire [31:0] v_csr_rdata, v_mem_wdata;
@@ -777,16 +840,18 @@ module cpu_pipe_u #(
     reg [1:0]  exmem_wb_sel;
     reg        exmem_mem_read, exmem_mem_write, exmem_lr, exmem_sc, exmem_rmw, exmem_valid;
     always @(posedge clk) begin
-        if (rst || (!freeze && !ex_keep)) begin          // bubble (incl. ex_hold)
+        // VALID_FLUSH: a bubble clears only the control bits below, the
+        // rest load anyway, so ex_keep drives 7 flip-flops, not every reset
+        if (rst || (VALID_FLUSH == 0 && !freeze && !ex_keep)) begin  // bubble (incl. ex_hold)
             exmem_reg_write<=0; exmem_mem_read<=0; exmem_mem_write<=0;
             exmem_lr<=0; exmem_sc<=0; exmem_rmw<=0; exmem_valid<=0;
             exmem_rd<=0; exmem_result<=0; exmem_addr<=0; exmem_store<=0;
             exmem_funct3<=0; exmem_wb_sel<=WB_ALU; exmem_amo_f5<=0;
         end else if (!freeze) begin
-            exmem_reg_write<=idex_is_csr | idex_reg_write | (idex_vec & v_writes_rd);
-            exmem_mem_read<=idex_mem_read; exmem_mem_write<=idex_mem_write;
-            exmem_lr<=idex_lr; exmem_sc<=idex_sc; exmem_rmw<=idex_rmw;
-            exmem_valid<=1'b1; exmem_rd<=idex_rd;
+            exmem_reg_write<=ex_keep & (idex_is_csr | idex_reg_write | (idex_vec & v_writes_rd));
+            exmem_mem_read<=ex_keep & idex_mem_read; exmem_mem_write<=ex_keep & idex_mem_write;
+            exmem_lr<=ex_keep & idex_lr; exmem_sc<=ex_keep & idex_sc; exmem_rmw<=ex_keep & idex_rmw;
+            exmem_valid<=ex_keep; exmem_rd<=idex_rd;
             exmem_result<=ex_result; exmem_addr<=ex_pa; exmem_store<=opB;
             exmem_funct3<=idex_funct3; exmem_amo_f5<=idex_amo_f5;
             exmem_wb_sel<=idex_is_csr ? WB_ALU : idex_wb_sel;
@@ -841,7 +906,7 @@ module cpu_pipe_u #(
     assign d_addr  = ptw_busy ? ptw_addr : v_mem_active ? v_pa : exmem_addr;
     wire [2:0] ptw_pma = pma(ptw_addr);
     wire   ptw_mem_ok = ptw_pma[0];
-    assign d_req   = (ptw_busy & ptw_mem_ok) | v_req_g | m_req;
+    assign d_req   = (ptw_req & ptw_mem_ok) | v_req_g | m_req;
     assign d_we    = ptw_busy ? 4'b0000 :
                      v_mem_active ? (v_mem_store ? v_mem_be : 4'b0000) :
                      (m_write ? (exmem_rmw ? 4'b1111 : st_mask) : 4'b0000);
@@ -905,19 +970,19 @@ module cpu_pipe_u #(
     wire ptw_start_d = (ex_dwalk | v_walk) & ~m_port & ~halt;
     wire ptw_start_i = if_walk & ~m_port & ~flush & ~halt;
     generate if (MMU) begin : g_ptw
-        ptw #(.SVADE(SVADE)) u_ptw (
+        ptw #(.SVADE(SVADE), .LATE_KILL(XLATE_2C), .REG_RESULT(XLATE_2C)) u_ptw (
             .clk(clk), .rst(rst), .satp(satp_val),
             .start_d(ptw_start_d), .va_d(dtlb_va),
             .start_i(ptw_start_i), .va_i(pc),
             .kill(flush),
-            .busy(ptw_busy), .mem_addr(ptw_addr), .mem_rdata(d_rdata), .mem_ready(d_ready),
+            .busy(ptw_busy), .mem_req(ptw_req), .mem_addr(ptw_addr), .mem_rdata(d_rdata), .mem_ready(d_ready),
             .mem_ok(ptw_mem_ok),
             .done_fill(ptw_fill), .done_fault(ptw_fault), .done_af(ptw_af),
             .side_i(ptw_side_i), .va(ptw_va),
             .leaf_ppn(ptw_ppn), .leaf_super(ptw_super), .leaf_perm(ptw_perm)
         );
     end else begin : g_no_ptw
-        assign ptw_busy = 1'b0; assign ptw_addr = 32'd0; assign ptw_fill = 1'b0;
+        assign ptw_busy = 1'b0; assign ptw_req = 1'b0; assign ptw_addr = 32'd0; assign ptw_fill = 1'b0;
         assign ptw_fault = 1'b0; assign ptw_af = 1'b0; assign ptw_side_i = 1'b0; assign ptw_va = 32'd0;
         assign ptw_ppn = 22'd0; assign ptw_super = 1'b0; assign ptw_perm = 4'd0;
     end endgenerate

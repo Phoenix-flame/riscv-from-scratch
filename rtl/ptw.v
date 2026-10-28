@@ -21,7 +21,11 @@
 //
 // `kill` abandons the *result* of a fetch-side walk (its instruction was
 // flushed). The walk still runs to the end of its current read so the
-// port is never dropped in the middle of a transfer.
+// port is never dropped in the middle of a transfer. LATE_KILL=1 (Step 58)
+// lets a fill that completes in the very cycle of the kill through -- a
+// valid translation, which a TLB may always cache -- so the pipeline's
+// flush is not in front of every TLB entry's enable; a fault is still
+// dropped at once.
 //
 // Step 50. SVADE=1 makes the walker honour the A and D bits the way the
 // Svade extension says -- by faulting, not by updating them: a leaf with
@@ -37,7 +41,9 @@
 `default_nettype none
 
 module ptw #(
-    parameter SVADE = 0
+    parameter SVADE      = 0,
+    parameter LATE_KILL  = 0,
+    parameter REG_RESULT = 0      // 1: the result one cycle late, from registers (Step 58)
 ) (
     input  wire        clk,
     input  wire        rst,
@@ -52,6 +58,7 @@ module ptw #(
 
     // ---- memory port (owned whenever busy) ----
     output wire        busy,
+    output wire        mem_req,       // a read is wanted now (busy, but not in S_DONE)
     output reg  [31:0] mem_addr,
     input  wire [31:0] mem_rdata,
     input  wire        mem_ready,
@@ -67,12 +74,14 @@ module ptw #(
     output wire        leaf_super,
     output wire [3:0]  leaf_perm      // {U, X, W, R}
 );
-    localparam S_IDLE=2'd0, S_L1=2'd1, S_L0=2'd2;
+    localparam S_IDLE=2'd0, S_L1=2'd1, S_L0=2'd2, S_DONE=2'd3;
     reg [1:0]  state;
     reg [21:0] l0_ppn;               // level-1 pointer -> level-0 table
     reg        killed;
 
     assign busy = (state != S_IDLE);
+    wire   walking = (state == S_L1) | (state == S_L0);
+    assign mem_req = walking;
 
     always @(*) begin
         case (state)
@@ -89,20 +98,37 @@ module ptw #(
     wire pte_bad  = ~pte_v | (~pte_r & pte_w) | ((SVADE != 0) & pte_leaf & ~pte_a);
 
     // an unreadable PTE address ends the walk at once, without a request
-    wire noread = busy & ~mem_ok;
+    wire noread = walking & ~mem_ok;
     wire at_l1 = (state == S_L1) & (mem_ready | noread);
     wire at_l0 = (state == S_L0) & (mem_ready | noread);
     wire good  = ~noread & ((at_l1 & ~pte_bad & pte_leaf) | (at_l0 & ~pte_bad & pte_leaf));
     wire bad   = noread | (at_l1 & pte_bad) | (at_l0 & (pte_bad | ~pte_leaf));
     wire drop  = killed | (kill & side_i);
 
-    assign done_fill  = good & ~drop;
-    assign done_fault = bad  & ~drop;
-    assign done_af    = noread & ~drop;
-    assign leaf_ppn   = pte[31:10];
-    assign leaf_super = (state == S_L1);
+    // REG_RESULT: the outcome and the PTE are registered when the read
+    // answers, and reported from S_DONE the cycle after -- so the D-port's
+    // answer (a cache hit, the address decode) is not in front of every TLB
+    // entry's write enable. The port stays the walker's, with no request.
+    reg        r_good, r_bad, r_af, r_super;
+    reg [31:0] r_pte;
+    wire       done_now = (state == S_DONE);
+    wire       out_good = REG_RESULT ? done_now & r_good : good;
+    wire       out_bad  = REG_RESULT ? done_now & r_bad  : bad;
+    wire       out_af   = REG_RESULT ? done_now & r_af   : noread;
+    wire [31:0] out_pte = REG_RESULT ? r_pte : pte;
+
+    assign done_fill  = out_good & ~(LATE_KILL ? killed : drop);
+    assign done_fault = out_bad  & ~drop;
+    assign done_af    = out_af   & ~drop;
+    assign leaf_ppn   = out_pte[31:10];
+    assign leaf_super = REG_RESULT ? r_super : (state == S_L1);
     // Svade: no W until D is set, so the first store faults
-    assign leaf_perm  = {pte[4], pte_x, pte_w & (pte_d | (SVADE == 0)), pte_r};
+    assign leaf_perm  = {out_pte[4], out_pte[3], out_pte[2] & (out_pte[7] | (SVADE == 0)), out_pte[1]};
+
+    always @(posedge clk)
+        if (walking && (noread || mem_ready)) begin
+            r_good <= good; r_bad <= bad; r_af <= noread; r_pte <= pte; r_super <= (state == S_L1);
+        end
 
     always @(posedge clk) begin
         if (rst) begin
@@ -115,13 +141,13 @@ module ptw #(
                     if (start_d)      begin side_i <= 1'b0; va <= va_d; state <= S_L1; end
                     else if (start_i) begin side_i <= 1'b1; va <= va_i; state <= S_L1; end
                 end
-                S_L1: if (noread) state <= S_IDLE;
+                S_L1: if (noread) state <= REG_RESULT ? S_DONE : S_IDLE;
                       else if (mem_ready) begin
-                          if (pte_bad | pte_leaf) state <= S_IDLE;
+                          if (pte_bad | pte_leaf) state <= REG_RESULT ? S_DONE : S_IDLE;
                           else begin l0_ppn <= pte[31:10]; state <= S_L0; end
                       end
-                S_L0: if (noread | mem_ready) state <= S_IDLE;
-                default: state <= S_IDLE;
+                S_L0: if (noread | mem_ready) state <= REG_RESULT ? S_DONE : S_IDLE;
+                default: state <= S_IDLE;            // S_DONE: the result was reported
             endcase
         end
     end
