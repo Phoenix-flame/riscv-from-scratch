@@ -77,7 +77,10 @@ module soc_boot #(
     parameter AGU          = 0,           // 1: loads and stores get their own address adder (Step 58)
     parameter XLATE_2C     = 0,           // 1: a load/store's D-TLB lookup registered before its faults (Step 58)
     parameter VALID_FLUSH  = 0,           // 1: a flush clears only the valid bits (Step 58)
-    parameter REG_REDIRECT = 0            // 1: a mispredicted branch redirects a cycle later (Step 58)
+    parameter REG_REDIRECT = 0,           // 1: a mispredicted branch redirects a cycle later (Step 58)
+    parameter FWD_PRE      = 0,           // 1: forwarding compares registered a cycle early (Step 58)
+    parameter IF_PAGE      = 0,           // 1: fetch through a registered page translation (Step 58)
+    parameter HPM_LATE     = 0            // 1: hpmcounter3..7 count a cycle late (Step 58)
 ) (
     input  wire        clk,
     input  wire        rst,
@@ -143,7 +146,7 @@ module soc_boot #(
 
     wire [1:0] eip;                       // PLIC contexts: 0 = M, 1 = S
     cpu_pipe_u #(.RESET_PC(ROM_BASE), .TLB_ENTRIES(TLB_ENTRIES), .BPRED(BPRED),
-                 .V_EXT(V_EXT), .SVADE(SVADE), .DIV_ITER(DIV_ITER), .MUL_2C(MUL_2C), .AGU(AGU), .XLATE_2C(XLATE_2C), .VALID_FLUSH(VALID_FLUSH), .REG_REDIRECT(REG_REDIRECT),
+                 .V_EXT(V_EXT), .SVADE(SVADE), .DIV_ITER(DIV_ITER), .MUL_2C(MUL_2C), .AGU(AGU), .XLATE_2C(XLATE_2C), .VALID_FLUSH(VALID_FLUSH), .REG_REDIRECT(REG_REDIRECT), .FWD_PRE(FWD_PRE), .IF_PAGE(IF_PAGE), .HPM_LATE(HPM_LATE),
                  .ZBA(ZB_EXT), .ZBB(ZB_EXT), .ZBC(ZB_EXT), .ZBS(ZB_EXT), .PMA_N(6), .PMA_BASE(PMA_BASE),
                  .PMA_SIZE(PMA_SIZE), .PMA_ATTR(PMA_ATTR)) u_core (
         .clk(clk), .rst(sys_rst), .timer_irq(timer_irq), .mtime(mtime),
@@ -164,7 +167,22 @@ module soc_boot #(
         for (k = 0; k < LOCAL_RAM_WORDS; k = k + 1) ram[k] = 32'd0;
         if (BOOTROM_INIT != "") $readmemh(BOOTROM_INIT, rom);
     end
-    function in_rom; input [31:0] a; in_rom = (a >= ROM_BASE) && (a - ROM_BASE < ROM_BYTES); endfunction
+    // ROM_BASE <= a < ROM_BASE + ROM_BYTES, compared on the bits above the
+    // alignment both share (cpu_pipe_u's in_region does the same; Step 58):
+    // two compares in parallel and no subtract, so no chained carries
+    function in_rom;
+        input [31:0] a;
+        reg   [31:0] hi;
+        integer g, k;
+        begin
+            hi = ROM_BASE + ROM_BYTES;
+            g = 0;
+            for (k = 1; k < 32; k = k + 1)
+                if (((ROM_BASE | ROM_BYTES) & ((32'd1 << k) - 1)) == 0) g = k;
+            in_rom = (ROM_BYTES != 0) && ((a >> g) >= (ROM_BASE >> g)) &&
+                     ((hi == 0) || ((a >> g) < (hi >> g)));
+        end
+    endfunction
     function in_ram; input [31:0] a; in_ram = (a[31:28] == 4'h8); endfunction
     function [$clog2(ROM_WORDS)-1:0] rom_idx; input [31:0] a; rom_idx = (a - ROM_BASE) >> 2; endfunction
     function [$clog2(LOCAL_RAM_WORDS > 1 ? LOCAL_RAM_WORDS : 2)-1:0] ram_idx;

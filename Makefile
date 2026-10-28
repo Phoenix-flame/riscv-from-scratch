@@ -306,6 +306,16 @@ pipe-u: sw/tlb.hex sw/at.hex sw/smmu_vm.hex ## unified pipeline: TLB demo + atom
 	python3 tools/rvtests --core pipe_u
 	python3 tools/rvtests --core pipe_u_vm
 
+# the same programs (and pipe-u-sv's paging and S-mode ones) on the Linux
+# board's core: every Step 57-58 option on, through soc_pipe_u (Step 58)
+pipe-u-board: sw/tlb.hex sw/at.hex sw/smmu_vm.hex sw/sv.hex sw/smode.hex ## pipe-u + pipe-u-sv programs on the board's core
+	$(IV) -DPIPE_U_BOARD -o $(B)/pipe_u_tlb_brd.vvp $(RTL_PIPE_U) tb/pipe_u_tlb_tb.v && $(VVP) $(B)/pipe_u_tlb_brd.vvp
+	$(IV) -DPIPE_U_BOARD -o $(B)/pipe_u_prog_brd.vvp $(RTL_PIPE_U) tb/pipe_u_prog_tb.v && \
+	  $(VVP) $(B)/pipe_u_prog_brd.vvp +ROM=sw/at.hex +RAM=sw/at.hex +EXPECT=tb/atomic_expected.txt
+	$(IV) -DPIPE_U_BOARD -o $(B)/pipe_u_sched_brd.vvp $(RTL_PIPE_U) tb/pipe_u_sched_tb.v && $(VVP) $(B)/pipe_u_sched_brd.vvp
+	$(IV) -DPIPE_U_BOARD -o $(B)/pipe_u_sv_brd.vvp $(RTL_PIPE_U) tb/pipe_u_sv_tb.v && $(VVP) $(B)/pipe_u_sv_brd.vvp
+	$(IV) -DPIPE_U_BOARD -o $(B)/pipe_u_smode_brd.vvp $(RTL_PIPE_U) tb/pipe_u_smode_tb.v && $(VVP) $(B)/pipe_u_smode_brd.vvp
+
 # ---- Step 43: I-cache / D-cache in front of slow (DDR-like) memory -----
 RTL_PIPE_C = rtl/alu.v rtl/regfile.v rtl/immgen.v rtl/control.v rtl/csr_s.v rtl/branch_predictor.v \
              rtl/timer.v rtl/uart_tx.v rtl/uart_hw.v rtl/tlb.v rtl/ptw.v rtl/zb_unit.v rtl/vec_unit.v \

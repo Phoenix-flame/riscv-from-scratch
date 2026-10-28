@@ -118,6 +118,12 @@ module cpu_pipe_u #(
     parameter REG_REDIRECT = 0,       // 1: a mispredicted branch/jump redirects the PC a cycle later, from
                                       //    a register; the wrong-path instruction then in EX is killed.
                                       //    One more cycle per taken branch (Step 58)
+    parameter FWD_PRE     = 0,        // 1: forwarding's register-number compares made a cycle early, from
+                                      //    the next cycle's rd/rs; EX only ANDs them with reg_write (Step 58)
+    parameter IF_PAGE     = 0,        // 1: fetch translates through a registered copy of the current page's
+                                      //    translation; a new page costs one cycle to look up (Step 58)
+    parameter HPM_LATE    = 0,        // 1: hpmcounter3..7 count their event a cycle late, from a register
+                                      //    (mcycle / minstret stay exact) (Step 58)
     parameter A_EXT       = 1,        // RV32A atomics
     parameter HAS_U       = 1,        // user mode
     parameter HAS_S       = 1,        // supervisor mode + delegation (needs HAS_U)
@@ -197,13 +203,37 @@ module cpu_pipe_u #(
     reg  [19:0] wres_vpn;
 
     // ---- physical memory attributes: what may be done at a physical address ----
+    // in_region(a, r) is a - base < size, written so it needs no carry
+    // chain where it can (Step 58): a power-of-two region on its own
+    // alignment is a compare of the bits above it; any other is two
+    // compares in parallel (base <= a, a < base + size), on the bits above
+    // the alignment base and size share. base + size may be 2^32 (hi = 0).
+    function in_region;
+        input [31:0] a;
+        input [31:0] b, sz;
+        reg   [31:0] hi, m;
+        integer g, k;
+        begin
+            hi = b + sz;
+            if (sz != 0 && (sz & (sz - 1)) == 0 && (b & (sz - 1)) == 0) begin
+                m = ~(sz - 1);
+                in_region = ((a ^ b) & m) == 32'd0;
+            end else begin
+                g = 0;                            // shared alignment: 2^g
+                for (k = 1; k < 32; k = k + 1)
+                    if (((b | sz) & ((32'd1 << k) - 1)) == 0) g = k;
+                in_region = (sz != 0) && ((a >> g) >= (b >> g)) &&
+                            ((hi == 0) || ((a >> g) < (hi >> g)));
+            end
+        end
+    endfunction
     function [2:0] pma;                       // {X, W, R}
         input [31:0] a;
         integer r;
         begin
             pma = (PMA_N == 0) ? 3'b111 : 3'b000;
             for (r = 0; r < PMA_N; r = r + 1)
-                if (a - PMA_BASE[32*r +: 32] < PMA_SIZE[32*r +: 32]) pma = PMA_ATTR[3*r +: 3];
+                if (in_region(a, PMA_BASE[32*r +: 32], PMA_SIZE[32*r +: 32])) pma = PMA_ATTR[3*r +: 3];
         end
     endfunction
     reg wres_af;                              // ... that walk could not read a PTE
@@ -234,16 +264,31 @@ module cpu_pipe_u #(
     // fetch needs X, and U must match the mode: U runs only U pages, S never
     // executes a U page (SUM does not apply to fetch)
     wire fetch_ok = itlb_perm[2] & (in_user ? itlb_perm[3] : ~itlb_perm[3]);
-    wire if_pfault = vm_on & (itlb_hit ? ~fetch_ok : if_wres_fault);
-    wire if_walk   = vm_on & ~itlb_hit & ~if_wres_fault;
+    wire if_pfault_l = vm_on & (itlb_hit ? ~fetch_ok : if_wres_fault);
+    wire if_walk_l   = vm_on & ~itlb_hit & ~if_wres_fault;
+    wire [31:0] i_addr_l = vm_on ? itlb_pa : pc;
 
-    assign i_addr = vm_on ? itlb_pa : pc;
+    // IF_PAGE (Step 58): the lookup above, registered for the page the PC is
+    // in (ip_*), so a fetch in that page sees no TLB on its path. Leaving the
+    // page costs a cycle: no fetch, the lookup is registered, then the fetch.
+    // Anything that can change a lookup's answer drops the copy (the
+    // always block further down): a CSR write, a trap, mret / sret,
+    // sfence.vma, and the end of any walk (a TLB fill, or a fault that sets
+    // wres_*). The region check stays live, on the registered address.
+    reg         ip_valid, ip_pf, ip_waf;
+    reg  [19:0] ip_vpn, ip_ppn;
+    wire        ip_hit = ip_valid & (pc[31:12] == ip_vpn);
+    wire        if_pfault = IF_PAGE ? ip_hit & ip_pf : if_pfault_l;
+    wire        if_walk   = IF_PAGE ? ~ip_hit & if_walk_l : if_walk_l;
+
+    assign i_addr = IF_PAGE ? {ip_ppn, pc[11:0]} : i_addr_l;
     // a fetch outside executable memory is an access fault -- and so is a
     // fetch whose walk could not read its page table
     wire [2:0] if_pma = pma(i_addr);
-    wire if_afault = (~if_pfault & ~if_walk & ~if_pma[2]) | (if_pfault & ~itlb_hit & wres_af);
+    wire if_afault = IF_PAGE ? ip_hit & ((~ip_pf & ~if_pma[2]) | (ip_pf & ip_waf)) :
+                     (~if_pfault & ~if_walk & ~if_pma[2]) | (if_pfault & ~itlb_hit & wres_af);
     wire if_fault  = if_pfault | if_afault;
-    assign i_req  = ~rst & ~halt & ~if_fault & ~if_walk;
+    assign i_req  = ~rst & ~halt & ~if_fault & ~if_walk & ((IF_PAGE == 0) | ip_hit);
     // an instruction -- or a fault token -- is ready to enter ID
     wire if_ok = if_fault | (i_req & i_ready);
 
@@ -279,19 +324,24 @@ module cpu_pipe_u #(
         if (rst || (VALID_FLUSH == 0 && flush && !freeze)) begin
             ifid_instr <= NOP; ifid_pc <= 32'd0; ifid_valid <= 1'b0; ifid_ifault <= 1'b0;
             ifid_iaf <= 1'b0; ifid_pred_taken <= 1'b0; ifid_pred_target <= 32'd0;
-        end else if (VALID_FLUSH != 0 && flush && !freeze) begin
-            ifid_valid <= 1'b0;                 // the rest is a dead instruction's
-        end else if (freeze || front_hold) begin
-            // hold
-        end else if (if_ok) begin
-            ifid_instr  <= if_fault ? NOP : i_rdata;
-            ifid_pc     <= pc;
-            ifid_valid  <= 1'b1;
-            ifid_ifault <= if_fault; ifid_iaf <= if_afault;
-            ifid_pred_taken <= bp_taken; ifid_pred_target <= bp_target;
-        end else begin                                    // I-port busy: bubble
-            ifid_instr <= NOP; ifid_valid <= 1'b0; ifid_ifault <= 1'b0; ifid_iaf <= 1'b0;
-            ifid_pred_taken <= 1'b0;
+        end else begin
+            // (with VALID_FLUSH = 0 a flush took the branch above, so here it
+            //  only ever comes with freeze; with 1 the fields below don't
+            //  look at it -- only valid does -- so it stays off their enables)
+            if (freeze || front_hold) begin
+                // hold
+            end else if (if_ok) begin
+                ifid_instr  <= if_fault ? NOP : i_rdata;
+                ifid_pc     <= pc;
+                ifid_valid  <= 1'b1;
+                ifid_ifault <= if_fault; ifid_iaf <= if_afault;
+                ifid_pred_taken <= bp_taken; ifid_pred_target <= bp_target;
+            end else begin                                // I-port busy: bubble
+                ifid_instr <= NOP; ifid_valid <= 1'b0; ifid_ifault <= 1'b0; ifid_iaf <= 1'b0;
+                ifid_pred_taken <= 1'b0;
+            end
+            if (VALID_FLUSH != 0 && flush && !freeze)
+                ifid_valid <= 1'b0;             // the rest is a dead instruction's
         end
     end
 
@@ -434,10 +484,38 @@ module cpu_pipe_u #(
     reg        exmem_reg_write; reg [4:0] exmem_rd; reg [31:0] exmem_result;
 
     // forwarding (plain continuous assigns -- see cpu_pipe_trap)
-    wire fwdA_exmem = exmem_reg_write && exmem_rd!=0 && exmem_rd==idex_rs1;
-    wire fwdA_memwb = wb_reg_write    && wb_rd!=0    && wb_rd==idex_rs1;
-    wire fwdB_exmem = exmem_reg_write && exmem_rd!=0 && exmem_rd==idex_rs2;
-    wire fwdB_memwb = wb_reg_write    && wb_rd!=0    && wb_rd==idex_rs2;
+    wire mA_exmem = exmem_rd!=0 && exmem_rd==idex_rs1;
+    wire mA_memwb = wb_rd!=0    && wb_rd==idex_rs1;
+    wire mB_exmem = exmem_rd!=0 && exmem_rd==idex_rs2;
+    wire mB_memwb = wb_rd!=0    && wb_rd==idex_rs2;
+    // FWD_PRE: the same four compares, registered from the values these
+    // registers take next cycle. EX/MEM's and MEM/WB's rd are only wrong in
+    // there when that stage holds a bubble, whose reg_write is 0 anyway, so
+    // only ID/EX's rs needs its exact next value.
+    reg pA_exmem, pA_memwb, pB_exmem, pB_memwb;
+    wire [4:0] nx_rs1 = ((VALID_FLUSH == 0) && idex_kill) ? 5'd0 : (freeze || ex_hold) ? idex_rs1 : rs1_id;
+    wire [4:0] nx_rs2 = ((VALID_FLUSH == 0) && idex_kill) ? 5'd0 : (freeze || ex_hold) ? idex_rs2 : rs2_id;
+    wire [4:0] nx_exmem_rd = freeze ? exmem_rd : idex_rd;      // (memwb_rd's next is exmem_rd)
+    always @(posedge clk) begin
+        pA_exmem <= nx_exmem_rd != 0 && nx_exmem_rd == nx_rs1;
+        pB_exmem <= nx_exmem_rd != 0 && nx_exmem_rd == nx_rs2;
+        pA_memwb <= exmem_rd != 0 && exmem_rd == nx_rs1;
+        pB_memwb <= exmem_rd != 0 && exmem_rd == nx_rs2;
+    end
+    wire fwdA_exmem = exmem_reg_write && (FWD_PRE ? pA_exmem : mA_exmem);
+    wire fwdA_memwb = wb_reg_write    && (FWD_PRE ? pA_memwb : mA_memwb);
+    wire fwdB_exmem = exmem_reg_write && (FWD_PRE ? pB_exmem : mB_exmem);
+    wire fwdB_memwb = wb_reg_write    && (FWD_PRE ? pB_memwb : mB_memwb);
+`ifndef SYNTHESIS
+    // simulation only: the registered compares must agree wherever they count
+    always @(posedge clk)
+        if (FWD_PRE != 0 && !rst &&
+            ((exmem_reg_write && pA_exmem != mA_exmem) || (exmem_reg_write && pB_exmem != mB_exmem) ||
+             (wb_reg_write && pA_memwb != mA_memwb)    || (wb_reg_write && pB_memwb != mB_memwb))) begin
+            $display("FWD_PRE: forwarding compare mismatch at pc %h", idex_pc);
+            $finish;
+        end
+`endif
     assign opA = fwdA_exmem ? exmem_result : fwdA_memwb ? wb_data : idex_rs1d;
     assign opB = fwdB_exmem ? exmem_result : fwdB_memwb ? wb_data : idex_rs2d;
 
@@ -517,7 +595,27 @@ module cpu_pipe_u #(
     // a 4-byte boundary; decided before translation, so it never walks
     wire        ex_misal = ex_mem_d & ((idex_funct3[1:0] == 2'b01) ? ex_va[0] :
                                        (idex_funct3[1:0] == 2'b10) ? (ex_va[1:0] != 2'b00) : 1'b0);
-    wire        ex_imisal = idex_valid & ex_taken & ex_target[1];   // no C: IALIGN = 32
+    wire        ex_imisal_full = idex_valid & ex_taken & ex_target[1];   // no C: IALIGN = 32
+    // REG_REDIRECT: the misaligned-target exception without the branch
+    // compare or the 32-bit add on its path. Bit 1 of a target is a 2-bit
+    // add (jalr: rs1 + imm, in the ALU; the others pc + imm). A jump always
+    // goes; a branch only if taken -- and a branch can be misaligned only
+    // through its immediate, which compiled code never does without C, so
+    // such a branch spends one cycle more in EX (bq_*) and traps on the
+    // registered outcome.
+    wire [1:0]  tgt_lo  = idex_jalr ? opA[1:0] : idex_pc[1:0];
+    wire        tgt1    = tgt_lo[1] ^ idex_imm[1] ^ (tgt_lo[0] & idex_imm[0]);
+    reg         bq_have, bq_taken;
+    wire        bq_wait = (REG_REDIRECT != 0) & idex_valid & idex_branch & ~idex_jump & tgt1 & ~bq_have;
+    wire        ex_imisal = (REG_REDIRECT == 0) ? ex_imisal_full :
+                            idex_valid & tgt1 & (idex_jump | (idex_branch & bq_have & bq_taken));
+`ifndef SYNTHESIS
+    always @(posedge clk)
+        if (REG_REDIRECT != 0 && !rst && ex_go && ex_imisal != ex_imisal_full) begin
+            $display("REG_REDIRECT: misaligned-target mismatch at pc %h", idex_pc);
+            $finish;
+        end
+`endif
 
     wire        dtlb_hit; wire [31:0] dtlb_pa; wire [3:0] dtlb_perm;
     generate if (MMU) begin : g_dtlb
@@ -544,6 +642,9 @@ module cpu_pipe_u #(
             xl_hit  <= dtlb_hit;  xl_pa <= dtlb_pa;  xl_perm <= dtlb_perm;
             xl_epa  <= xl_epa_a;  xl_pma <= pma(xl_epa_a);
         end
+    always @(posedge clk)
+        if (rst || ex_go || !idex_valid) bq_have <= 1'b0;
+        else if (bq_wait && !freeze) begin bq_have <= 1'b1; bq_taken <= branch_cond; end
     wire ex_xlate      = ex_mem_d & vm_on & ~ex_misal;
     // cycle A's view of ex_pa below: the same choice, on the live lookup
     wire        misal_a  = (idex_funct3[1:0] == 2'b01) ? ex_va_live[0] :
@@ -616,7 +717,7 @@ module cpu_pipe_u #(
     // it asks only once MEM is not waiting, so the older stores are in
     assign fencei_req = idex_valid & idex_fencei & ~freeze;
     wire   fencei_wait = idex_valid & idex_fencei & ~fencei_ack;
-    assign ex_hold = ex_dwalk | v_wait | fencei_wait | div_wait | mul_wait | xl_wait;   // (implies idex_valid)
+    assign ex_hold = ex_dwalk | v_wait | fencei_wait | div_wait | mul_wait | xl_wait | bq_wait;   // (implies idex_valid)
     assign ex_go   = idex_valid & ~freeze & ~ex_hold;
 
     wire irq_take  = irq_pending & ~exception & ~idex_is_mret & ~idex_sret & ~idex_is_csr &
@@ -635,6 +736,31 @@ module cpu_pipe_u #(
     wire sret_ex   = ex_go & idex_sret    & ~exc_sys;
     wire csr_commit= ex_go & idex_is_csr  & ~exc_sys;
     wire sfence_ex = ex_go & idex_sfence  & ~(exc_sys | irq_sys);
+    // IF_PAGE: drop the registered page translation whenever its answer may
+    // have changed; else, off the page, register a finished lookup
+    // (the copy itself loads regardless: only valid looks at the late drop)
+    wire ip_load = IF_PAGE && !ip_hit && !if_walk_l;
+    always @(posedge clk) begin
+        if (rst || csr_commit || take_trap || mret_ex || sret_ex || sfence_ex || ptw_fill || ptw_fault)
+            ip_valid <= 1'b0;
+        else if (ip_load)
+            ip_valid <= 1'b1;
+        if (ip_load) begin
+            ip_vpn <= pc[31:12]; ip_ppn <= i_addr_l[31:12];
+            ip_pf  <= if_pfault_l; ip_waf <= ~itlb_hit & wres_af;
+        end
+    end
+`ifndef SYNTHESIS
+    // simulation only: the registered page translation, wherever it is used,
+    // must be what the live lookup says now (else an invalidation is missing)
+    always @(posedge clk)
+        if (IF_PAGE != 0 && !rst && ip_hit &&
+            (if_walk_l || ip_ppn != i_addr_l[31:12] || ip_pf != if_pfault_l ||
+             (ip_pf && ip_waf != (~itlb_hit & wres_af)))) begin
+            $display("IF_PAGE: stale page translation at pc %h", pc);
+            $finish;
+        end
+`endif
 
     wire [31:0] trap_cause = idex_ifault ? (idex_iaf ? 32'd1 : 32'd12) :
                              ex_illegal  ? 32'd2  :
@@ -809,13 +935,18 @@ module cpu_pipe_u #(
         assign ev[5] = bubble & (idex_why == WHY_FETCH);
         assign ev[6] = freeze & ~halt;
         assign ev[7] = ex_go & mispred & ~take_trap;
+        // HPM_LATE: events 3..7 (implementation-defined) through a register,
+        // so a stall decided late in the cycle reaches 5 flip-flops, not 320
+        reg  [7:3]  ev_q;
+        always @(posedge clk) ev_q <= rst ? 5'd0 : ev[7:3];
+        wire [7:0]  ev_c = (HPM_LATE != 0) ? {ev_q, ev[2:0]} : ev;
         integer n;
         always @(posedge clk)
             for (n = 0; n < 8; n = n + 1)
                 if (rst || n == 1) cnt[n] <= 64'd0;
                 else if (cnt_we && idx == n && ca[7]) cnt[n][63:32] <= cnt_new;
                 else if (cnt_we && idx == n)          cnt[n][31:0]  <= cnt_new;
-                else if (ev[n] && !halt && !inhibit[n]) cnt[n] <= cnt[n] + 64'd1;
+                else if (ev_c[n] && !halt && !inhibit[n]) cnt[n] <= cnt[n] + 64'd1;
     end else begin : g_nocnt
         assign cnt_hit = 1'b0; assign cnt_rdata = 32'd0;
     end endgenerate

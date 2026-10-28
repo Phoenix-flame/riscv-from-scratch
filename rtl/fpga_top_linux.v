@@ -60,6 +60,9 @@ module fpga_top_linux #(
     parameter XLATE_2C     = 1,                    // a load/store: D-TLB lookup, registered, then its faults (Step 58)
     parameter VALID_FLUSH  = 1,                    // a flush clears the valid bits only (Step 58)
     parameter REG_REDIRECT = 1,                    // a taken branch redirects a cycle later (Step 58)
+    parameter FWD_PRE      = 1,                    // forwarding compares registered a cycle early (Step 58)
+    parameter IF_PAGE      = 1,                    // fetch through a registered page translation (Step 58)
+    parameter HPM_LATE     = 1,                    // hpmcounter3..7 count a cycle late (Step 58)
     parameter [15:0] UART_DIV = 16'd18             // 33.33 MHz / 16 / 18 = 115,741 baud
 ) (
     input  wire resetn,
@@ -145,7 +148,8 @@ module fpga_top_linux #(
                .UART_DIV(UART_DIV), .AXI_OFFSET(DDR_BASE), .AXI_DATA_W(64),
                .DIV_ITER(DIV_ITER), .ZB_EXT(ZB_EXT), .BPRED(BPRED),
                .MUL_2C(MUL_2C), .AGU(AGU), .XLATE_2C(XLATE_2C),
-               .VALID_FLUSH(VALID_FLUSH), .REG_REDIRECT(REG_REDIRECT)) u_soc (
+               .VALID_FLUSH(VALID_FLUSH), .REG_REDIRECT(REG_REDIRECT),
+               .FWD_PRE(FWD_PRE), .IF_PAGE(IF_PAGE), .HPM_LATE(HPM_LATE)) u_soc (
         .clk(clk), .rst(rst), .uart_rx_pin(uart_rx), .uart_tx_pin(uart_tx),
         .halted(halted), .exit_code(), .warm_reset(),
         .m_axi_awaddr(awaddr), .m_axi_awlen(awlen), .m_axi_awsize(awsize), .m_axi_awburst(awburst),

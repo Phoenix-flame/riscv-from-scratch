@@ -43,6 +43,9 @@ module boot_tb;
     parameter XLATE_2C   = 0;             //                        1 (registered D-TLB lookup)
     parameter VALID_FLUSH = 0;            //                        1 (flush clears valid bits)
     parameter REG_REDIRECT = 0;           //                        1 (registered branch redirect)
+    parameter FWD_PRE = 0;                //                        1 (forwarding compares a cycle early)
+    parameter IF_PAGE = 0;                //                        1 (registered fetch-page translation)
+    parameter HPM_LATE = 0;               //                        1 (hpm events a cycle late)
     localparam [31:0] DDR_BASE = 32'h1000_0000;     // where RAM sits on the AXI side
     localparam CPB = 16 * DIVISOR;        // clocks per bit
 
@@ -66,7 +69,7 @@ module boot_tb;
                .AXI_DATA_W(AXI_DATA_W), .DIV_ITER(DIV_ITER),
                .ZB_EXT(ZB_EXT), .BPRED(BPRED), .MUL_2C(MUL_2C), .AGU(AGU),
                .XLATE_2C(XLATE_2C), .VALID_FLUSH(VALID_FLUSH),
-               .REG_REDIRECT(REG_REDIRECT)) dut (
+               .REG_REDIRECT(REG_REDIRECT), .FWD_PRE(FWD_PRE), .IF_PAGE(IF_PAGE), .HPM_LATE(HPM_LATE)) dut (
         .clk(clk), .rst(rst), .uart_rx_pin(rx), .uart_tx_pin(tx),
         .halted(halted), .exit_code(exit_code), .warm_reset(warm_reset),
         .m_axi_awaddr(awaddr), .m_axi_awlen(awlen), .m_axi_awsize(awsize), .m_axi_awburst(awburst),

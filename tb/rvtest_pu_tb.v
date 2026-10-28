@@ -34,13 +34,13 @@ module rvtest_pu_tb;
 `ifdef RVT_BOARD
     // the Linux board core (Steps 57, 58): no Zb*, no branch predictor,
     // registered multiplies, an address adder
-    localparam ZB = 0, BP = 0, M2 = 1, AG = 1, X2 = 1, VE = 0, VF = 1, RR = 1;
+    localparam ZB = 0, BP = 0, M2 = 1, AG = 1, X2 = 1, VE = 0, VF = 1, RR = 1, FP = 1, IP = 1, HL = 1;
 `else
-    localparam ZB = 1, BP = 1, M2 = 0, AG = 0, X2 = 0, VE = 1, VF = 0, RR = 0;
+    localparam ZB = 1, BP = 1, M2 = 0, AG = 0, X2 = 0, VE = 1, VF = 0, RR = 0, FP = 0, IP = 0, HL = 0;
 `endif
     cpu_pipe_u #(.DIV_ITER(DIV_ITER), .ZBA(ZB), .ZBB(ZB), .ZBC(ZB), .ZBS(ZB), .BPRED(BP),
                  .MUL_2C(M2), .AGU(AG), .XLATE_2C(X2), .V_EXT(VE),
-                 .VALID_FLUSH(VF), .REG_REDIRECT(RR)) u_core (
+                 .VALID_FLUSH(VF), .REG_REDIRECT(RR), .FWD_PRE(FP), .IF_PAGE(IP), .HPM_LATE(HL)) u_core (
         .clk(clk), .rst(rst), .timer_irq(1'b0), .mtime(64'd0), .meip(1'b0), .seip(1'b0), .fencei_req(), .fencei_ack(1'b1), .halt(1'b0),
         .i_addr(iaddr), .i_req(ireq), .i_rdata(irdata), .i_ready(1'b1),
         .d_addr(daddr), .d_req(dreq), .d_we(dwe), .d_wdata(dwdata),

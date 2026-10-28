@@ -38,7 +38,15 @@ module soc_pipe_u #(
     wire [3:0]  dwe;
     wire        timer_irq, halt_q, retire;
 
+`ifdef PIPE_U_BOARD
+    // the Linux board's core (fpga_top_linux, Steps 57-58) in this SoC, so
+    // its Sv32 / S-mode / process programs run on it (make pipe-u-board)
+    cpu_pipe_u #(.TLB_ENTRIES(TLB_ENTRIES), .BPRED(0), .VLEN(VLEN), .ZICNTR(ZICNTR), .V_EXT(0),
+                 .DIV_ITER(1), .MUL_2C(1), .AGU(1), .XLATE_2C(1), .VALID_FLUSH(1),
+                 .REG_REDIRECT(1), .FWD_PRE(1), .IF_PAGE(1), .HPM_LATE(1)) u_core (
+`else
     cpu_pipe_u #(.TLB_ENTRIES(TLB_ENTRIES), .BPRED(BPRED), .VLEN(VLEN), .ZICNTR(ZICNTR)) u_core (
+`endif
         .clk(clk), .rst(rst), .timer_irq(timer_irq), .mtime(64'd0), .meip(1'b0), .seip(1'b0), .fencei_req(), .fencei_ack(1'b1), .halt(halt_q),
         .i_addr(iaddr), .i_req(ireq), .i_rdata(irdata), .i_ready(1'b1),
         .d_addr(daddr), .d_req(dreq), .d_we(dwe), .d_wdata(dwdata),

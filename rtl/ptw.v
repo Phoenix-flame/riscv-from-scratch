@@ -85,8 +85,10 @@ module ptw #(
 
     always @(*) begin
         case (state)
-            S_L1:    mem_addr = {satp[21:0], 12'b0} + {20'b0, va[31:22], 2'b0};
-            S_L0:    mem_addr = {l0_ppn, 12'b0}     + {20'b0, va[21:12], 2'b0};
+            // {ppn, 12'b0} + 4 * vpn[i]: the add never carries (4 * vpn[i] <
+            // 4096), so it is the concatenation -- no carry chain (Step 58)
+            S_L1:    mem_addr = {satp[21:0], va[31:22], 2'b0};
+            S_L0:    mem_addr = {l0_ppn,     va[21:12], 2'b0};
             default: mem_addr = 32'd0;
         endcase
     end
@@ -118,8 +120,11 @@ module ptw #(
     wire [31:0] out_pte = REG_RESULT ? r_pte : pte;
 
     assign done_fill  = out_good & ~(LATE_KILL ? killed : drop);
-    assign done_fault = out_bad  & ~drop;
-    assign done_af    = out_af   & ~drop;
+    // LATE_KILL: a kill reaches these through `killed` only -- a fetch-side
+    // walk killed in its last cycle may report its fault, which only records
+    // (wres_*) that the page has no translation, true either way
+    assign done_fault = out_bad  & ~(LATE_KILL ? killed : drop);
+    assign done_af    = out_af   & ~(LATE_KILL ? killed : drop);
     assign leaf_ppn   = out_pte[31:10];
     assign leaf_super = REG_RESULT ? r_super : (state == S_L1);
     // Svade: no W until D is set, so the first store faults
