@@ -171,7 +171,7 @@ serial line as before. Step 57 took 26 s.
 | `rvlinux oz-sim`: the board top on OpenZynq's `ps7_gp0`, FCLK1 at 33.33 MHz | PASS: HP0 1,284 reads + 467 writes, 0 protocol errors, the core ran 0 cycles early |
 | U-Boot + Linux on the board configuration (`rvlinux run --uboot --board`) | LINUX: ALL PASS, 20 output checks, the shell at cycle 335.0M |
 | `make ps-test` | ALL PASS |
-| `make linux-fast` (the default 50 MHz configuration) | ALL PASS, 207,118,792 cycles, the same as Step 57 |
+| `make linux-fast` (the default 50 MHz configuration), and `rvlinux run --fast` with Step 57's RTL on the same kernel `Image` | ALL PASS; 208,615,806 cycles with either RTL, identical. (The count moves between kernel builds, about ±0.5 %, because `linux-fast` rebuilds busybox and the initramfs and their bytes differ; Step 57's 207.1M was another build.) |
 
 The new rvtests cores `pipe_u_board_vm` and `pipe_c_board_vm` run the
 suite in U-mode with Sv32 on, on the board's core. That is the path
