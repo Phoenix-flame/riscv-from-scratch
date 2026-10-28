@@ -16,7 +16,11 @@ and get a busybox shell.
 > Linux boots to its shell, directly and through U-Boot, on the board's
 > exact configuration in simulation. **None of it has run on a real
 > board yet**, and the design hasn't been placed or routed, so whether it
-> meets 50 MHz is unknown. Section 11 lists what to watch for. Section 10
+> meets 50 MHz is unknown. **The bitstream could not be built with the
+> open flow yet** (Step 57, `docs/57-fitting-the-board.md`): synthesis
+> works, but nextpnr-xilinx stops at routing and predicts about 15 MHz for
+> the core clock. Section 5 says what that means. Section 11 lists what to
+> watch for. Section 10
 > makes the board boot from its QSPI flash with no PC. Its ROM side is
 > simulated; its FSBL code (PCAP, QSPI) has only run against a model.
 > Bring the board up over JTAG and serial first (sections 7–9).
@@ -186,7 +190,16 @@ achieved frequency of the 50 MHz clock (`clk`). If it's below 50 MHz,
 the core will misbehave at random rather than fail cleanly. See
 [Troubleshooting](#11-troubleshooting).
 
-The synthesis estimate for this design is about 88 % of the 7010's LUTs.
+**Where this stands (Step 57).** Today this step does not get to a
+bitstream. Synthesis finishes (about 33 minutes) and, with the iterative
+divider the board top now uses, nextpnr-xilinx 0.9.3 places the design at
+48 % of its LUT sites. It then fails in routing (`No wire found for port
+A1`, after its post-placement repair left 88 LUT cells on invalid sites),
+and its timing estimate for the core clock is about 15 MHz, not 50. See
+`docs/57-fitting-the-board.md` for the numbers, what was tried, and what
+to try next (less logic in the board build, a slower core clock, or
+Vivado). The prebuilt U-Boot + Linux image does exist:
+`projects/riscv_linux/prebuilt/uboot-linux-board.rvbi` in OpenZynq.
 
 ## 6. Wire the RISC-V's console
 
@@ -551,7 +564,7 @@ reads.
 |---|---|---|
 | `openFPGALoader --detect` finds nothing | USB passthrough or udev | OpenZynq `docs/03-jtag-and-usb.md`; look for IDCODE `0x03722093` |
 | nextpnr reports `clk` below 50 MHz | the core's critical path, most likely the combinational RV32M divider | Don't run it as is. There's no clock option yet. It needs a lower core clock (an MMCM) plus the same change in `PLAT_CLOCK_HZ` and the UART divisor, so the DT, ROM and Linux agree. Ask for it. |
-| place and route fails to fit or route | about 88 % of the LUTs | the known savings: the PLIC with 15 sources (≈500 LUTs), and dropping Zbc |
+| place and route fails to fit or route | too much logic for nextpnr-xilinx: it adds route-through LUTs on top of the ≈88 % that Yosys reports; the array dividers were the first culprit (fixed by `DIV_ITER`, Step 57) | `docs/57-fitting-the-board.md`; next savings: Zba/Zbb/Zbc/Zbs (≈2,000 LUTs, unused by the kernel), the branch predictor, the PLIC with 15 sources |
 | the PS console is silent | the wrong `/dev/ttyUSB*`, not in JTAG boot mode, or `ps7_init` hung in DDR training | identify the CH340 by its driver (section 6); cold power-cycle in JTAG mode; `make run` again |
 | `ps7_init failed: 0x…` | the PS or DDR init failed | run OpenZynq's `make ddr-test` (`docs/11`): it tests DDR with no PL involved |
 | `0x40000000 reads 0x…, not RVFS` | the PL isn't this bitstream | `make run` programs the PL first; check that `make bit` produced `build/riscv_linux/riscv_linux.bit` |
