@@ -38,7 +38,8 @@
 module fpga_top_linux #(
     parameter BOOTROM_INIT = "build/boot/board/rom.hex",
     parameter RAM_WORDS    = 1 << 24,              // 64 MiB of DDR
-    parameter [31:0] DDR_BASE = 32'h1000_0000      // where it starts in the PS map
+    parameter [31:0] DDR_BASE = 32'h1000_0000,     // where it starts in the PS map
+    parameter DIV_ITER     = 1                     // the 32-cycle divider: the array divider does not fit (Step 57)
 ) (
     input  wire clk,
     input  wire resetn,
@@ -120,7 +121,8 @@ module fpga_top_linux #(
     assign led2 = beat[24] & ~rst;
 
     soc_boot #(.MEMSYS(2), .RAM_WORDS(RAM_WORDS), .BOOTROM_INIT(BOOTROM_INIT),
-               .UART_DIV(16'd27), .AXI_OFFSET(DDR_BASE), .AXI_DATA_W(64)) u_soc (
+               .UART_DIV(16'd27), .AXI_OFFSET(DDR_BASE), .AXI_DATA_W(64),
+               .DIV_ITER(DIV_ITER)) u_soc (
         .clk(clk), .rst(rst), .uart_rx_pin(uart_rx), .uart_tx_pin(uart_tx),
         .halted(halted), .exit_code(), .warm_reset(),
         .m_axi_awaddr(awaddr), .m_axi_awlen(awlen), .m_axi_awsize(awsize), .m_axi_awburst(awburst),

@@ -113,6 +113,18 @@ CORES = {
         "suites": ["rv32ui", "rv32um", "rv32ua", "rv32uzba", "rv32uzbb", "rv32uzbc", "rv32uzbs"],
         "ram": "word",
     },
+    # ... with the 32-cycle divider (Step 57, DIV_ITER): rv32um through the
+    # pipeline's EX hold, on ideal memory and behind the caches
+    "pipe_u_div": {
+        "desc": "... same, with the iterative divider (DIV_ITER=1)",
+        "rtl": COMMON_RTL + ["csr_s", "branch_predictor", "tlb", "ptw", "zb_unit", "vec_unit", "cpu_pipe_u"],
+        "tb": "tb/rvtest_pu_tb.v",
+        "define": "RVT_DIV_ITER",
+        "march": "rv32ima_zicsr_zifencei_zba_zbb_zbc_zbs",
+        "abi": "ilp32",
+        "suites": ["rv32ui", "rv32um", "rv32ua", "rv32uzba", "rv32uzbb", "rv32uzbc", "rv32uzbs"],
+        "ram": "word",
+    },
     "pipe_u_vm": {
         "desc": "... same, test body in U with Sv32 on (identity map)",
         "rtl": COMMON_RTL + ["csr_s", "branch_predictor", "tlb", "ptw", "zb_unit", "vec_unit", "cpu_pipe_u"],
@@ -154,6 +166,16 @@ CORES = {
         "rtl": COMMON_RTL + ["csr_s", "branch_predictor", "tlb", "ptw", "zb_unit", "vec_unit", "cpu_pipe_u", "icache", "dcache", "mem_slow", "line_arb"],
         "tb": "tb/rvtest_pc_tb.v",
         "define": "RVT_UNIFIED",
+        "march": "rv32ima_zicsr_zifencei_zba_zbb_zbc_zbs",
+        "abi": "ilp32",
+        "suites": ["rv32ui", "rv32um", "rv32ua", "rv32uzba", "rv32uzbb", "rv32uzbc", "rv32uzbs"],
+        "ram": "word",
+    },
+    "pipe_c_uni_div": {
+        "desc": "... caches, one memory, with the iterative divider (DIV_ITER=1)",
+        "rtl": COMMON_RTL + ["csr_s", "branch_predictor", "tlb", "ptw", "zb_unit", "vec_unit", "cpu_pipe_u", "icache", "dcache", "mem_slow", "line_arb"],
+        "tb": "tb/rvtest_pc_tb.v",
+        "define": "RVT_UNIFIED,RVT_DIV_ITER",
         "march": "rv32ima_zicsr_zifencei_zba_zbb_zbc_zbs",
         "abi": "ilp32",
         "suites": ["rv32ui", "rv32um", "rv32ua", "rv32uzba", "rv32uzbb", "rv32uzbc", "rv32uzbs"],
@@ -232,14 +254,15 @@ RAM_BYTES = 65536         # 64 KB data RAM, as a byte array (dmem.v)
 KNOWN_GAPS = {
     # test            cores it applies to (None = all)
     "rv32ui-fence_i": ({"mc", "mc_c", "mc_f", "mc_tlb", "sc", "pipe",
-                        "pipe_u", "pipe_u_vm", "pipe_c", "pipe_c_vm"},
+                        "pipe_u", "pipe_u_vm", "pipe_u_div", "pipe_c", "pipe_c_vm"},
         "self-modifying code. The instruction ROM is written once, at time "
         "zero; no store can ever become an instruction. (The s6 core has one "
         "unified dual-port memory, and so do pipe_u_uni, whose fence.i "
         "refetches, and pipe_c_uni, whose fence.i also cleans the D-cache "
         "and invalidates the I-cache -- all three pass.)"),
     "rv32ui-ma_data": ({"mc", "mc_c", "mc_f", "mc_tlb", "s6", "s6_sf",
-                        "pipe_u", "pipe_u_vm", "pipe_u_uni", "pipe_c", "pipe_c_vm", "pipe_c_uni"},
+                        "pipe_u", "pipe_u_vm", "pipe_u_uni", "pipe_u_div", "pipe_c", "pipe_c_vm", "pipe_c_uni",
+                        "pipe_c_uni_div"},
         "misaligned load/store. The mc cores select a sub-word inside one RAM "
         "word, so any access not aligned to its own width reads or writes the "
         "wrong bytes -- silently, with no trap. The s6 core and, since Step 52, "
@@ -431,8 +454,9 @@ def build_sim(core):
     BUILD.mkdir(parents=True, exist_ok=True)
     vvp = BUILD / f"{core}.vvp"
     cmd = ["iverilog", "-g2012", "-o", str(vvp)]
-    if cfg["define"]:
-        cmd += ["-D" + cfg["define"]]
+    for d in (cfg["define"] or "").split(","):          # "A,B": several
+        if d:
+            cmd += ["-D" + d]
     cmd += [str(REPO / cfg.get("rtl_dir", "rtl") / f"{m}.v") for m in cfg["rtl"]]
     cmd += [str(REPO / cfg["tb"])]
     r = run(cmd, cwd=REPO)

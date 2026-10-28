@@ -26,7 +26,12 @@ module rvtest_pu_tb;
     wire [3:0]  dwe;
     wire [31:0] rvt_pc;
 
-    cpu_pipe_u u_core (
+`ifdef RVT_DIV_ITER
+    localparam DIV_ITER = 1;      // the 32-cycle divider (Step 57), through the whole suite
+`else
+    localparam DIV_ITER = 0;
+`endif
+    cpu_pipe_u #(.DIV_ITER(DIV_ITER)) u_core (
         .clk(clk), .rst(rst), .timer_irq(1'b0), .mtime(64'd0), .meip(1'b0), .seip(1'b0), .fencei_req(), .fencei_ack(1'b1), .halt(1'b0),
         .i_addr(iaddr), .i_req(ireq), .i_rdata(irdata), .i_ready(1'b1),
         .d_addr(daddr), .d_req(dreq), .d_we(dwe), .d_wdata(dwdata),

@@ -547,6 +547,15 @@ ps-test: ## the PS program's BOOT.BIN parser + QSPI writer against a controller/
 linux-frommem: boot-sw $(BBB)/rom.hex ## U-Boot + Linux booted from memory, as from flash on the board (board configuration), shell checks
 	python3 tools/rvlinux run --frommem --uboot --board $(ARGS)
 
+# ---- Step 57: a divider that fits ---------------------------------------
+# make div-iter       the 32-cycle divider (DIV_ITER) against the array divider
+#                     on corners and 4000 random operand pairs, plus the abort
+#                     and freeze cases
+# make riscv-tests CORE=pipe_u_div / pipe_c_uni_div     rv32um through the pipeline with it
+.PHONY: div-iter
+div-iter: ## Step 57: the iterative RV32M divider vs the array divider (corners + random; abort, hold, freeze)
+	$(IV) -o $(B)/div_iter_tb.vvp rtl/alu.v tb/div_iter_tb.v && $(VVP) $(B)/div_iter_tb.vvp | grep -v '\$$finish'
+
 # ---- Step 45: menuconfig -> a generated RISC-V project for OpenZynq ------
 # make menuconfig                         edit .config (curses menu, Kconfig)
 # make defconfig DEFCONFIG=configs/...    start from a preset

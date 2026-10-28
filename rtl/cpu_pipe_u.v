@@ -106,6 +106,8 @@ module cpu_pipe_u #(
     parameter BPRED       = 1,        // 1 = BTB + 2-bit predictor, 0 = not-taken
     parameter BP_IDX_BITS = 6,        // predictor tables: 2**BP_IDX_BITS entries
     parameter M_EXT       = 1,        // RV32M multiply/divide
+    parameter DIV_ITER    = 0,        // 1: divide/remainder in a 32-cycle unit (div_iter.v) instead of
+                                      //    array dividers in the ALU -- small, and EX holds meanwhile (Step 57)
     parameter A_EXT       = 1,        // RV32A atomics
     parameter HAS_U       = 1,        // user mode
     parameter HAS_S       = 1,        // supervisor mode + delegation (needs HAS_U)
@@ -423,8 +425,26 @@ module cpu_pipe_u #(
 
     wire [31:0] alu_a = idex_alu_src_a ? idex_pc  : opA;
     wire [31:0] alu_b = idex_alu_src_b ? idex_imm : opB;
-    wire [31:0] alu_result; wire alu_zero;
-    alu #(.M_EXT(M_EXT)) u_alu (.a(alu_a), .b(alu_b), .alu_op(idex_alu_op), .result(alu_result), .zero(alu_zero));
+    wire [31:0] alu_result_i; wire alu_zero;
+    alu #(.M_EXT(M_EXT), .DIV_ITER(DIV_ITER)) u_alu (.a(alu_a), .b(alu_b), .alu_op(idex_alu_op),
+                                                     .result(alu_result_i), .zero(alu_zero));
+    // DIV_ITER: DIV / DIVU / REM / REMU come from the iterative unit, which
+    // holds EX until it has them (div_wait, in ex_hold below)
+    wire        div_wait;
+    wire [31:0] alu_result;
+    generate if (M_EXT && DIV_ITER) begin : g_div
+        wire        is_div = idex_valid & (idex_alu_op >= 5'd14) & (idex_alu_op <= 5'd17);
+        wire        div_done;
+        wire [31:0] div_res;
+        div_iter u_div (.clk(clk), .rst(rst), .want(is_div), .start_ok(~freeze), .go(ex_go),
+                        .op(idex_alu_op[1:0] + 2'd2), .a(alu_a), .b(alu_b),
+                        .done(div_done), .result(div_res));
+        assign div_wait   = is_div & ~div_done;
+        assign alu_result = is_div ? div_res : alu_result_i;
+    end else begin : g_nodiv
+        assign div_wait   = 1'b0;
+        assign alu_result = alu_result_i;
+    end endgenerate
 
     reg branch_cond;
     always @(*) case (idex_funct3)
@@ -533,7 +553,7 @@ module cpu_pipe_u #(
     // it asks only once MEM is not waiting, so the older stores are in
     assign fencei_req = idex_valid & idex_fencei & ~freeze;
     wire   fencei_wait = idex_valid & idex_fencei & ~fencei_ack;
-    assign ex_hold = ex_dwalk | v_wait | fencei_wait;   // (implies idex_valid)
+    assign ex_hold = ex_dwalk | v_wait | fencei_wait | div_wait;   // (implies idex_valid)
     assign ex_go   = idex_valid & ~freeze & ~ex_hold;
 
     wire irq_take  = irq_pending & ~exception & ~idex_is_mret & ~idex_sret & ~idex_is_csr &

@@ -70,7 +70,8 @@ module soc_boot #(
     parameter D_LINES      = 64,          // 2 KiB D-cache
     parameter [31:0] AXI_OFFSET = 32'd0,  // RAM_BASE + x appears at AXI address x + this
     parameter OCM_WORDS    = 4096,        // MEMSYS 2: on-chip RAM at RAM_BASE (16 KiB)
-    parameter AXI_DATA_W   = 32           // MEMSYS 2: 32, or 64 for a Zynq S_AXI_HP port
+    parameter AXI_DATA_W   = 32,          // MEMSYS 2: 32, or 64 for a Zynq S_AXI_HP port
+    parameter DIV_ITER     = 0            // 1: the iterative divider (cpu_pipe_u, Step 57): a quarter of the logic
 ) (
     input  wire        clk,
     input  wire        rst,
@@ -136,7 +137,7 @@ module soc_boot #(
 
     wire [1:0] eip;                       // PLIC contexts: 0 = M, 1 = S
     cpu_pipe_u #(.RESET_PC(ROM_BASE), .TLB_ENTRIES(TLB_ENTRIES), .BPRED(BPRED),
-                 .V_EXT(V_EXT), .SVADE(SVADE), .PMA_N(6), .PMA_BASE(PMA_BASE),
+                 .V_EXT(V_EXT), .SVADE(SVADE), .DIV_ITER(DIV_ITER), .PMA_N(6), .PMA_BASE(PMA_BASE),
                  .PMA_SIZE(PMA_SIZE), .PMA_ATTR(PMA_ATTR)) u_core (
         .clk(clk), .rst(sys_rst), .timer_irq(timer_irq), .mtime(mtime),
         .meip(eip[0]), .seip(eip[1]), .halt(halted),
