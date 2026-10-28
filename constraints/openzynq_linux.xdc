@@ -8,7 +8,7 @@
 ## pin 22, its GND to JM1 pin 3 or 4. Do not connect its 5 V / 3.3 V.
 ## The PS side (DDR, FCLK0, M_AXI_GP0, S_AXI_HP0) needs no pins here.
 ## =====================================================================
-## No PL clock pin: the RISC-V runs on the PS's FCLK1 (33.33 MHz, set by
+## No PL clock pin: the RISC-V runs on the PS's FCLK1 (50 MHz, set by
 ## the PS program; Steps 57-58), which needs no pin and no create_clock here --
 ## nextpnr is told its frequency (project.mk, --freq).
 

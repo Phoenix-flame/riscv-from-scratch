@@ -8,8 +8,8 @@
 // after `make run` (Step 54):
 //
 //   * FCLK_CLK0 at 100 MHz; FCLK_RESET0_N released after a while;
-//   * FCLK_CLK1 at 33.33 MHz, the RISC-V's clock (the PS program sets
-//     IO PLL / 30; Step 58);
+//   * FCLK_CLK1 at 50 MHz, the RISC-V's clock (the PS program sets
+//     IO PLL / 20; Step 58);
 //   * S_AXI_HP0 held in reset until ps7_init() would have trained the
 //     DDR (HP0_READY_NS), then served by axi4_mem with 64-bit beats -- the
 //     DDR window of the PS map at DDR_BASE, with DDR-like latency and
@@ -108,7 +108,7 @@ module PS7 #(
     reg fclk0 = 1'b0, fresetn = 1'b0;
     always #5 fclk0 = ~fclk0;                              // 100 MHz
     reg fclk1 = 1'b0;
-    always #15 fclk1 = ~fclk1;                             // 33.33 MHz
+    always #10 fclk1 = ~fclk1;                             // 50 MHz
     initial begin
         SAXIHP0ARESETN = 1'b0;
         #200 fresetn = 1'b1;

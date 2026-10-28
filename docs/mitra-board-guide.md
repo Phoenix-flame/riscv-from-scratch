@@ -18,8 +18,9 @@ and get a busybox shell.
 > board yet**, and the design hasn't been placed or routed, so whether it
 > meets timing on silicon is unproven. **The bitstream builds with the
 > open flow** (Steps 57–58, `docs/57-fitting-the-board.md`,
-> `docs/58-faster-board-core.md`). The core runs at 33.33 MHz from the PS's
-> FCLK1, and nextpnr's post-route estimate is 40.8 MHz. A prebuilt one is in OpenZynq's
+> `docs/58-faster-board-core.md`). The core runs at 50 MHz from the PS's
+> FCLK1, and nextpnr's post-route estimate is 51.5 MHz: a thin 2.9 %
+> margin (section 11 has the fallback). A prebuilt one is in OpenZynq's
 > `projects/riscv_linux/prebuilt/`. Section 11 lists what to watch for. Section 10
 > makes the board boot from its QSPI flash with no PC. Its ROM side is
 > simulated; its FSBL code (PCAP, QSPI) has only run against a model.
@@ -118,7 +119,7 @@ expect a cold power-up in JTAG boot mode.
 In riscv-from-scratch:
 
 ```bash
-make boot-board                        # the board's boot ROM: 115200 baud from 33.33 MHz
+make boot-board                        # the board's boot ROM: 115200 baud from 50 MHz
 python3 tools/rvlinux fetch            # Linux 6.18, busybox 1.36.1, musl 1.2.5 (pinned, hash-checked)
 python3 tools/rvlinux build            # musl, busybox, initramfs, kernel (~2 min)
 python3 tools/rvlinux board-image      # build/linux/linux-board.rvbi
@@ -186,9 +187,9 @@ sequence. (GenZ's `make genz` output has an empty DDR table unless you run
 generates the bitstream: `build/riscv_linux/riscv_linux.bit`.
 
 **Read nextpnr's timing report before going further.** The RISC-V runs on
-the PS's FCLK1 at 33.33 MHz (Steps 57–58; the PS program sets it), and nextpnr
+the PS's FCLK1 at 50 MHz (Steps 57–58; the PS program sets it), and nextpnr
 names that clock `clk` (`u_ps7.hp0_aclk` in older builds). Its `Max frequency` line must be above
-33.33 MHz. The `PASS`/`FAIL` on that line is against `--freq 33.33`, which
+50 MHz. The `PASS`/`FAIL` on that line is against `--freq 50`, which
 nextpnr applies to every clock: FCLK0 (`aclk`, GP0's registers) runs at
 100 MHz, so check its figure against 100. A core clock that misses timing
 makes the core misbehave at random rather than fail cleanly. See
@@ -196,11 +197,14 @@ makes the core misbehave at random rather than fail cleanly. See
 
 **What to expect (Steps 57–58).** Synthesis plus place and route take about
 5 minutes for this design: 35 % of nextpnr's LUT sites, 12 % of its
-flip-flops, and about 41 MHz for the core clock. To fit and to meet timing, the board
-build has an iterative divider, a registered multiplier, its own load/store
-address adder, a registered D-TLB lookup and branch redirect, no
-Zba/Zbb/Zbc/Zbs, no branch predictor, and a 33.33 MHz core clock from the
-PS's FCLK1, set by the PS program. `docs/57-fitting-the-board.md` and
+flip-flops, and 51.47 MHz for the core clock with `project.mk`'s placement
+seed (`--seed 18`; other seeds give 43.8–51.5 MHz, so keep it unless you
+change the design, then sweep for a new one). To fit and to meet timing,
+the board build has an iterative divider, a registered multiplier, its own
+load/store address adder, a registered D-TLB lookup and branch redirect,
+forwarding compares made a cycle early, a registered fetch-page
+translation, no Zba/Zbb/Zbc/Zbs, no branch predictor, and a 50 MHz core
+clock from the PS's FCLK1, set by the PS program. `docs/57-fitting-the-board.md` and
 `docs/58-faster-board-core.md` have the numbers and the reasons. OpenZynq's `projects/riscv_linux/prebuilt/`
 holds a bitstream built this way (`riscv_linux.bit`) and the U-Boot + Linux
 image (`uboot-linux-board.rvbi`), with checksums. To use the prebuilt
@@ -256,7 +260,7 @@ and starts it. Check each stage before going on.
 ```
 riscv_linux: the PS side
   JTAG boot
-  FCLK1 (the RISC-V's clock): IO PLL / 30 = 33.33 MHz, reads back 0x00500600
+  FCLK1 (the RISC-V's clock): IO PLL / 20 = 50 MHz, reads back 0x00500400
   ps7_init + ps7_post_config: ok (clocks, DDR trained, PL level shifters on)
   bitstream: RVFS
   DDR at 0x10000000..0x13ffffff: ok
@@ -319,8 +323,8 @@ rvfs: Linux 6.18.0 on riscv32, busybox ash
 rvfs#
 ```
 
-In simulation of this exact configuration, at the board's 33.33 MHz, the
-shell came up about 10 s after reset (335M cycles, including U-Boot's 2 s
+In simulation of this exact configuration, at the board's 50 MHz, the
+shell came up about 7.5 s after reset (375M cycles, including U-Boot's 2 s
 countdown). Try:
 
 ```
@@ -539,7 +543,7 @@ consoles open. The PS console prints:
 ```
 riscv_linux: the PS side
   QSPI boot: this is the FSBL
-  FCLK1 (the RISC-V's clock): IO PLL / 30 = 33.33 MHz, reads back 0x00500600
+  FCLK1 (the RISC-V's clock): IO PLL / 20 = 50 MHz, reads back 0x00500400
   PL programmed from flash (PCAP, 2083856 bytes)
   ps7_init + ps7_post_config: ok (clocks, DDR trained, PL level shifters on)
   bitstream: RVFS
@@ -550,10 +554,10 @@ riscv_linux: the PS side
 ```
 
 Then JM1 shows the ROM banner and `image in memory at 0x83000000: booting
-it in 1 s`. After about 7 s of checking (240M cycles at 33.33 MHz) it
+it in 1 s`. After about 5 s of checking (240M cycles at 50 MHz) it
 prints `data: … ok`, then U-Boot, its 2-second autoboot, and Linux to
-`rvfs# ` about 10 s later. Expect roughly 20 s from power to shell: an
-estimate from the simulated cycle counts at the board's 33.33 MHz, plus
+`rvfs# ` about 7.5 s later. Expect roughly 15 s from power to shell: an
+estimate from the simulated cycle counts at the board's 50 MHz, plus
 the flash reads.
 
 - **To get the serial prompt instead**, press a key on JM1 within that
@@ -572,13 +576,14 @@ the flash reads.
 | symptom | likely cause | what to do |
 |---|---|---|
 | `openFPGALoader --detect` finds nothing | USB passthrough or udev | OpenZynq `docs/03-jtag-and-usb.md`; look for IDCODE `0x03722093` |
-| nextpnr reports the core clock (`clk`) below 33.33 MHz | the core's critical path (Step 58 lists the ones it shortened; the rest are mostly routing) | Don't run it as is. A slower FCLK1 needs the PS program's divisor (`fclk1_init` in `ps/main.c`), `PLAT_CLOCK_HZ` and the UART divisor (`BBL_DEFS` in the Makefile) changed together, so the DT, ROM and Linux agree. |
+| nextpnr reports the core clock (`clk`) below 50 MHz | a changed design with the old seed: placement moves this core between 43.8 and 51.5 MHz (Step 58) | Don't run it as is. Sweep nextpnr's `--seed` and keep the best in `OZ_SEED` (`tools/rvlinux`); `docs/58-faster-board-core.md` has the sweep. |
+| the board runs, then crashes or corrupts data at random | the core too slow for 50 MHz on this chip: the 2.9 % margin is on an estimate | Use the 33.33 MHz build (22 % margin): in OpenZynq, `git checkout 422f1e3 -- projects/riscv_linux` restores its bitstream, ROM and PS program together. A clock of your own needs the PS program's divisor (`fclk1_init` in `ps/main.c`), `PLAT_CLOCK_HZ` and the UART divisor (`BBL_DEFS` in the Makefile) changed together, so the DT, ROM and Linux agree. |
 | place and route fails to fit or route | too much logic for nextpnr-xilinx: it adds route-through LUTs on top of the ≈88 % that Yosys reports; the array dividers were the first culprit (fixed by `DIV_ITER`, Step 57) | `docs/57-fitting-the-board.md`; next savings: Zba/Zbb/Zbc/Zbs (≈2,000 LUTs, unused by the kernel), the branch predictor, the PLIC with 15 sources |
 | the PS console is silent | the wrong `/dev/ttyUSB*`, not in JTAG boot mode, or `ps7_init` hung in DDR training | identify the CH340 by its driver (section 6); cold power-cycle in JTAG mode; `make run` again |
 | `ps7_init failed: 0x…` | the PS or DDR init failed | run OpenZynq's `make ddr-test` (`docs/11`): it tests DDR with no PL involved |
 | `0x40000000 reads 0x…, not RVFS` | the PL isn't this bitstream | `make run` programs the PL first; check that `make bit` produced `build/riscv_linux/riscv_linux.bit` |
 | `DDR check FAILED` | DDR misbehaves from the PS side | `make ddr-test` in OpenZynq; the RISC-V is deliberately left in reset |
-| LED2 dark after `RISC-V released` | no FCLK1 (the PS program sets it: check its `FCLK1 ... reads back 0x00500600` line), or the PL is unhealthy | check the bitstream and timing; `make run` again |
+| LED2 dark after `RISC-V released` | no FCLK1 (the PS program sets it: check its `FCLK1 ... reads back 0x00500400` line), or the PL is unhealthy | check the bitstream and timing; `make run` again |
 | LED2 blinks but there's no `boot> ` | TX/RX swapped, the wrong device, a 5 V adapter, or no ground | the wiring in section 6; press K1 with a terminal open |
 | garbage characters | the wrong baud rate, or a `-sim` image | 115200 everywhere; use the `-board` images |
 | `error: data CRC32 …, image says …` | bytes lost on the wire | check ground; send with `rvboot send`, nothing else open on the port; press K1 and resend |
@@ -600,9 +605,9 @@ the flash reads.
 |---|---|
 | `0x0000_1000` | boot ROM, 16 KiB, in block RAM |
 | `0x0010_0000` | test device: power off, reset (LED1) |
-| `0x0200_0000` | CLINT: `mtime` at 33.33 MHz (the core clock), `mtimecmp` |
+| `0x0200_0000` | CLINT: `mtime` at 50 MHz (the core clock), `mtimecmp` |
 | `0x0c00_0000` | PLIC: the UART is source 10 |
-| `0x1000_0000` | ns16550a UART, `reg-shift 2`; 115200 ≈ 33.33 MHz / 16 / 18 |
+| `0x1000_0000` | ns16550a UART, `reg-shift 2`; 115200 ≈ 50 MHz / 16 / 27 |
 | `0x8000_0000` | RAM: the first 16 KiB in block RAM (firmware, reserved in the DT), the rest PS DDR `0x1000_4000…` |
 | `0x8040_0000` | Linux runs here (RAM + 4 MiB, a Sv32 megapage). U-Boot is loaded here too, and relocates itself to the top of RAM. |
 | `0x8100_0000` | where `uboot-linux-board.rvbi` puts the kernel for `booti` |

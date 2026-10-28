@@ -34,6 +34,9 @@ REPO = Path(__file__).resolve().parent.parent
 BUILD = REPO / "build" / "rvtests"
 SUITE = REPO / "third_party" / "riscv-tests"
 ENV = REPO / "tests" / "riscv-tests" / "env"
+# this project's own tests in the suite's format (rv32mx: Step 58's
+# misaligned branch/jump targets), built and run like the upstream ones
+OWN = REPO / "tests" / "riscv-tests" / "isa"
 
 SUITE_URL = "https://github.com/riscv-software-src/riscv-tests"
 # Pinned so a run is reproducible. Bump deliberately, then re-run the suite.
@@ -191,7 +194,7 @@ CORES = {
         "define": "RVT_DIV_ITER,RVT_BOARD",
         "march": "rv32ima_zicsr_zifencei",
         "abi": "ilp32",
-        "suites": ["rv32ui", "rv32um", "rv32ua"],
+        "suites": ["rv32ui", "rv32um", "rv32ua", "rv32mx"],
         "ram": "word",
     },
     # ... and with the test body in U and Sv32 on: every access translated,
@@ -204,7 +207,7 @@ CORES = {
         "march": "rv32ima_zicsr_zifencei",
         "cflags": ["-DRVTEST_VM"],
         "abi": "ilp32",
-        "suites": ["rv32ui", "rv32um", "rv32ua"],
+        "suites": ["rv32ui", "rv32um", "rv32ua", "rv32mx"],
         "ram": "word",
     },
     "pipe_c_board_vm": {
@@ -215,7 +218,7 @@ CORES = {
         "march": "rv32ima_zicsr_zifencei",
         "cflags": ["-DRVTEST_VM"],
         "abi": "ilp32",
-        "suites": ["rv32ui", "rv32um", "rv32ua"],
+        "suites": ["rv32ui", "rv32um", "rv32ua", "rv32mx"],
         "ram": "word",
     },
     "pipe_c_uni_board": {
@@ -225,7 +228,7 @@ CORES = {
         "define": "RVT_UNIFIED,RVT_DIV_ITER,RVT_BOARD",
         "march": "rv32ima_zicsr_zifencei",
         "abi": "ilp32",
-        "suites": ["rv32ui", "rv32um", "rv32ua"],
+        "suites": ["rv32ui", "rv32um", "rv32ua", "rv32mx"],
         "ram": "word",
     },
     "pipe_c_vm": {
@@ -392,6 +395,8 @@ def suite_tests(suite):
 
     Reading it (rather than hardcoding a list here) means a future bump of
     SUITE_COMMIT picks up new tests automatically."""
+    if (OWN / suite).is_dir():
+        return sorted(f.stem for f in (OWN / suite).glob("*.S"))
     frag = SUITE / "isa" / suite / "Makefrag"
     if not frag.exists():
         die(f"no such suite: {suite}")
@@ -450,7 +455,7 @@ def section(elf, name):
 def build_test(core, suite, name):
     """Compile one test for one core; return (rom_image, ram_image|None)."""
     cfg = CORES[core]
-    src = SUITE / "isa" / suite / f"{name}.S"
+    src = (OWN if (OWN / suite).is_dir() else SUITE / "isa") / suite / f"{name}.S"
     if not src.exists():
         die(f"no such test: {suite}/{name}.S")
 

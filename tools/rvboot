@@ -171,14 +171,14 @@ MEMSYS = {
     # then libc_demo), checked line by line rather than against the file
     "board": dict(memsys=1, ram_words=1 << 15, divisor=27, rom="board/rom.hex", short=True,
                   desc="the board build: caches + 128 KiB block RAM, 115200 baud"),
-    # the Linux board build (Steps 54, 57, 58): its own ROM (33.33 MHz FCLK1,
-    # divisor 18, no Zb* in the DT), PS DDR through S_AXI_HP0, and the core
+    # the Linux board build (Steps 54, 57, 58): its own ROM (50 MHz FCLK1,
+    # divisor 27, no Zb* in the DT), PS DDR through S_AXI_HP0, and the core
     # fpga_top_linux has: the iterative divider, no Zb*, no branch predictor
-    "board-ddr": dict(memsys=2, ram_words=1 << 24, axi_data_w=64, divisor=18,
+    "board-ddr": dict(memsys=2, ram_words=1 << 24, axi_data_w=64, divisor=27,
                       div_iter=1, zb=0, bpred=0, mul_2c=1, agu=1, xlate_2c=1, valid_flush=1, reg_redirect=1, fwd_pre=1, if_page=1, hpm_late=1,
                       rom="linux-board/rom.hex", short=True,
                       desc="the Linux board build: caches + 64 MiB of DDR over HP0, 115200 baud "
-                           "from 33.33 MHz, the board's core"),
+                           "from 50 MHz, the board's core"),
 }
 
 
