@@ -108,6 +108,9 @@ module cpu_pipe_u #(
     parameter M_EXT       = 1,        // RV32M multiply/divide
     parameter DIV_ITER    = 0,        // 1: divide/remainder in a 32-cycle unit (div_iter.v) instead of
                                       //    array dividers in the ALU -- small, and EX holds meanwhile (Step 57)
+    parameter MUL_2C      = 0,        // 1: multiplies in mul_2c, registered both sides: EX holds 2 cycles
+    parameter AGU         = 0,        // 1: load/store addresses from their own adder (rs1 + imm), not the
+                                      //    ALU result -- the multiplier and result mux leave the D-TLB's path
     parameter A_EXT       = 1,        // RV32A atomics
     parameter HAS_U       = 1,        // user mode
     parameter HAS_S       = 1,        // supervisor mode + delegation (needs HAS_U)
@@ -426,25 +429,34 @@ module cpu_pipe_u #(
     wire [31:0] alu_a = idex_alu_src_a ? idex_pc  : opA;
     wire [31:0] alu_b = idex_alu_src_b ? idex_imm : opB;
     wire [31:0] alu_result_i; wire alu_zero;
-    alu #(.M_EXT(M_EXT), .DIV_ITER(DIV_ITER)) u_alu (.a(alu_a), .b(alu_b), .alu_op(idex_alu_op),
-                                                     .result(alu_result_i), .zero(alu_zero));
-    // DIV_ITER: DIV / DIVU / REM / REMU come from the iterative unit, which
-    // holds EX until it has them (div_wait, in ex_hold below)
-    wire        div_wait;
-    wire [31:0] alu_result;
+    alu #(.M_EXT(M_EXT), .DIV_ITER(DIV_ITER), .MUL_2C(MUL_2C)) u_alu (.a(alu_a), .b(alu_b),
+        .alu_op(idex_alu_op), .result(alu_result_i), .zero(alu_zero));
+    // DIV_ITER / MUL_2C: divides and multiplies come from their own units,
+    // which hold EX until they have the result (div_wait, mul_wait, in
+    // ex_hold below)
+    wire        div_wait, mul_wait, is_div_ex, is_mul_ex;
+    wire [31:0] div_res, mul_res;
     generate if (M_EXT && DIV_ITER) begin : g_div
-        wire        is_div = idex_valid & (idex_alu_op >= 5'd14) & (idex_alu_op <= 5'd17);
-        wire        div_done;
-        wire [31:0] div_res;
-        div_iter u_div (.clk(clk), .rst(rst), .want(is_div), .start_ok(~freeze), .go(ex_go),
+        wire div_done;
+        assign is_div_ex = idex_valid & (idex_alu_op >= 5'd14) & (idex_alu_op <= 5'd17);
+        div_iter u_div (.clk(clk), .rst(rst), .want(is_div_ex), .start_ok(~freeze), .go(ex_go),
                         .op(idex_alu_op[1:0] + 2'd2), .a(alu_a), .b(alu_b),
                         .done(div_done), .result(div_res));
-        assign div_wait   = is_div & ~div_done;
-        assign alu_result = is_div ? div_res : alu_result_i;
+        assign div_wait = is_div_ex & ~div_done;
     end else begin : g_nodiv
-        assign div_wait   = 1'b0;
-        assign alu_result = alu_result_i;
+        assign is_div_ex = 1'b0; assign div_wait = 1'b0; assign div_res = 32'd0;
     end endgenerate
+    generate if (M_EXT && MUL_2C) begin : g_mul
+        wire mul_done;
+        assign is_mul_ex = idex_valid & (idex_alu_op >= 5'd10) & (idex_alu_op <= 5'd13);
+        mul_2c u_mul (.clk(clk), .rst(rst), .want(is_mul_ex), .start_ok(~freeze), .go(ex_go),
+                      .op(idex_alu_op[1:0] + 2'd2), .a(alu_a), .b(alu_b),
+                      .done(mul_done), .result(mul_res));
+        assign mul_wait = is_mul_ex & ~mul_done;
+    end else begin : g_nomul
+        assign is_mul_ex = 1'b0; assign mul_wait = 1'b0; assign mul_res = 32'd0;
+    end endgenerate
+    wire [31:0] alu_result = is_div_ex ? div_res : is_mul_ex ? mul_res : alu_result_i;
 
     reg branch_cond;
     always @(*) case (idex_funct3)
@@ -466,7 +478,11 @@ module cpu_pipe_u #(
     // ---- data address + translation ----
     wire        ex_amo   = idex_lr | idex_sc | idex_rmw;
     wire        ex_mem   = idex_valid & (idex_mem_read | idex_mem_write);
-    wire [31:0] ex_va    = ex_amo ? opA : alu_result;       // atomics: (rs1), no offset
+    // a load's or store's address is rs1 + imm, which is what the ALU adds
+    // for them (ALU_ADD, alu_src_b); AGU gives it its own adder, so nothing
+    // else the ALU result mux carries is on the path into the D-TLB
+    wire [31:0] agu_va   = opA + idex_imm;
+    wire [31:0] ex_va    = ex_amo ? opA : (AGU ? agu_va : alu_result);  // atomics: (rs1), no offset
     wire        need_r   = (idex_mem_read & ~idex_sc) ;     // load, LR, AMO
     wire        need_w   = idex_mem_write | idex_sc | idex_rmw;
     // misaligned (Step 52): halfword on an odd address, word / atomic off
@@ -553,7 +569,7 @@ module cpu_pipe_u #(
     // it asks only once MEM is not waiting, so the older stores are in
     assign fencei_req = idex_valid & idex_fencei & ~freeze;
     wire   fencei_wait = idex_valid & idex_fencei & ~fencei_ack;
-    assign ex_hold = ex_dwalk | v_wait | fencei_wait | div_wait;   // (implies idex_valid)
+    assign ex_hold = ex_dwalk | v_wait | fencei_wait | div_wait | mul_wait;   // (implies idex_valid)
     assign ex_go   = idex_valid & ~freeze & ~ex_hold;
 
     wire irq_take  = irq_pending & ~exception & ~idex_is_mret & ~idex_sret & ~idex_is_csr &

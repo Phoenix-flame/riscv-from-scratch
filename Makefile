@@ -568,9 +568,12 @@ linux-frommem: boot-sw $(BBB)/rom.hex $(BBL)/rom.hex ## U-Boot + Linux booted fr
 #                     on corners and 4000 random operand pairs, plus the abort
 #                     and freeze cases
 # make riscv-tests CORE=pipe_u_div / pipe_c_uni_div     rv32um through the pipeline with it
-.PHONY: div-iter
+.PHONY: div-iter mul-2c
 div-iter: ## Step 57: the iterative RV32M divider vs the array divider (corners + random; abort, hold, freeze)
 	$(IV) -o $(B)/div_iter_tb.vvp rtl/alu.v tb/div_iter_tb.v && $(VVP) $(B)/div_iter_tb.vvp | grep -v '\$$finish'
+
+mul-2c: ## Step 58: the registered multiplier vs the ALU's products (corners + random; abort, hold, freeze)
+	$(IV) -o $(B)/mul_2c_tb.vvp rtl/alu.v tb/mul_2c_tb.v && $(VVP) $(B)/mul_2c_tb.vvp | grep -v '\$$finish'
 
 # ---- Step 45: menuconfig -> a generated RISC-V project for OpenZynq ------
 # make menuconfig                         edit .config (curses menu, Kconfig)

@@ -21,6 +21,9 @@
 // Also for size, the board build leaves out what the boot chain never uses:
 // Zba/Zbb/Zbc/Zbs (the kernel, U-Boot and userland are rv32ima, and the DT
 // says so), and the branch predictor; and divides in 33 cycles (DIV_ITER).
+// For timing (Step 58): multiplies take 3 cycles with registers on both
+// sides of the DSPs (MUL_2C), and loads and stores compute their address
+// with their own adder (AGU), so the multiplier is off the D-TLB's path.
 //
 // The DDR is usable only once the PS has run ps7_init() -- and an HP0
 // access to an untrained controller may never complete, which no PL reset
@@ -50,6 +53,8 @@ module fpga_top_linux #(
     parameter DIV_ITER     = 1,                    // the 32-cycle divider: the array dividers do not fit (Step 57)
     parameter ZB_EXT       = 0,                    // no Zba/Zbb/Zbc/Zbs: nothing that boots here uses them
     parameter BPRED        = 0,                    // no branch predictor: area, not correctness
+    parameter MUL_2C       = 1,                    // multiplies registered both sides (Step 58)
+    parameter AGU          = 1,                    // loads/stores get their own address adder (Step 58)
     parameter [15:0] UART_DIV = 16'd6              // 11.11 MHz / 16 / 6 = 115,741 baud
 ) (
     input  wire resetn,
@@ -133,7 +138,8 @@ module fpga_top_linux #(
 
     soc_boot #(.MEMSYS(2), .RAM_WORDS(RAM_WORDS), .BOOTROM_INIT(BOOTROM_INIT),
                .UART_DIV(UART_DIV), .AXI_OFFSET(DDR_BASE), .AXI_DATA_W(64),
-               .DIV_ITER(DIV_ITER), .ZB_EXT(ZB_EXT), .BPRED(BPRED)) u_soc (
+               .DIV_ITER(DIV_ITER), .ZB_EXT(ZB_EXT), .BPRED(BPRED),
+               .MUL_2C(MUL_2C), .AGU(AGU)) u_soc (
         .clk(clk), .rst(rst), .uart_rx_pin(uart_rx), .uart_tx_pin(uart_tx),
         .halted(halted), .exit_code(), .warm_reset(),
         .m_axi_awaddr(awaddr), .m_axi_awlen(awlen), .m_axi_awsize(awsize), .m_axi_awburst(awburst),

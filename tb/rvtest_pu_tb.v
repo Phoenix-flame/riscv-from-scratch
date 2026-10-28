@@ -32,11 +32,14 @@ module rvtest_pu_tb;
     localparam DIV_ITER = 0;
 `endif
 `ifdef RVT_BOARD
-    localparam ZB = 0, BP = 0;    // the Linux board core (Step 57): no Zb*, no branch predictor
+    // the Linux board core (Steps 57, 58): no Zb*, no branch predictor,
+    // registered multiplies, an address adder
+    localparam ZB = 0, BP = 0, M2 = 1, AG = 1;
 `else
-    localparam ZB = 1, BP = 1;
+    localparam ZB = 1, BP = 1, M2 = 0, AG = 0;
 `endif
-    cpu_pipe_u #(.DIV_ITER(DIV_ITER), .ZBA(ZB), .ZBB(ZB), .ZBC(ZB), .ZBS(ZB), .BPRED(BP)) u_core (
+    cpu_pipe_u #(.DIV_ITER(DIV_ITER), .ZBA(ZB), .ZBB(ZB), .ZBC(ZB), .ZBS(ZB), .BPRED(BP),
+                 .MUL_2C(M2), .AGU(AG)) u_core (
         .clk(clk), .rst(rst), .timer_irq(1'b0), .mtime(64'd0), .meip(1'b0), .seip(1'b0), .fencei_req(), .fencei_ack(1'b1), .halt(1'b0),
         .i_addr(iaddr), .i_req(ireq), .i_rdata(irdata), .i_ready(1'b1),
         .d_addr(daddr), .d_req(dreq), .d_we(dwe), .d_wdata(dwdata),

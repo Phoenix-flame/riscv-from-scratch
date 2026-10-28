@@ -72,7 +72,9 @@ module soc_boot #(
     parameter [31:0] AXI_OFFSET = 32'd0,  // RAM_BASE + x appears at AXI address x + this
     parameter OCM_WORDS    = 4096,        // MEMSYS 2: on-chip RAM at RAM_BASE (16 KiB)
     parameter AXI_DATA_W   = 32,          // MEMSYS 2: 32, or 64 for a Zynq S_AXI_HP port
-    parameter DIV_ITER     = 0            // 1: the iterative divider (cpu_pipe_u, Step 57): a quarter of the logic
+    parameter DIV_ITER     = 0,           // 1: the iterative divider (cpu_pipe_u, Step 57): a quarter of the logic
+    parameter MUL_2C       = 0,           // 1: multiplies with registered operands and result (Step 58)
+    parameter AGU          = 0            // 1: loads and stores get their own address adder (Step 58)
 ) (
     input  wire        clk,
     input  wire        rst,
@@ -138,7 +140,7 @@ module soc_boot #(
 
     wire [1:0] eip;                       // PLIC contexts: 0 = M, 1 = S
     cpu_pipe_u #(.RESET_PC(ROM_BASE), .TLB_ENTRIES(TLB_ENTRIES), .BPRED(BPRED),
-                 .V_EXT(V_EXT), .SVADE(SVADE), .DIV_ITER(DIV_ITER),
+                 .V_EXT(V_EXT), .SVADE(SVADE), .DIV_ITER(DIV_ITER), .MUL_2C(MUL_2C), .AGU(AGU),
                  .ZBA(ZB_EXT), .ZBB(ZB_EXT), .ZBC(ZB_EXT), .ZBS(ZB_EXT), .PMA_N(6), .PMA_BASE(PMA_BASE),
                  .PMA_SIZE(PMA_SIZE), .PMA_ATTR(PMA_ATTR)) u_core (
         .clk(clk), .rst(sys_rst), .timer_irq(timer_irq), .mtime(mtime),

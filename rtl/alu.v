@@ -18,7 +18,8 @@
 
 module alu #(
     parameter M_EXT    = 1,
-    parameter DIV_ITER = 0     // 1: no array dividers here; div_iter.v does DIV/DIVU/REM/REMU
+    parameter DIV_ITER = 0,    // 1: no array dividers here; div_iter does DIV/DIVU/REM/REMU
+    parameter MUL_2C   = 0     // 1: no multipliers here; mul_2c does MUL/MULH/MULHSU/MULHU
 ) (
     input  wire [31:0] a,
     input  wire [31:0] b,
@@ -46,12 +47,15 @@ module alu #(
     // division elsewhere (0 / 1, which folds; not 0 / 0)
     wire [31:0] da = DIV_ITER ? 32'd0 : ma;
     wire [31:0] db = DIV_ITER ? 32'd1 : mb;
+    // ... and the multipliers' when MUL_2C takes the multiplies elsewhere
+    wire [31:0] xa = MUL_2C ? 32'd0 : ma;
+    wire [31:0] xb = MUL_2C ? 32'd0 : mb;
 
     // 64-bit products for the high-multiply variants.
-    wire signed [63:0] a_s  = $signed({{32{ma[31]}}, ma}); // a as signed64
-    wire signed [63:0] b_s  = $signed({{32{mb[31]}}, mb}); // b as signed64
-    wire        [63:0] a_u  = {32'b0, ma};                 // a as unsigned64
-    wire        [63:0] b_u  = {32'b0, mb};                 // b as unsigned64
+    wire signed [63:0] a_s  = $signed({{32{xa[31]}}, xa}); // a as signed64
+    wire signed [63:0] b_s  = $signed({{32{xb[31]}}, xb}); // b as signed64
+    wire        [63:0] a_u  = {32'b0, xa};                 // a as unsigned64
+    wire        [63:0] b_u  = {32'b0, xb};                 // b as unsigned64
     wire signed [63:0] p_ss = a_s * b_s;                   // signed   x signed
     wire        [63:0] p_uu = a_u * b_u;                   // unsigned x unsigned
     wire signed [63:0] p_su = a_s * $signed(b_u);          // signed   x unsigned
@@ -193,6 +197,68 @@ module div_iter (
                     ovf  ? (is_rem ? 32'd0 : 32'h8000_0000) :
                     is_rem ? (neg_r ? -r : r) :
                              (neg_q ? -q : q);
+endmodule
+
+// =====================================================================
+// mul_2c  -  RV32M multiplies with registers on both sides of the DSPs
+// ---------------------------------------------------------------------
+// alu.v's three combinational 32x32 products put two DSP48s in series, and
+// the adder that sums their partial products, between the forwarding
+// network and everything downstream of the ALU (Step 57's critical path ran
+// forwarding -> multiplier -> ALU result -> address -> D-TLB -> fault).
+// Selected by cpu_pipe_u's MUL_2C parameter, this unit holds EX for two
+// cycles: the first latches the operands, the second multiplies the
+// latched operands into a result register, the third presents it. One
+// signed 33x33 multiply covers all four: an operand is sign-extended where
+// the instruction treats it as signed, zero-extended otherwise.
+//
+// The handshake is div_iter's: want (a multiply is in EX), start_ok (the
+// operands are valid: ~freeze), go (it leaves EX), done. Dropping `want`
+// aborts.
+//
+// op: 0 MUL, 1 MULH, 2 MULHSU, 3 MULHU (alu_op - 10).
+// =====================================================================
+module mul_2c (
+    input  wire        clk,
+    input  wire        rst,
+    input  wire        want,
+    input  wire        start_ok,
+    input  wire        go,
+    input  wire [1:0]  op,
+    input  wire [31:0] a,
+    input  wire [31:0] b,
+    output wire        done,
+    output wire [31:0] result
+);
+    localparam IDLE = 2'd0, MULT = 2'd1, DONE = 2'd2;
+    reg [1:0]  state;
+    reg [32:0] ra, rb;
+    reg        hi;
+    reg [31:0] res;
+    wire signed [65:0] p = $signed(ra) * $signed(rb);
+
+    always @(posedge clk) begin
+        if (rst) state <= IDLE;
+        else case (state)
+            IDLE: if (want && start_ok) begin
+                ra    <= {(op != 2'd3) & a[31], a};                   // signed but in MULHU
+                rb    <= {((op == 2'd0) | (op == 2'd1)) & b[31], b};  // signed in MUL, MULH
+                hi    <= (op != 2'd0);
+                state <= MULT;
+            end
+            MULT: begin
+                if (!want) state <= IDLE;
+                else begin
+                    res   <= hi ? p[63:32] : p[31:0];
+                    state <= DONE;
+                end
+            end
+            default: if (go || !want) state <= IDLE;
+        endcase
+    end
+
+    assign done   = (state == DONE);
+    assign result = res;
 endmodule
 
 `default_nettype wire
