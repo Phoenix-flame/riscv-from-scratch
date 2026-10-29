@@ -1106,6 +1106,7 @@ module cpu_pipe_u #(
     reg [4:0]  exmem_amo_f5;
     reg [1:0]  exmem_wb_sel;
     reg        exmem_mem_read, exmem_mem_write, exmem_lr, exmem_sc, exmem_rmw, exmem_valid;
+    reg        exmem_scm;              // XLATE_2C: the SC's address matches the reservation it will see
     always @(posedge clk) begin
         // VALID_FLUSH: a bubble clears only the control bits below, the
         // rest load anyway, so ex_keep drives 7 flip-flops, not every reset
@@ -1120,6 +1121,9 @@ module cpu_pipe_u #(
             exmem_lr<=ex_keep & idex_lr; exmem_sc<=ex_keep & idex_sc; exmem_rmw<=ex_keep & idex_rmw;
             exmem_valid<=ex_keep; exmem_rd<=idex_rd;
             exmem_result<=ex_result; exmem_addr<=ex_pa; exmem_store<=opB;
+            // the reservation the SC will meet in MEM: an LR finishing there
+            // now sets it to its own address at this edge
+            exmem_scm<=(exmem_lr & m_done) ? (ex_pa == exmem_addr) : (ex_pa == resv_addr);
             exmem_funct3<=idex_funct3; exmem_amo_f5<=idex_amo_f5;
             exmem_wb_sel<=idex_is_csr ? WB_ALU : idex_wb_sel;
         end
@@ -1135,7 +1139,16 @@ module cpu_pipe_u #(
     reg        amo_ph;                              // AMO: 0 = read, 1 = write
     reg [31:0] amo_old;
 
-    wire sc_ok    = exmem_sc & resv_valid & (resv_addr == exmem_addr);
+    // XLATE_2C: the address compare made on the way into MEM (exmem_scm),
+    // so a 32-bit compare is not in front of freeze
+    wire sc_ok    = exmem_sc & resv_valid & ((XLATE_2C != 0) ? exmem_scm : (resv_addr == exmem_addr));
+`ifndef SYNTHESIS
+    always @(posedge clk)
+        if (!rst && exmem_sc && resv_valid && exmem_scm != (resv_addr == exmem_addr) && XLATE_2C != 0) begin
+            $display("SC: registered reservation match wrong at %h", exmem_addr);
+            $finish;
+        end
+`endif
     wire m_load   = exmem_mem_read & ~exmem_sc & ~exmem_rmw;   // load, LR
     wire m_store  = exmem_mem_write | sc_ok;
     wire m_port   = m_load | m_store | exmem_rmw;              // needs the D-port

@@ -243,7 +243,11 @@ module soc_boot #(
         assign fencei_ack = 1'b1;          // nothing to write back or invalidate
     end else begin : g_cached
         // ---- the caches ----
-        wire          cacheable = sel_ram | sel_rom;
+        // CACHE_BRAM: anything below 1 MiB is the ROM. The core's region
+        // check (PMA_*) lets no access outside a real region reach this port,
+        // so the coarse compare is exact for what arrives, and keeps the
+        // ROM's range compare out of dready (and freeze) (Step 62)
+        wire          cacheable = sel_ram | (CACHE_BRAM ? (daddr[31:20] == 12'h000) : sel_rom);
         wire          ic_mreq, ic_mdone, ic_ready, ic_inval;
         wire [31:0]   ic_maddr, ic_rdata;
         wire          dc_mreq, dc_mwe, dc_mdone, dc_ready, dc_clean, dc_clean_done;
