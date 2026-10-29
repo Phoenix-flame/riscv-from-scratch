@@ -46,6 +46,8 @@ module boot_tb;
     parameter FWD_PRE = 0;                //                        1 (forwarding compares a cycle early)
     parameter IF_PAGE = 0;                //                        1 (registered fetch-page translation)
     parameter HPM_LATE = 0;               //                        1 (hpm events a cycle late)
+    parameter I_LINES  = 64;              // cache sizes, in 32-byte lines (2 KiB each)
+    parameter D_LINES  = 64;
     localparam [31:0] DDR_BASE = 32'h1000_0000;     // where RAM sits on the AXI side
     localparam CPB = 16 * DIVISOR;        // clocks per bit
 
@@ -69,7 +71,8 @@ module boot_tb;
                .AXI_DATA_W(AXI_DATA_W), .DIV_ITER(DIV_ITER),
                .ZB_EXT(ZB_EXT), .BPRED(BPRED), .MUL_2C(MUL_2C), .AGU(AGU),
                .XLATE_2C(XLATE_2C), .VALID_FLUSH(VALID_FLUSH),
-               .REG_REDIRECT(REG_REDIRECT), .FWD_PRE(FWD_PRE), .IF_PAGE(IF_PAGE), .HPM_LATE(HPM_LATE)) dut (
+               .REG_REDIRECT(REG_REDIRECT), .FWD_PRE(FWD_PRE), .IF_PAGE(IF_PAGE), .HPM_LATE(HPM_LATE),
+               .I_LINES(I_LINES), .D_LINES(D_LINES)) dut (
         .clk(clk), .rst(rst), .uart_rx_pin(rx), .uart_tx_pin(tx),
         .halted(halted), .exit_code(exit_code), .warm_reset(warm_reset),
         .m_axi_awaddr(awaddr), .m_axi_awlen(awlen), .m_axi_awsize(awsize), .m_axi_awburst(awburst),
@@ -231,6 +234,19 @@ module boot_tb;
         $display("BOOT-TB fence.i: %0d, %0d cycles waiting for the caches", n_fencei, fencei_wait);
         $display("BOOT-TB: %0s exit=%0d cycles=%0d resets=%0d chunks=%0d sent=%0d received=%0d rxfifo_peak=%0d",
                  halted ? "halted" : "TIMEOUT", exit_code, cyc, resets, chunk, sent, nrx, rx_peak);
+`ifdef PROFILE
+        // where the cycles went (-DPROFILE; caches and ZICNTR assumed): the
+        // core's own counters -- cycle, instret, and the hpm events: EX
+        // bubbles after a load-use stall, a flush, a fetch that had nothing;
+        // D-port stall cycles; mispredictions -- and the caches' statistics
+        $display("PROFILE core: cycles=%0d instret=%0d loaduse=%0d flush=%0d fetch=%0d dstall=%0d mispred=%0d",
+                 dut.u_core.g_cnt.cnt[0], dut.u_core.g_cnt.cnt[2], dut.u_core.g_cnt.cnt[3],
+                 dut.u_core.g_cnt.cnt[4], dut.u_core.g_cnt.cnt[5], dut.u_core.g_cnt.cnt[6],
+                 dut.u_core.g_cnt.cnt[7]);
+        $display("PROFILE caches: i_hit=%0d i_miss=%0d d_hit=%0d d_miss=%0d d_wb=%0d",
+                 dut.g_cached.u_icache.n_hit, dut.g_cached.u_icache.n_miss,
+                 dut.g_cached.u_dcache.n_hit, dut.g_cached.u_dcache.n_miss, dut.g_cached.u_dcache.n_wb);
+`endif
         $finish;
     end
 endmodule

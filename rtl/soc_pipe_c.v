@@ -47,7 +47,33 @@ module soc_pipe_c #(
     wire [3:0]  dwe;
     wire        timer_irq, halt_q, retire;
 
+`ifdef PIPE_C_BOARD
+    // the Linux board's core (fpga_top_linux, Steps 57-58) behind these
+    // caches, for tools/bench; each option can be turned off with
+    // -DBRD_<name>=0 to measure what it costs (BPRED stays a parameter)
+`ifndef BRD_DIV_ITER
+`define BRD_DIV_ITER 1
+`endif
+`ifndef BRD_MUL_2C
+`define BRD_MUL_2C 1
+`endif
+`ifndef BRD_XLATE_2C
+`define BRD_XLATE_2C 1
+`endif
+`ifndef BRD_REG_REDIRECT
+`define BRD_REG_REDIRECT 1
+`endif
+`ifndef BRD_IF_PAGE
+`define BRD_IF_PAGE 1
+`endif
+    cpu_pipe_u #(.TLB_ENTRIES(TLB_ENTRIES), .BPRED(BPRED), .VLEN(VLEN), .ZICNTR(ZICNTR), .V_EXT(0),
+                 .ZBA(0), .ZBB(0), .ZBC(0), .ZBS(0),
+                 .DIV_ITER(`BRD_DIV_ITER), .MUL_2C(`BRD_MUL_2C), .AGU(1), .XLATE_2C(`BRD_XLATE_2C),
+                 .VALID_FLUSH(1), .REG_REDIRECT(`BRD_REG_REDIRECT), .FWD_PRE(1),
+                 .IF_PAGE(`BRD_IF_PAGE), .HPM_LATE(1)) u_core (
+`else
     cpu_pipe_u #(.TLB_ENTRIES(TLB_ENTRIES), .BPRED(BPRED), .VLEN(VLEN), .ZICNTR(ZICNTR)) u_core (
+`endif
         .clk(clk), .rst(rst), .timer_irq(timer_irq), .mtime(64'd0), .meip(1'b0), .seip(1'b0), .fencei_req(), .fencei_ack(1'b1), .halt(halt_q),
         .i_addr(iaddr), .i_req(ireq), .i_rdata(irdata), .i_ready(iready),
         .d_addr(daddr), .d_req(dreq), .d_we(dwe), .d_wdata(dwdata),

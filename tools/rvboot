@@ -35,8 +35,10 @@
 # =====================================================================
 import argparse
 import binascii
+import os
 import difflib
 import re
+import shlex
 import shutil
 import struct
 import subprocess
@@ -200,14 +202,17 @@ def build_sim(sim, variant):
     ip = v.get("if_page", 0)
     hl = v.get("hpm_late", 0)
     if sim == "verilator":
-        obj = BUILD / f"vobj_{variant}"
+        # RVB_EXTRA: more verilator arguments (e.g. "-DPROFILE -GD_LINES=256"),
+        # built apart under RVB_TAG
+        extra = shlex.split(os.environ.get("RVB_EXTRA", ""))
+        obj = BUILD / f"vobj_{variant}{os.environ.get('RVB_TAG', '')}"
         check(["verilator", "--binary", "--timing", "-O3", "-Wno-fatal", "-Wno-lint",
                "-Wno-style", "--top-module", "boot_tb", "-Mdir", str(obj), "-o", "boot_tb",
                f"-GMEMSYS={v['memsys']}", f"-GRAM_WORDS={v['ram_words']}", f"-GDIVISOR={div}",
                f"-GAXI_DATA_W={axw}", f"-GDIV_ITER={dit}", f"-GZB_EXT={zb}", f"-GBPRED={bp}",
                f"-GMUL_2C={m2}", f"-GAGU={ag}", f"-GXLATE_2C={x2}", f"-GVALID_FLUSH={vf}",
                f"-GREG_REDIRECT={rr}", f"-GFWD_PRE={fp}", f"-GIF_PAGE={ip}", f"-GHPM_LATE={hl}"]
-              + files, "verilator")
+              + extra + files, "verilator")
         return [str(obj / "boot_tb")]
     vvp = BUILD / f"boot_tb_{variant}.vvp"
     check(["iverilog", "-g2012", "-o", str(vvp),

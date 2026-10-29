@@ -83,6 +83,12 @@ HW = {
                        soc="soc_pipe_c", params=dict(LAT=40, I_LINES=128, D_LINES=128)),
     "c1k-l40":    dict(desc="1+1 KiB caches, memory latency 40",
                        soc="soc_pipe_c", params=dict(LAT=40, I_LINES=32, D_LINES=32)),
+    # the Linux board's core (Steps 57-58): no predictor, every timing option
+    "brd-ideal":  dict(desc="board core, ideal 1-cycle memory",
+                       soc="soc_pipe_u", params=dict(), defines=["PIPE_U_BOARD"]),
+    "brd-c2k-l40": dict(desc="board core, 2+2 KiB caches, memory latency 40 (as on the board)",
+                        soc="soc_pipe_c", params=dict(LAT=40, I_LINES=64, D_LINES=64, BPRED=0),
+                        defines=["PIPE_C_BOARD"]),
 }
 CACHE_RTL = ["mem_slow", "icache", "dcache", "mem_bridge"]
 
@@ -211,11 +217,13 @@ def build_sim(hw, sim):
                "-Wno-WIDTH", "-Wno-TIMESCALEMOD", "-Wno-SIDEEFFECT", "--top-module", "bench_tb",
                "-Mdir", str(out), "-o", "vbench"]
         cmd += [f"-G{k}={v}" for k, v in p.items()] + (["-DCACHED"] if cached else [])
+        cmd += [f"-D{d}" for d in HW[hw].get("defines", [])]
         check(cmd + rtl_files(hw), f"verilator {hw}")
         return [str(out / "vbench")]
     vvp = out.with_suffix(".vvp")
     cmd = ["iverilog", "-g2012", "-o", str(vvp)] + [f"-Pbench_tb.{k}={v}" for k, v in p.items()]
-    check(cmd + (["-DCACHED"] if cached else []) + rtl_files(hw), f"iverilog {hw}")
+    check(cmd + (["-DCACHED"] if cached else []) + [f"-D{d}" for d in HW[hw].get("defines", [])]
+          + rtl_files(hw), f"iverilog {hw}")
     return ["vvp", "-n", str(vvp)]
 
 
@@ -259,6 +267,11 @@ def main():
     ap.add_argument("--iterations", type=int, help="CoreMark iterations (default: "
                     f"{CM_ITERATIONS}, or {CM_ITERATIONS_QUICK} with --quick)")
     ap.add_argument("--fetch", action="store_true", help="fetch the sources, then exit")
+    ap.add_argument("--hw", help="run only these hardware configurations (comma-separated), with -O2")
+    ap.add_argument("--set", action="append", default=[], metavar="PARAM=VALUE",
+                    help="override a bench_tb parameter in the --hw configurations")
+    ap.add_argument("--def", dest="defs", action="append", default=[], metavar="MACRO[=VALUE]",
+                    help="add a Verilog define to the --hw configurations (e.g. BRD_XLATE_2C=0)")
     args = ap.parse_args()
 
     for t in (CROSS + "gcc", CROSS + "objcopy", CROSS + "size"):
@@ -276,6 +289,19 @@ def main():
     iters = args.iterations or (CM_ITERATIONS_QUICK if args.quick else CM_ITERATIONS)
     benches = [args.only] if args.only else ["dhrystone", "coremark"]
     matrix = MATRIX[:1] if args.quick else MATRIX
+    if args.hw:
+        tag = "".join(f"+{x}" for x in args.set + args.defs)
+        matrix = []
+        for hw in args.hw.split(","):
+            if hw not in HW:
+                die(f"no hardware configuration {hw!r}: one of {', '.join(HW)}")
+            if tag:     # a variant, built apart
+                base = HW[hw]
+                HW[hw + tag] = dict(base, desc=base["desc"] + " " + tag,
+                                    params=dict(base["params"], **dict(kv.split("=", 1) for kv in args.set)),
+                                    defines=base.get("defines", []) + args.defs)
+                hw = hw + tag
+            matrix.append(("O2", hw))
     print(f"[bench] simulator: {sim};  CoreMark iterations: {iters}")
     if sim == "iverilog" and "coremark" in benches and not args.quick:
         print("[bench] note: Icarus runs ~7k cycles/s; the full matrix takes hours. "
