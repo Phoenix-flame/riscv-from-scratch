@@ -330,8 +330,10 @@ sw/cb.hex: sw/cache_bench.c sw/firmware.c sw/firmware.h sw/crt0.s sw/link.ld sw/
 	python3 sw/bin2hex.py $(B)/cb.bin > sw/cb.hex
 
 CACHE_LATS ?= 1 5 10 20 40
-cache-unit: ## D-cache vs a reference model: random reads/writes/byte masks, evictions, slow memory
+cache-unit: ## D-caches vs a reference model (and Step 59's block-RAM I-cache vs memory): random accesses, evictions, slow memory
 	$(IV) -o $(B)/dcache_tb.vvp rtl/mem_slow.v rtl/dcache.v tb/dcache_tb.v && $(VVP) $(B)/dcache_tb.vvp
+	$(IV) -o $(B)/dcache_b_tb.vvp rtl/mem_slow.v rtl/dcache.v tb/dcache_b_tb.v && $(VVP) $(B)/dcache_b_tb.vvp
+	$(IV) -o $(B)/icache_b_tb.vvp rtl/mem_slow.v rtl/icache.v tb/icache_b_tb.v && $(VVP) $(B)/icache_b_tb.vvp
 
 cache: sw/cb.hex sw/tlb.hex sw/smmu_vm.hex sw/sv.hex ## I/D caches vs no caches on slow memory, across latencies; + MMU programs and riscv-tests through the caches
 	@for L in $(CACHE_LATS); do \

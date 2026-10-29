@@ -33,7 +33,9 @@ module csr_s #(
     parameter HAS_S    = 1,
     parameter HAS_U    = 1,
     parameter HAS_SATP = 1,
-    parameter HAS_V    = 1             // mstatus.VS writable (Step 47); else reads 0
+    parameter HAS_V    = 1,            // mstatus.VS writable (Step 47); else reads 0
+    parameter LATE_TVAL = 0            // 1: mtval/stval written the cycle after the trap, from a
+                                       //    register (Step 59): nothing can read them sooner
 ) (
     input  wire        clk,
     input  wire        rst,
@@ -53,6 +55,7 @@ module csr_s #(
     input  wire        take_trap,       // core takes a trap this cycle
     input  wire [31:0] trap_cause,      // the cause being recorded
     input  wire [31:0] trap_val,        // mtval/stval value (badaddr/instr/0)
+    input  wire [31:0] trap_val_late,   // LATE_TVAL: that value, the cycle after the trap
 
     output wire [31:0] trap_vector,     // where the trap jumps (mtvec or stvec)
     output wire [31:0] mret_target,     // mepc
@@ -81,6 +84,7 @@ module csr_s #(
 
     reg [31:0] mstatus, medeleg, mideleg, mie, mtvec, mscratch, mepc, mcause, mtval;
     reg [31:0] stvec, sscratch, sepc, scause, stval, satp;
+    reg        tv_pend_m, tv_pend_s;               // LATE_TVAL: a trap's value is due
     reg [31:0] mip_sw;        // software-writable interrupt-pending bits (SSIP,STIP,SEIP)
     reg [1:0]  priv;
 
@@ -187,7 +191,7 @@ module csr_s #(
             if (deleg) begin                          // ---- deliver to S ----
                 sepc        <= pc;
                 scause      <= trap_cause;
-                stval       <= trap_val;
+                if (!LATE_TVAL) stval <= trap_val;
                 mstatus[5]  <= mstatus[1];            // SPIE <- SIE
                 mstatus[1]  <= 1'b0;                  // SIE  <- 0
                 mstatus[8]  <= (priv==PRIV_S);        // SPP  <- came-from-S?
@@ -195,7 +199,7 @@ module csr_s #(
             end else begin                            // ---- deliver to M ----
                 mepc        <= pc;
                 mcause      <= trap_cause;
-                mtval       <= trap_val;
+                if (!LATE_TVAL) mtval <= trap_val;
                 mstatus[7]  <= mstatus[3];            // MPIE <- MIE
                 mstatus[3]  <= 1'b0;                  // MIE  <- 0
                 mstatus[12:11] <= priv;               // MPP  <- came-from priv
@@ -246,6 +250,14 @@ module csr_s #(
         if (!rst && set_vs_dirty && mstatus[10:9] != 2'b00) mstatus[10:9] <= 2'b11;
         if (!HAS_V) mstatus[10:9] <= 2'b00;
         mstatus[31] <= 1'b0;                          // SD is computed, never stored
+        // LATE_TVAL: the trap's value lands a cycle later; the cycle after a
+        // trap holds no instruction that could read or write these
+        if (!rst && LATE_TVAL && tv_pend_m) mtval <= trap_val_late;
+        if (!rst && LATE_TVAL && tv_pend_s) stval <= trap_val_late;
+    end
+    always @(posedge clk) begin
+        tv_pend_m <= !rst && (LATE_TVAL != 0) && take_trap && !deleg;
+        tv_pend_s <= !rst && (LATE_TVAL != 0) && take_trap &&  deleg;
     end
 endmodule
 

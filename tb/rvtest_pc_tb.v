@@ -51,8 +51,11 @@ module rvtest_pc_tb;
         .i_addr(iaddr), .i_req(ireq), .i_rdata(irdata), .i_ready(iready),
         .d_addr(daddr), .d_req(dreq), .d_we(dwe), .d_wdata(dwdata),
         .d_rdata(drdata), .d_ready(sel_ram ? ram_ready : 1'b1),
+        .i_addr_next(iaddr_next), .d_addr_next(daddr_next), .d_hint_ok(dhint_ok),
         .pc_out(rvt_pc), .retire()
     );
+    wire [31:0] iaddr_next, daddr_next;
+    wire        dhint_ok;
     wire sel_ram = (daddr[31:28] == 4'h0);
     assign drdata = ram_rdata;
 
@@ -60,6 +63,20 @@ module rvtest_pc_tb;
     wire [31:0] im_addr, dm_addr;
     wire [LWB-1:0] im_rdata, dm_wdata, dm_rdata;
 
+`ifdef RVT_BOARD
+    // the board's caches (Step 59): arrays read a cycle ahead at the core's
+    // hints -- still 16 lines here, so that misses keep coming
+    icache_b #(.LINES(16), .LINE_WORDS(LW)) u_icache (
+        .clk(clk), .rst(rst), .addr(iaddr), .req(ireq), .rdata(irdata), .ready(iready),
+        .hint(iaddr_next), .inval(ic_inval),
+        .m_req(im_req), .m_addr(im_addr), .m_done(im_done), .m_rdata(im_rdata));
+    dcache_b #(.LINES(16), .LINE_WORDS(LW)) u_dcache (
+        .clk(clk), .rst(rst), .addr(daddr), .req(dreq & sel_ram), .we(dwe), .wdata(dwdata),
+        .rdata(ram_rdata), .ready(ram_ready), .hint(daddr_next), .hint_ok(dhint_ok),
+        .clean(dc_clean), .clean_done(dc_clean_done),
+        .m_req(dm_req), .m_we(dm_we), .m_addr(dm_addr), .m_wdata(dm_wdata),
+        .m_done(dm_done), .m_rdata(dm_rdata));
+`else
     icache #(.LINES(16), .LINE_WORDS(LW)) u_icache (
         .clk(clk), .rst(rst), .addr(iaddr), .req(ireq), .rdata(irdata), .ready(iready), .inval(ic_inval),
         .m_req(im_req), .m_addr(im_addr), .m_done(im_done), .m_rdata(im_rdata));
@@ -68,6 +85,7 @@ module rvtest_pc_tb;
         .rdata(ram_rdata), .ready(ram_ready), .clean(dc_clean), .clean_done(dc_clean_done),
         .m_req(dm_req), .m_we(dm_we), .m_addr(dm_addr), .m_wdata(dm_wdata),
         .m_done(dm_done), .m_rdata(dm_rdata));
+`endif
 `ifdef RVT_UNIFIED
     // one memory: both caches refill from it; FENCE.I as soc_boot does it
     wire          m_req, m_we, m_done;

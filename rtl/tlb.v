@@ -24,7 +24,8 @@
 
 module tlb #(
     parameter ENTRIES = 4,
-    parameter ENABLE  = 1
+    parameter ENABLE  = 1,
+    parameter FAST_FILL = 0     // 1: the replacement pointer moves on every fill, flush or not (Step 59)
 ) (
     input  wire        clk,
     input  wire        rst,
@@ -78,24 +79,30 @@ module tlb #(
     end
 
     // ---- fill / flush ----
+    // An entry's contents are only ever read through its valid bit, so a
+    // fill writes them whatever else happens that cycle: only v (and, unless
+    // FAST_FILL, the pointer) waits for a flush -- which arrives late, from
+    // sfence.vma in EX (Step 59: the fill's enable no longer does)
     integer j;
     always @(posedge clk) begin
         if (rst || flush_all) begin
             v <= {ENTRIES{1'b0}};
-            if (rst) victim <= {IW{1'b0}};
         end else begin
             if (flush_one)
                 for (j = 0; j < ENTRIES; j = j + 1)
                     if (match(v[j], sp[j], tag[20*j +: 20], flush_va[31:12])) v[j] <= 1'b0;
-            if (fill && ENABLE) begin
-                v[victim]   <= 1'b1;
-                sp[victim]  <= fill_super;
-                tag[20*victim +: 20] <= fill_va[31:12];
-                ppn[22*victim +: 22] <= fill_ppn;
-                prm[4*victim  +: 4]  <= fill_perm;
-                victim      <= (victim == ENTRIES-1) ? {IW{1'b0}} : victim + 1'b1;
-            end
+            if (fill && ENABLE) v[victim] <= 1'b1;
         end
+        if (fill && ENABLE) begin
+            sp[victim]  <= fill_super;
+            tag[20*victim +: 20] <= fill_va[31:12];
+            ppn[22*victim +: 22] <= fill_ppn;
+            prm[4*victim  +: 4]  <= fill_perm;
+        end
+        if (rst)
+            victim <= {IW{1'b0}};
+        else if (fill && ENABLE && (FAST_FILL != 0 || !flush_all))
+            victim <= (victim == ENTRIES-1) ? {IW{1'b0}} : victim + 1'b1;
     end
 endmodule
 

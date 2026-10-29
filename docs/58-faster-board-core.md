@@ -1,5 +1,9 @@
 # Step 58 — A faster board core: 11.11 → 50 MHz
 
+> **Followed by Step 59** (`docs/59-block-ram-caches.md`): 16 + 16 KiB
+> block-RAM caches, and every placement seed at 55–58 MHz, so 50 MHz with
+> 16.7 % margin instead of this step's 2.9 %.
+
 Step 57's bitstream ran the core at 11.11 MHz, with nextpnr putting it at
 18.24 MHz after routing. This step goes after the critical path, one path
 at a time, until the core routes at 51.47 MHz with the best placement

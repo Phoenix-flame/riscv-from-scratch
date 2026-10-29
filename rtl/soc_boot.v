@@ -80,7 +80,8 @@ module soc_boot #(
     parameter REG_REDIRECT = 0,           // 1: a mispredicted branch redirects a cycle later (Step 58)
     parameter FWD_PRE      = 0,           // 1: forwarding compares registered a cycle early (Step 58)
     parameter IF_PAGE      = 0,           // 1: fetch through a registered page translation (Step 58)
-    parameter HPM_LATE     = 0            // 1: hpmcounter3..7 count a cycle late (Step 58)
+    parameter HPM_LATE     = 0,           // 1: hpmcounter3..7 count a cycle late (Step 58)
+    parameter CACHE_BRAM   = 0            // 1: the caches' arrays in block RAM, read a cycle ahead (Step 59)
 ) (
     input  wire        clk,
     input  wire        rst,
@@ -145,6 +146,8 @@ module soc_boot #(
     wire        uart_irq;
 
     wire [1:0] eip;                       // PLIC contexts: 0 = M, 1 = S
+    wire [31:0] iaddr_next, daddr_next;   // the core's guesses at the next addresses
+    wire        dhint_ok;                 // ... the D one a promise
     cpu_pipe_u #(.RESET_PC(ROM_BASE), .TLB_ENTRIES(TLB_ENTRIES), .BPRED(BPRED),
                  .V_EXT(V_EXT), .SVADE(SVADE), .DIV_ITER(DIV_ITER), .MUL_2C(MUL_2C), .AGU(AGU), .XLATE_2C(XLATE_2C), .VALID_FLUSH(VALID_FLUSH), .REG_REDIRECT(REG_REDIRECT), .FWD_PRE(FWD_PRE), .IF_PAGE(IF_PAGE), .HPM_LATE(HPM_LATE),
                  .ZBA(ZB_EXT), .ZBB(ZB_EXT), .ZBC(ZB_EXT), .ZBS(ZB_EXT), .PMA_N(6), .PMA_BASE(PMA_BASE),
@@ -155,6 +158,7 @@ module soc_boot #(
         .i_addr(iaddr), .i_req(ireq), .i_rdata(irdata), .i_ready(iready),
         .d_addr(daddr), .d_req(dreq), .d_we(dwe), .d_wdata(dwdata),
         .d_rdata(drdata), .d_ready(dready),
+        .i_addr_next(iaddr_next), .d_addr_next(daddr_next), .d_hint_ok(dhint_ok),
         .pc_out(), .retire(retire)
     );
 
@@ -170,6 +174,21 @@ module soc_boot #(
     // ROM_BASE <= a < ROM_BASE + ROM_BYTES, compared on the bits above the
     // alignment both share (cpu_pipe_u's in_region does the same; Step 58):
     // two compares in parallel and no subtract, so no chained carries
+    // x < c without the `<` operator, so a constant c reduces to a few LUTs
+    // instead of a carry chain (Step 59)
+    function lt_bits;
+        input [31:0] x, c;
+        integer i;
+        reg lt, eq;
+        begin
+            lt = 1'b0; eq = 1'b1;
+            for (i = 31; i >= 0; i = i - 1) begin
+                lt = lt | (eq & ~x[i] & c[i]);
+                eq = eq & (x[i] == c[i]);
+            end
+            lt_bits = lt;
+        end
+    endfunction
     function in_rom;
         input [31:0] a;
         reg   [31:0] hi;
@@ -179,8 +198,8 @@ module soc_boot #(
             g = 0;
             for (k = 1; k < 32; k = k + 1)
                 if (((ROM_BASE | ROM_BYTES) & ((32'd1 << k) - 1)) == 0) g = k;
-            in_rom = (ROM_BYTES != 0) && ((a >> g) >= (ROM_BASE >> g)) &&
-                     ((hi == 0) || ((a >> g) < (hi >> g)));
+            in_rom = (ROM_BYTES != 0) && !lt_bits(a >> g, ROM_BASE >> g) &&
+                     ((hi == 0) || lt_bits(a >> g, hi >> g));
         end
     endfunction
     function in_ram; input [31:0] a; in_ram = (a[31:28] == 4'h8); endfunction
@@ -229,16 +248,41 @@ module soc_boot #(
         wire          dc_mreq, dc_mwe, dc_mdone, dc_ready, dc_clean, dc_clean_done;
         wire [31:0]   dc_maddr, dc_rdata;
         wire [LW-1:0] dc_mwdata, lm_rdata;
-        icache #(.LINES(I_LINES), .LINE_WORDS(LINE_WORDS)) u_icache (
-            .clk(clk), .rst(sys_rst), .addr(iaddr), .req(ireq), .rdata(ic_rdata),
-            .ready(ic_ready), .inval(ic_inval),
-            .m_req(ic_mreq), .m_addr(ic_maddr), .m_done(ic_mdone), .m_rdata(lm_rdata));
-        dcache #(.LINES(D_LINES), .LINE_WORDS(LINE_WORDS)) u_dcache (
-            .clk(clk), .rst(sys_rst), .addr(daddr), .req(dreq & cacheable), .we(dwe),
-            .wdata(dwdata), .rdata(dc_rdata), .ready(dc_ready),
-            .clean(dc_clean), .clean_done(dc_clean_done),
-            .m_req(dc_mreq), .m_we(dc_mwe), .m_addr(dc_maddr), .m_wdata(dc_mwdata),
-            .m_done(dc_mdone), .m_rdata(lm_rdata));
+`ifndef SYNTHESIS
+        // the caches' statistics, at one name for either kind (simulation only)
+        wire [31:0] st_ihit, st_imiss, st_dhit, st_dmiss, st_dwb;
+`endif
+        if (CACHE_BRAM) begin : g_cb
+            icache_b #(.LINES(I_LINES), .LINE_WORDS(LINE_WORDS)) u_icache (
+                .clk(clk), .rst(sys_rst), .addr(iaddr), .req(ireq), .rdata(ic_rdata),
+                .ready(ic_ready), .hint(iaddr_next), .inval(ic_inval),
+                .m_req(ic_mreq), .m_addr(ic_maddr), .m_done(ic_mdone), .m_rdata(lm_rdata));
+            dcache_b #(.LINES(D_LINES), .LINE_WORDS(LINE_WORDS)) u_dcache (
+                .clk(clk), .rst(sys_rst), .addr(daddr), .req(dreq & cacheable), .we(dwe),
+                .wdata(dwdata), .rdata(dc_rdata), .ready(dc_ready), .hint(daddr_next), .hint_ok(dhint_ok),
+                .clean(dc_clean), .clean_done(dc_clean_done),
+                .m_req(dc_mreq), .m_we(dc_mwe), .m_addr(dc_maddr), .m_wdata(dc_mwdata),
+                .m_done(dc_mdone), .m_rdata(lm_rdata));
+`ifndef SYNTHESIS
+            assign st_ihit = u_icache.n_hit; assign st_imiss = u_icache.n_miss;
+            assign st_dhit = u_dcache.n_hit; assign st_dmiss = u_dcache.n_miss; assign st_dwb = u_dcache.n_wb;
+`endif
+        end else begin : g_cl
+            icache #(.LINES(I_LINES), .LINE_WORDS(LINE_WORDS)) u_icache (
+                .clk(clk), .rst(sys_rst), .addr(iaddr), .req(ireq), .rdata(ic_rdata),
+                .ready(ic_ready), .inval(ic_inval),
+                .m_req(ic_mreq), .m_addr(ic_maddr), .m_done(ic_mdone), .m_rdata(lm_rdata));
+            dcache #(.LINES(D_LINES), .LINE_WORDS(LINE_WORDS)) u_dcache (
+                .clk(clk), .rst(sys_rst), .addr(daddr), .req(dreq & cacheable), .we(dwe),
+                .wdata(dwdata), .rdata(dc_rdata), .ready(dc_ready),
+                .clean(dc_clean), .clean_done(dc_clean_done),
+                .m_req(dc_mreq), .m_we(dc_mwe), .m_addr(dc_maddr), .m_wdata(dc_mwdata),
+                .m_done(dc_mdone), .m_rdata(lm_rdata));
+`ifndef SYNTHESIS
+            assign st_ihit = u_icache.n_hit; assign st_imiss = u_icache.n_miss;
+            assign st_dhit = u_dcache.n_hit; assign st_dmiss = u_dcache.n_miss; assign st_dwb = u_dcache.n_wb;
+`endif
+        end
         always @(*) irdata = ic_rdata;
         always @(*) drdata = cacheable ? dc_rdata : mmio_rdata;
         assign iready = ic_ready;

@@ -86,7 +86,10 @@ HW = {
     # the Linux board's core (Steps 57-58): no predictor, every timing option
     "brd-ideal":  dict(desc="board core, ideal 1-cycle memory",
                        soc="soc_pipe_u", params=dict(), defines=["PIPE_U_BOARD"]),
-    "brd-c2k-l40": dict(desc="board core, 2+2 KiB caches, memory latency 40 (as on the board)",
+    "brd-c16k-l40": dict(desc="board core, 16+16 KiB block-RAM caches, memory latency 40 (as on the board)",
+                         soc="soc_pipe_c", params=dict(LAT=40, I_LINES=512, D_LINES=512, BPRED=0),
+                         defines=["PIPE_C_BOARD"]),
+    "brd-c2k-l40": dict(desc="board core, 2+2 KiB caches (Step 58's size), memory latency 40",
                         soc="soc_pipe_c", params=dict(LAT=40, I_LINES=64, D_LINES=64, BPRED=0),
                         defines=["PIPE_C_BOARD"]),
 }

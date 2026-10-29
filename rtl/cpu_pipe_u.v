@@ -165,6 +165,12 @@ module cpu_pipe_u #(
     input  wire [31:0] d_rdata,
     input  wire        d_ready,
 
+    // ---- hints for caches that read a cycle ahead (Step 59): the address
+    //      each port will likely present next cycle; only ever a guess ----
+    output wire [31:0] i_addr_next,
+    output wire [31:0] d_addr_next,
+    output wire        d_hint_ok,     // ... and d_addr_next is a promise: the next D request, if any, is there
+
     output wire [31:0] pc_out,
     output wire        retire         // an instruction left WB this cycle
 );
@@ -208,6 +214,21 @@ module cpu_pipe_u #(
     // alignment is a compare of the bits above it; any other is two
     // compares in parallel (base <= a, a < base + size), on the bits above
     // the alignment base and size share. base + size may be 2^32 (hi = 0).
+    // x < c without the `<` operator, so a constant c reduces to a few LUTs
+    // instead of a carry chain (Step 59)
+    function lt_bits;
+        input [31:0] x, c;
+        integer i;
+        reg lt, eq;
+        begin
+            lt = 1'b0; eq = 1'b1;
+            for (i = 31; i >= 0; i = i - 1) begin
+                lt = lt | (eq & ~x[i] & c[i]);
+                eq = eq & (x[i] == c[i]);
+            end
+            lt_bits = lt;
+        end
+    endfunction
     function in_region;
         input [31:0] a;
         input [31:0] b, sz;
@@ -222,8 +243,8 @@ module cpu_pipe_u #(
                 g = 0;                            // shared alignment: 2^g
                 for (k = 1; k < 32; k = k + 1)
                     if (((b | sz) & ((32'd1 << k) - 1)) == 0) g = k;
-                in_region = (sz != 0) && ((a >> g) >= (b >> g)) &&
-                            ((hi == 0) || ((a >> g) < (hi >> g)));
+                in_region = (sz != 0) && !lt_bits(a >> g, b >> g) &&
+                            ((hi == 0) || lt_bits(a >> g, hi >> g));
             end
         end
     endfunction
@@ -250,7 +271,7 @@ module cpu_pipe_u #(
 
     wire        itlb_hit; wire [31:0] itlb_pa; wire [3:0] itlb_perm;
     generate if (MMU) begin : g_itlb
-        tlb #(.ENTRIES(TLB_ENTRIES)) u_itlb (
+        tlb #(.ENTRIES(TLB_ENTRIES), .FAST_FILL(XLATE_2C)) u_itlb (
             .clk(clk), .rst(rst),
             .va(pc), .hit(itlb_hit), .pa(itlb_pa), .perm(itlb_perm),
             .fill(ptw_fill & ptw_side_i), .fill_va(ptw_va), .fill_ppn(ptw_ppn),
@@ -313,13 +334,15 @@ module cpu_pipe_u #(
     end endgenerate
     wire [31:0] pc_next = bp_taken ? bp_target : pc + 32'd4;
 
-    always @(posedge clk) begin
+    wire [31:0] pc_d = freeze              ? pc       :
+                       flush               ? flush_pc :
+                       (front_hold | ~if_ok) ? pc     : pc_next;
+    always @(posedge clk)
         if (rst) pc <= RESET_PC;
-        else if (freeze)               pc <= pc;
-        else if (flush)                pc <= flush_pc;
-        else if (front_hold | ~if_ok)  pc <= pc;
-        else                           pc <= pc_next;
-    end
+        else     pc <= pc_d;
+    // the next fetch's address: the next PC through this page's translation
+    // (a new page, or translation without IF_PAGE, guesses wrong -- a cycle)
+    assign i_addr_next = IF_PAGE ? {ip_ppn, pc_d[11:0]} : pc_d;
     always @(posedge clk) begin
         if (rst || (VALID_FLUSH == 0 && flush && !freeze)) begin
             ifid_instr <= NOP; ifid_pc <= 32'd0; ifid_valid <= 1'b0; ifid_ifault <= 1'b0;
@@ -619,7 +642,7 @@ module cpu_pipe_u #(
 
     wire        dtlb_hit; wire [31:0] dtlb_pa; wire [3:0] dtlb_perm;
     generate if (MMU) begin : g_dtlb
-        tlb #(.ENTRIES(TLB_ENTRIES)) u_dtlb (
+        tlb #(.ENTRIES(TLB_ENTRIES), .FAST_FILL(XLATE_2C)) u_dtlb (
             .clk(clk), .rst(rst),
             .va(dtlb_va), .hit(dtlb_hit), .pa(dtlb_pa), .perm(dtlb_perm),
             .fill(ptw_fill & ~ptw_side_i), .fill_va(ptw_va), .fill_ppn(ptw_ppn),
@@ -636,8 +659,12 @@ module cpu_pipe_u #(
     always @(posedge clk)
         if (rst || ex_go || !idex_valid || ptw_fill || tlb_flush_all || tlb_flush_one)
             xl_have <= 1'b0;
-        else if (XLATE_2C && ex_mem && !xl_have && !freeze) begin
+        else if (XLATE_2C && ex_mem && !xl_have && !freeze)
             xl_have <= 1'b1;
+    // the lookup itself is taken every cycle until xl_have holds it, so its
+    // enable never waits for freeze (the value xl_have keeps is the same)
+    always @(posedge clk)
+        if (XLATE_2C && !xl_have) begin
             xl_va   <= ex_va_live;
             xl_hit  <= dtlb_hit;  xl_pa <= dtlb_pa;  xl_perm <= dtlb_perm;
             xl_epa  <= xl_epa_a;  xl_pma <= pma(xl_epa_a);
@@ -773,20 +800,29 @@ module cpu_pipe_u #(
                              v_fault_now ? {28'd0, v_fault_cause} :
                                            irq_cause;
     // mtval / stval: the faulting VA, the bad instruction, or the PC
-    wire [31:0] trap_val   = idex_ifault ? idex_pc    :
-                             ex_illegal  ? idex_instr :
-                             idex_ebreak ? idex_pc    :
-                             ex_imisal   ? ex_target  :
-                             (ex_misal | ex_dfault | ex_daf) ? ex_va :
+    wire        tv_hi_sel  = idex_ifault | ex_illegal | idex_ebreak;
+    wire [31:0] tv_hi      = ex_illegal ? idex_instr : idex_pc;
+    wire [31:0] tv_lo      = (ex_misal | ex_dfault | ex_daf) ? ex_va :
                              v_fault_now ? v_fault_tval : 32'd0;
+    wire [31:0] trap_val   = tv_hi_sel ? tv_hi : ex_imisal ? ex_target : tv_lo;
+    // LATE_TVAL (XLATE_2C): csr_s writes mtval / stval a cycle after the
+    // trap, so the pieces are registered apart -- the misaligned target
+    // straight from the adders, beside them -- and put together then
+    reg         tvh_sel_q, tv_im_q;
+    reg  [31:0] tvh_q, tvl_q, tvt_q;
+    always @(posedge clk) begin
+        tvh_sel_q <= tv_hi_sel; tvh_q <= tv_hi; tv_im_q <= ex_imisal;
+        tvt_q <= ex_target; tvl_q <= tv_lo;
+    end
+    wire [31:0] trap_val_late = tvh_sel_q ? tvh_q : tv_im_q ? tvt_q : tvl_q;
 
-    csr_s #(.HAS_S(HAS_S), .HAS_U(HAS_U), .HAS_SATP(MMU), .HAS_V(V_EXT)) u_csr (
+    csr_s #(.HAS_S(HAS_S), .HAS_U(HAS_U), .HAS_SATP(MMU), .HAS_V(V_EXT), .LATE_TVAL(XLATE_2C)) u_csr (
         .clk(clk), .rst(rst),
         .csr_addr(idex_csr_addr), .csr_funct3(idex_funct3), .csr_wsrc(csr_wsrc),
         .csr_we(csr_commit & ~v_csr_hit), .csr_rdata(csr_rdata_s),
         .pc(idex_pc), .timer_irq(timer_irq), .ext_irq(meip), .s_ext_irq(seip),
         .instr_is_mret(mret_ex), .instr_is_sret(sret_ex),
-        .take_trap(take_trap), .trap_cause(trap_cause), .trap_val(trap_val),
+        .take_trap(take_trap), .trap_cause(trap_cause), .trap_val(trap_val), .trap_val_late(trap_val_late),
         .trap_vector(trap_vector), .mret_target(mepc_out), .sret_target(sepc_out),
         .irq_pending(irq_pending), .irq_cause(irq_cause), .deleg_now(),
         .status_sum(st_sum), .status_mxr(st_mxr),
@@ -1035,6 +1071,9 @@ module cpu_pipe_u #(
     wire v_req_g    = v_mem_req & ~ptw_busy & ~halt;
     assign v_mem_done = v_req_g & d_ready;
     assign d_addr  = ptw_busy ? ptw_addr : v_mem_active ? v_pa : exmem_addr;
+    // the next D-port address: the load / store in EX, about to enter MEM
+    // (a walk, the vector unit or an AMO's second half guess wrong -- a cycle)
+    assign d_addr_next = XLATE_2C ? xl_epa : ex_pa;
     wire [2:0] ptw_pma = pma(ptw_addr);
     wire   ptw_mem_ok = ptw_pma[0];
     assign d_req   = (ptw_req & ptw_mem_ok) | v_req_g | m_req;
@@ -1100,6 +1139,10 @@ module cpu_pipe_u #(
     // it never cuts into a transfer; once started, MEM waits for it.
     wire ptw_start_d = (ex_dwalk | v_walk) & ~m_port & ~halt;
     wire ptw_start_i = if_walk & ~m_port & ~flush & ~halt;
+    // the D-port hint is a promise when the load / store in EX moves to MEM
+    // and no walk holds or takes the port: MEM asks at exactly xl_epa
+    assign d_hint_ok = (XLATE_2C != 0) & ex_keep & (idex_mem_read | idex_mem_write) &
+                       ~ptw_busy & ~ptw_start_d & ~ptw_start_i;
     generate if (MMU) begin : g_ptw
         ptw #(.SVADE(SVADE), .LATE_KILL(XLATE_2C), .REG_RESULT(XLATE_2C)) u_ptw (
             .clk(clk), .rst(rst), .satp(satp_val),

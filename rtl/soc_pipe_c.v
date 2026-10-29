@@ -78,6 +78,7 @@ module soc_pipe_c #(
         .i_addr(iaddr), .i_req(ireq), .i_rdata(irdata), .i_ready(iready),
         .d_addr(daddr), .d_req(dreq), .d_we(dwe), .d_wdata(dwdata),
         .d_rdata(drdata), .d_ready(dready),
+        .i_addr_next(iaddr_next), .d_addr_next(daddr_next), .d_hint_ok(dhint_ok),
         .pc_out(), .retire(retire)
     );
 
@@ -104,20 +105,40 @@ module soc_pipe_c #(
         .addr(dm_addr), .wmask(dm_mask), .wdata(dm_wdata), .done(dm_done), .rdata(dm_rdata));
 
     wire [31:0] ram_rdata; wire ram_ready;
+    wire [31:0] iaddr_next, daddr_next;   // the core's hints (Step 59)
+    wire        dhint_ok;
     generate if (CACHE_EN) begin : g_cache
+`ifdef PIPE_C_BOARD
+        // the board's block-RAM caches (Step 59), on the core's hints
+        icache_b #(.LINES(I_LINES), .LINE_WORDS(LINE_WORDS)) u_icache (
+            .clk(clk), .rst(rst), .addr(iaddr), .req(ireq), .rdata(irdata), .ready(iready),
+            .hint(iaddr_next), .inval(1'b0),
+            .m_req(im_req), .m_addr(im_addr), .m_done(im_done), .m_rdata(im_rdata));
+`else
         icache #(.LINES(I_LINES), .LINE_WORDS(LINE_WORDS)) u_icache (
             .clk(clk), .rst(rst), .addr(iaddr), .req(ireq), .rdata(irdata), .ready(iready), .inval(1'b0),
             .m_req(im_req), .m_addr(im_addr), .m_done(im_done), .m_rdata(im_rdata));
+`endif
         assign im_we = 1'b0; assign im_mask = 4'b0; assign im_wdata = {LW{1'b0}};
 
+`ifdef PIPE_C_BOARD
+        dcache_b #(.LINES(D_LINES), .LINE_WORDS(LINE_WORDS)) u_dcache (
+            .clk(clk), .rst(rst), .addr(daddr), .req(dreq & sel_ram), .we(dwe), .wdata(dwdata),
+            .rdata(ram_rdata), .ready(ram_ready), .hint(daddr_next), .hint_ok(dhint_ok),
+            .clean(1'b0), .clean_done(),
+            .m_req(dm_req), .m_we(dm_we), .m_addr(dm_addr), .m_wdata(dm_wdata),
+            .m_done(dm_done), .m_rdata(dm_rdata));
+`else
         dcache #(.LINES(D_LINES), .LINE_WORDS(LINE_WORDS)) u_dcache (
             .clk(clk), .rst(rst), .addr(daddr), .req(dreq & sel_ram), .we(dwe), .wdata(dwdata),
             .rdata(ram_rdata), .ready(ram_ready), .clean(1'b0), .clean_done(),
             .m_req(dm_req), .m_we(dm_we), .m_addr(dm_addr), .m_wdata(dm_wdata),
             .m_done(dm_done), .m_rdata(dm_rdata));
+`endif
         assign dm_mask = 4'b1111;
 
 `ifndef VERILATOR
+`ifndef PIPE_C_BOARD
         // testbench helper: the CURRENT value of a RAM word. With a
         // write-back cache the newest copy may still be in the cache, not
         // in main memory, so look there first. (Icarus testbenches only:
@@ -134,6 +155,7 @@ module soc_pipe_c #(
                     peek = u_dmem.mem[pa[$clog2(RAM_WORDS)+1:2]];
             end
         endfunction
+`endif
 `endif
     end else begin : g_nocache
         mem_bridge #(.LINE_WORDS(LINE_WORDS)) u_ibridge (

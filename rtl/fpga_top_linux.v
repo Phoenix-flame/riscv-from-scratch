@@ -63,6 +63,9 @@ module fpga_top_linux #(
     parameter FWD_PRE      = 1,                    // forwarding compares registered a cycle early (Step 58)
     parameter IF_PAGE      = 1,                    // fetch through a registered page translation (Step 58)
     parameter HPM_LATE     = 1,                    // hpmcounter3..7 count a cycle late (Step 58)
+    parameter CACHE_BRAM   = 1,                    // 16 + 16 KiB caches in block RAM (Step 59)
+    parameter I_LINES      = 512,
+    parameter D_LINES      = 512,
     parameter [15:0] UART_DIV = 16'd27             // 50 MHz / 16 / 27 = 115,741 baud
 ) (
     input  wire resetn,
@@ -149,7 +152,8 @@ module fpga_top_linux #(
                .DIV_ITER(DIV_ITER), .ZB_EXT(ZB_EXT), .BPRED(BPRED),
                .MUL_2C(MUL_2C), .AGU(AGU), .XLATE_2C(XLATE_2C),
                .VALID_FLUSH(VALID_FLUSH), .REG_REDIRECT(REG_REDIRECT),
-               .FWD_PRE(FWD_PRE), .IF_PAGE(IF_PAGE), .HPM_LATE(HPM_LATE)) u_soc (
+               .FWD_PRE(FWD_PRE), .IF_PAGE(IF_PAGE), .HPM_LATE(HPM_LATE),
+               .CACHE_BRAM(CACHE_BRAM), .I_LINES(I_LINES), .D_LINES(D_LINES)) u_soc (
         .clk(clk), .rst(rst), .uart_rx_pin(uart_rx), .uart_tx_pin(uart_tx),
         .halted(halted), .exit_code(), .warm_reset(),
         .m_axi_awaddr(awaddr), .m_axi_awlen(awlen), .m_axi_awsize(awsize), .m_axi_awburst(awburst),

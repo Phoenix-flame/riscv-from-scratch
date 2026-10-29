@@ -127,7 +127,7 @@ module cpu_mc_s #(
         .instr_is_mret(is_mret & in_exec & ~take_trap),
         .instr_is_sret(is_sret & in_exec & ~take_trap),
         .take_trap(take_trap & in_exec),
-        .trap_cause(trap_cause), .trap_val(trap_val),
+        .trap_cause(trap_cause), .trap_val(trap_val), .trap_val_late(32'd0),
         .trap_vector(trap_vector), .mret_target(mret_target), .sret_target(sret_target),
         .irq_pending(irq_pending), .irq_cause(irq_cause), .deleg_now(),
         .status_sum(), .status_mxr(), .status_vs(), .set_vs_dirty(1'b0),

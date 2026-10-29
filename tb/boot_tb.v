@@ -46,6 +46,7 @@ module boot_tb;
     parameter FWD_PRE = 0;                //                        1 (forwarding compares a cycle early)
     parameter IF_PAGE = 0;                //                        1 (registered fetch-page translation)
     parameter HPM_LATE = 0;               //                        1 (hpm events a cycle late)
+    parameter CACHE_BRAM = 0;             // 1: the block-RAM caches (Step 59)
     parameter I_LINES  = 64;              // cache sizes, in 32-byte lines (2 KiB each)
     parameter D_LINES  = 64;
     localparam [31:0] DDR_BASE = 32'h1000_0000;     // where RAM sits on the AXI side
@@ -72,7 +73,7 @@ module boot_tb;
                .ZB_EXT(ZB_EXT), .BPRED(BPRED), .MUL_2C(MUL_2C), .AGU(AGU),
                .XLATE_2C(XLATE_2C), .VALID_FLUSH(VALID_FLUSH),
                .REG_REDIRECT(REG_REDIRECT), .FWD_PRE(FWD_PRE), .IF_PAGE(IF_PAGE), .HPM_LATE(HPM_LATE),
-               .I_LINES(I_LINES), .D_LINES(D_LINES)) dut (
+               .I_LINES(I_LINES), .D_LINES(D_LINES), .CACHE_BRAM(CACHE_BRAM)) dut (
         .clk(clk), .rst(rst), .uart_rx_pin(rx), .uart_tx_pin(tx),
         .halted(halted), .exit_code(exit_code), .warm_reset(warm_reset),
         .m_axi_awaddr(awaddr), .m_axi_awlen(awlen), .m_axi_awsize(awsize), .m_axi_awburst(awburst),
@@ -244,8 +245,8 @@ module boot_tb;
                  dut.u_core.g_cnt.cnt[4], dut.u_core.g_cnt.cnt[5], dut.u_core.g_cnt.cnt[6],
                  dut.u_core.g_cnt.cnt[7]);
         $display("PROFILE caches: i_hit=%0d i_miss=%0d d_hit=%0d d_miss=%0d d_wb=%0d",
-                 dut.g_cached.u_icache.n_hit, dut.g_cached.u_icache.n_miss,
-                 dut.g_cached.u_dcache.n_hit, dut.g_cached.u_dcache.n_miss, dut.g_cached.u_dcache.n_wb);
+                 dut.g_cached.st_ihit, dut.g_cached.st_imiss,
+                 dut.g_cached.st_dhit, dut.g_cached.st_dmiss, dut.g_cached.st_dwb);
 `endif
         $finish;
     end

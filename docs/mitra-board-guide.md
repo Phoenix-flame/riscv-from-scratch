@@ -17,10 +17,10 @@ and get a busybox shell.
 > exact configuration in simulation. **None of it has run on a real
 > board yet**, and the design hasn't been placed or routed, so whether it
 > meets timing on silicon is unproven. **The bitstream builds with the
-> open flow** (Steps 57–58, `docs/57-fitting-the-board.md`,
-> `docs/58-faster-board-core.md`). The core runs at 50 MHz from the PS's
-> FCLK1, and nextpnr's post-route estimate is 51.5 MHz: a thin 2.9 %
-> margin (section 11 has the fallback). A prebuilt one is in OpenZynq's
+> open flow** (Steps 57–59, `docs/57-fitting-the-board.md`,
+> `docs/58-faster-board-core.md`, `docs/59-block-ram-caches.md`). The core
+> runs at 50 MHz from the PS's FCLK1, and nextpnr's post-route estimate is
+> 58.4 MHz (16.7 % margin). A prebuilt one is in OpenZynq's
 > `projects/riscv_linux/prebuilt/`. Section 11 lists what to watch for. Section 10
 > makes the board boot from its QSPI flash with no PC. Its ROM side is
 > simulated; its FSBL code (PCAP, QSPI) has only run against a model.
@@ -195,17 +195,18 @@ nextpnr applies to every clock: FCLK0 (`aclk`, GP0's registers) runs at
 makes the core misbehave at random rather than fail cleanly. See
 [Troubleshooting](#11-troubleshooting).
 
-**What to expect (Steps 57–58).** Synthesis plus place and route take about
-5 minutes for this design: 35 % of nextpnr's LUT sites, 12 % of its
-flip-flops, and 51.47 MHz for the core clock with `project.mk`'s placement
-seed (`--seed 18`; other seeds give 43.8–51.5 MHz, so keep it unless you
-change the design, then sweep for a new one). To fit and to meet timing,
-the board build has an iterative divider, a registered multiplier, its own
-load/store address adder, a registered D-TLB lookup and branch redirect,
-forwarding compares made a cycle early, a registered fetch-page
-translation, no Zba/Zbb/Zbc/Zbs, no branch predictor, and a 50 MHz core
-clock from the PS's FCLK1, set by the PS program. `docs/57-fitting-the-board.md` and
-`docs/58-faster-board-core.md` have the numbers and the reasons. OpenZynq's `projects/riscv_linux/prebuilt/`
+**What to expect (Steps 57–59).** Synthesis plus place and route take about
+5 minutes for this design: 31 % of nextpnr's LUT sites, 13 % of its
+flip-flops, 16 + 2 block RAMs, and 58.36 MHz for the core clock with
+`project.mk`'s placement seed (`--seed 6`; the nine seeds tried gave
+55.3–58.4 MHz). To fit and to meet timing, the board build has an
+iterative divider, a registered multiplier, its own load/store address
+adder, a registered D-TLB lookup and branch redirect, forwarding compares
+made a cycle early, a registered fetch-page translation, 16 + 16 KiB
+block-RAM caches, no Zba/Zbb/Zbc/Zbs, no branch predictor, and a 50 MHz
+core clock from the PS's FCLK1, set by the PS program.
+`docs/57-fitting-the-board.md`, `docs/58-faster-board-core.md` and
+`docs/59-block-ram-caches.md` have the numbers and the reasons. OpenZynq's `projects/riscv_linux/prebuilt/`
 holds a bitstream built this way (`riscv_linux.bit`) and the U-Boot + Linux
 image (`uboot-linux-board.rvbi`), with checksums. To use the prebuilt
 bitstream instead of building one, see that directory's README.
@@ -324,7 +325,7 @@ rvfs#
 ```
 
 In simulation of this exact configuration, at the board's 50 MHz, the
-shell came up about 7.5 s after reset (375M cycles, including U-Boot's 2 s
+shell came up about 6 s after reset (304M cycles, including U-Boot's 2 s
 countdown). Try:
 
 ```
@@ -556,7 +557,7 @@ riscv_linux: the PS side
 Then JM1 shows the ROM banner and `image in memory at 0x83000000: booting
 it in 1 s`. After about 5 s of checking (240M cycles at 50 MHz) it
 prints `data: … ok`, then U-Boot, its 2-second autoboot, and Linux to
-`rvfs# ` about 7.5 s later. Expect roughly 15 s from power to shell: an
+`rvfs# ` about 6 s later. Expect roughly 13 s from power to shell: an
 estimate from the simulated cycle counts at the board's 50 MHz, plus
 the flash reads.
 
@@ -576,8 +577,8 @@ the flash reads.
 | symptom | likely cause | what to do |
 |---|---|---|
 | `openFPGALoader --detect` finds nothing | USB passthrough or udev | OpenZynq `docs/03-jtag-and-usb.md`; look for IDCODE `0x03722093` |
-| nextpnr reports the core clock (`clk`) below 50 MHz | a changed design with the old seed: placement moves this core between 43.8 and 51.5 MHz (Step 58) | Don't run it as is. Sweep nextpnr's `--seed` and keep the best in `OZ_SEED` (`tools/rvlinux`); `docs/58-faster-board-core.md` has the sweep. |
-| the board runs, then crashes or corrupts data at random | the core too slow for 50 MHz on this chip: the 2.9 % margin is on an estimate | Use the 33.33 MHz build (22 % margin): in OpenZynq, `git checkout 422f1e3 -- projects/riscv_linux` restores its bitstream, ROM and PS program together. A clock of your own needs the PS program's divisor (`fclk1_init` in `ps/main.c`), `PLAT_CLOCK_HZ` and the UART divisor (`BBL_DEFS` in the Makefile) changed together, so the DT, ROM and Linux agree. |
+| nextpnr reports the core clock (`clk`) below 50 MHz | a changed design: placement moves this core by several MHz between seeds (Steps 58–59) | Don't run it as is. Sweep nextpnr's `--seed` and keep the best in `OZ_SEED` (`tools/rvlinux`); `docs/58-faster-board-core.md` has the sweep. |
+| the board runs, then crashes or corrupts data at random | the core too slow for 50 MHz on this chip (the 16.7 % margin is on an estimate), or a fault elsewhere | Try the 33.33 MHz build: in OpenZynq, `git checkout 422f1e3 -- projects/riscv_linux` restores its bitstream, ROM and PS program together. A clock of your own needs the PS program's divisor (`fclk1_init` in `ps/main.c`), `PLAT_CLOCK_HZ` and the UART divisor (`BBL_DEFS` in the Makefile) changed together, so the DT, ROM and Linux agree. |
 | place and route fails to fit or route | too much logic for nextpnr-xilinx: it adds route-through LUTs on top of the ≈88 % that Yosys reports; the array dividers were the first culprit (fixed by `DIV_ITER`, Step 57) | `docs/57-fitting-the-board.md`; next savings: Zba/Zbb/Zbc/Zbs (≈2,000 LUTs, unused by the kernel), the branch predictor, the PLIC with 15 sources |
 | the PS console is silent | the wrong `/dev/ttyUSB*`, not in JTAG boot mode, or `ps7_init` hung in DDR training | identify the CH340 by its driver (section 6); cold power-cycle in JTAG mode; `make run` again |
 | `ps7_init failed: 0x…` | the PS or DDR init failed | run OpenZynq's `make ddr-test` (`docs/11`): it tests DDR with no PL involved |
