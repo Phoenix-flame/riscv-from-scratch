@@ -137,7 +137,7 @@ module ptw #(
 
     always @(posedge clk) begin
         if (rst) begin
-            state <= S_IDLE; side_i <= 1'b0; va <= 32'd0; l0_ppn <= 22'd0; killed <= 1'b0;
+            state <= S_IDLE; side_i <= 1'b0; va <= 32'd0; killed <= 1'b0;
         end else begin
             if (kill & side_i & busy) killed <= 1'b1;
             case (state)
@@ -149,13 +149,18 @@ module ptw #(
                 S_L1: if (noread) state <= REG_RESULT ? S_DONE : S_IDLE;
                       else if (mem_ready) begin
                           if (pte_bad | pte_leaf) state <= REG_RESULT ? S_DONE : S_IDLE;
-                          else begin l0_ppn <= pte[31:10]; state <= S_L0; end
+                          else state <= S_L0;
                       end
                 S_L0: if (noread | mem_ready) state <= REG_RESULT ? S_DONE : S_IDLE;
                 default: state <= S_IDLE;            // S_DONE: the result was reported
             endcase
         end
     end
+    // the level-1 PTE, taken every cycle of S_L1: S_L0 uses it, and S_L1
+    // leaves for S_L0 only at the read that brought it (so the enable does
+    // not wait for the PTE's own decode, Step 62)
+    always @(posedge clk)
+        if (state == S_L1) l0_ppn <= pte[31:10];
 endmodule
 
 `default_nettype wire

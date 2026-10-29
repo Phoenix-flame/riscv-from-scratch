@@ -229,6 +229,7 @@ module dcache_b #(
     reg            stale_q, byp_q;
     reg            lk_q;                         // the last read was for the request now in front
     reg  [TAG-1:0] rtag_q;                       // ... and this is its tag
+    reg  [OFF-3:0] rword_q;                      // ... and word: the select from a register (Step 62)
     // the line as it is now: the read, with the word stored at that edge
     wire [LW-1:0]  line_e  = byp_q ? (line_q & ~({{(LW-32){1'b0}}, 32'hFFFF_FFFF} << (32*wsel_q)))
                                    | ({{(LW-32){1'b0}}, wword_q} << (32*wsel_q))
@@ -240,7 +241,7 @@ module dcache_b #(
     wire           hit     = look_ok & valid_q & (tag_q == rtag_q);
     wire           vdirty  = valid_q & dirty_q;      // the victim must go back
     assign ready      = req & hit & (state == S_IDLE);
-    assign rdata      = line_e[32*word +: 32];
+    assign rdata      = line_e[32*rword_q +: 32];  // (= word whenever ready)
     assign m_wdata    = wbuf;
     assign clean_done = clean & cleaned;
 
@@ -251,13 +252,13 @@ module dcache_b #(
                           use_hint                              ? hint[OFF+IDX-1:OFF] : idx;
 
     // write-hit merge
-    wire [31:0] old_w = line_e[32*word +: 32];
+    wire [31:0] old_w = line_e[32*rword_q +: 32];
     wire [31:0] new_w = { we[3] ? wdata[31:24] : old_w[31:24],
                           we[2] ? wdata[23:16] : old_w[23:16],
                           we[1] ? wdata[15:8]  : old_w[15:8],
                           we[0] ? wdata[7:0]   : old_w[7:0] };
-    wire [LW-1:0] merged = (line_e & ~({{(LW-32){1'b0}}, 32'hFFFF_FFFF} << (32*word)))
-                         | ({{(LW-32){1'b0}}, new_w} << (32*word));
+    wire [LW-1:0] merged = (line_e & ~({{(LW-32){1'b0}}, 32'hFFFF_FFFF} << (32*rword_q)))
+                         | ({{(LW-32){1'b0}}, new_w} << (32*rword_q));
     wire          st_we   = (state == S_IDLE) & req & hit & (|we);   // at ridx_q (= idx)
     wire          fill_we = (state == S_FILL) & m_done;               // at ridx_q (read every edge of S_FILL)
     wire          line_we = st_we | fill_we;
@@ -282,13 +283,14 @@ module dcache_b #(
     always @(posedge clk) begin
         ridx_q  <= ridx;
         rtag_q  <= use_hint ? hint[31:OFF+IDX] : tag;
+        rword_q <= use_hint ? hint[OFF-1:2] : word;
         // the read is the request's: the hint as promised; or the request
         // itself, still waiting (a miss included); never in clean or init
         lk_q    <= !rst && (use_hint || ((state == S_IDLE) ? (req & ~ready) :
                                          (state == S_WB || state == S_FILL)));
         stale_q <= rst | (fill_we & (ridx_q == ridx));
         byp_q   <= st_we & (ridx_q == ridx);
-        wword_q <= new_w; wsel_q <= word;
+        wword_q <= new_w; wsel_q <= rword_q;
     end
 
     reg [31:0] n_hit, n_miss, n_wb;              // statistics
@@ -351,7 +353,7 @@ module dcache_b #(
 `ifndef SYNTHESIS
     // simulation only: a read taken as the request's must be for its line
     always @(posedge clk)
-        if (!rst && req && state == S_IDLE && look_ok && (ridx_q != idx || rtag_q != tag)) begin
+        if (!rst && req && state == S_IDLE && look_ok && (ridx_q != idx || rtag_q != tag || rword_q != word)) begin
             $display("DCACHE_B: the read at %0d/%h is not the request's (%h): a broken hint_ok", ridx_q, rtag_q, addr);
             $finish;
         end
