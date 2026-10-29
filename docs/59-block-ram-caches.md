@@ -1,5 +1,9 @@
 # Step 59 — Block-RAM caches: 16 + 16 KiB, and 50 MHz with margin
 
+> **Followed by Steps 60–62** (`docs/60-branch-predictor.md`,
+> `docs/61-d-page.md`, `docs/62-55mhz.md`): a block-RAM branch predictor,
+> one-cycle loads and stores in the last page, and the board at 55.56 MHz.
+
 Step 58 got the board core to 50 MHz on the best of 18 placement seeds,
 with 2.9 % margin. A profile of the Linux boot then showed where the
 cycles went. Only a quarter of them retired instructions, and half were
