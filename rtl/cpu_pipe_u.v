@@ -477,6 +477,8 @@ module cpu_pipe_u #(
                idex_sfence, idex_lr, idex_sc, idex_rmw, idex_ifault, idex_valid_q,
                idex_sret, idex_pred_taken, idex_fencei, idex_iaf;
     reg [2:0]  idex_bp_info;
+    reg        idex_tgt_ok;            // BPRED = 2: pc + imm is the predicted target (branch, jal)
+    reg [31:0] idex_jx;                //            the base a jalr needs to land on it
     // the wrong-path instruction in EX behind a registered redirect is dead
     wire idex_valid = idex_valid_q & ~rr_valid;
     wire [31:0] opA, opB;               // forwarded operands (EX)
@@ -516,6 +518,7 @@ module cpu_pipe_u #(
             idex_sret<=id_sret; idex_instr<=ifid_instr; idex_fencei<=id_fencei;
             idex_opcode<=opcode; idex_funct7<=funct7; idex_zb<=id_zb; idex_vec<=id_vec;
             idex_pred_taken<=ifid_pred_taken; idex_pred_target<=ifid_pred_target; idex_bp_info<=ifid_bp_info;
+            idex_tgt_ok<=(ifid_pc + imm_id) == ifid_pred_target; idex_jx<=ifid_pred_target - imm_id;
         end
     end
 
@@ -909,9 +912,21 @@ module cpu_pipe_u #(
 
     // ---- check the IF-stage prediction against what EX resolved ----
     wire ex_ctrl   = idex_branch | idex_jump | idex_jalr;
-    wire mispred   = ex_ctrl ? ((ex_taken != idex_pred_taken) |
-                                (ex_taken & (ex_target != idex_pred_target)))
+    // BPRED = 2: the target compare without an adder in front of it, from
+    // what ID worked out: a branch's or jal's target is pc + imm, all known
+    // in ID; a jalr lands on the prediction exactly when rs1 is it minus imm
+    // (an odd rs1 that would also land there only counts as a miss)
+    wire tgt_ok    = (BPRED != 2)  ? (ex_target == idex_pred_target) :
+                     idex_jalr     ? (opA == idex_jx) : idex_tgt_ok;
+    wire mispred   = ex_ctrl ? ((ex_taken != idex_pred_taken) | (ex_taken & ~tgt_ok))
                              : idex_pred_taken;          // "taken" on a non-branch
+`ifndef SYNTHESIS
+    always @(posedge clk)
+        if (BPRED == 2 && !rst && ex_go && ex_ctrl && ex_taken && tgt_ok && ex_target != idex_pred_target) begin
+            $display("BPRED: target compare wrong at pc %h", idex_pc);
+            $finish;
+        end
+`endif
     assign bp_upd_en     = ex_go & ex_ctrl & ~take_trap;
     assign bp_upd_pc     = idex_pc;
     assign bp_upd_taken  = ex_taken;
@@ -1212,11 +1227,14 @@ module cpu_pipe_u #(
     // A walk may only start when MEM is not using the port this cycle, so
     // it never cuts into a transfer; once started, MEM waits for it.
     wire ptw_start_d = (ex_dwalk | v_walk) & ~m_port & ~halt;
-    wire ptw_start_i = if_walk & ~m_port & ~flush & ~halt;
+    // (XLATE_2C: a fetch walk does not start while a load / store is in EX,
+    //  so the D-port promise below need not wait for the fetch side)
+    wire ptw_start_i = if_walk & ~m_port & ~flush & ~halt &
+                       ~((XLATE_2C != 0) & idex_valid & (idex_mem_read | idex_mem_write));
     // the D-port hint is a promise when the load / store in EX moves to MEM
-    // and no walk holds or takes the port: MEM asks at exactly xl_epa
+    // and no walk holds or takes the port: MEM asks at exactly ex_pa
     assign d_hint_ok = (XLATE_2C != 0) & ex_keep & (idex_mem_read | idex_mem_write) &
-                       ~ptw_busy & ~ptw_start_d & ~ptw_start_i;
+                       ~ptw_busy & ~ptw_start_d;
     generate if (MMU) begin : g_ptw
         ptw #(.SVADE(SVADE), .LATE_KILL(XLATE_2C), .REG_RESULT(XLATE_2C)) u_ptw (
             .clk(clk), .rst(rst), .satp(satp_val),
