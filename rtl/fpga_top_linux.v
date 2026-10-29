@@ -11,7 +11,7 @@
 //
 // The PS7 is OpenZynq's ps7_gp0 (rtl/ps7_gp0.v there) with HP0_ENABLE = 1.
 // The RISC-V and HP0 run on one clock, so the data path crosses no clock
-// domain: FCLK1, which the PS program sets to IO PLL / 20 = 50 MHz
+// domain: FCLK1, which the PS program sets to IO PLL / 18 = 55.56 MHz
 // (Step 58; Step 57 ran it at 11.11 MHz). nextpnr-xilinx puts this core at
 // 43-51 MHz after routing depending on the placement seed, so the build
 // keeps a seed that passes 50 (OpenZynq's project.mk). Divisor 27 is
@@ -67,7 +67,7 @@ module fpga_top_linux #(
     parameter CACHE_BRAM   = 1,                    // 16 + 16 KiB caches in block RAM (Step 59)
     parameter I_LINES      = 512,
     parameter D_LINES      = 512,
-    parameter [15:0] UART_DIV = 16'd27             // 50 MHz / 16 / 27 = 115,741 baud
+    parameter [15:0] UART_DIV = 16'd30             // 55.56 MHz / 16 / 30 = 115,741 baud
 ) (
     input  wire resetn,
     input  wire uart_rx,
@@ -144,7 +144,7 @@ module fpga_top_linux #(
     always @(posedge clk) rs <= {rs[1:0], ~resetn | ~run | ~hp_aresetn};
     wire rst = rs[2];
 
-    reg [25:0] beat = 26'd0;                      // 2^25 / 50 MHz: 0.67 s
+    reg [25:0] beat = 26'd0;                      // 2^25 / 55.56 MHz: 0.60 s
     always @(posedge clk) beat <= beat + 26'd1;
     assign led2 = beat[25] & ~rst;
 

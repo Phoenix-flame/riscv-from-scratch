@@ -786,10 +786,21 @@ module cpu_pipe_u #(
     wire exc_sys   = idex_ifault | ex_illegal | idex_ecall | idex_ebreak | v_fault_now;
     wire irq_sys   = irq_pending & ~exc_sys & ~idex_is_mret & ~idex_sret & ~idex_is_csr &
                      ~(idex_vec & (v_busy | v_done));
-    wire mret_ex   = ex_go & idex_is_mret & ~exc_sys;
-    wire sret_ex   = ex_go & idex_sret    & ~exc_sys;
-    wire csr_commit= ex_go & idex_is_csr  & ~exc_sys;
-    wire sfence_ex = ex_go & idex_sfence  & ~(exc_sys | irq_sys);
+    // ... and none of them ever holds EX (no walk, divide, multiply or
+    // second lookup cycle is theirs), so with XLATE_2C their commits wait
+    // only for freeze, not for ex_hold and the walker state behind it
+    wire sys_go    = (XLATE_2C != 0) ? (idex_valid & ~freeze) : ex_go;
+    wire mret_ex   = sys_go & idex_is_mret & ~exc_sys;
+    wire sret_ex   = sys_go & idex_sret    & ~exc_sys;
+    wire csr_commit= sys_go & idex_is_csr  & ~exc_sys;
+    wire sfence_ex = sys_go & idex_sfence  & ~(exc_sys | irq_sys);
+`ifndef SYNTHESIS
+    always @(posedge clk)
+        if (!rst && idex_valid && (idex_is_mret | idex_sret | idex_is_csr | idex_sfence) && ex_hold) begin
+            $display("a SYSTEM instruction held EX at pc %h", idex_pc);
+            $finish;
+        end
+`endif
     // IF_PAGE: drop the registered page translation whenever its answer may
     // have changed; else, off the page, register a finished lookup
     // (the copy itself loads regardless: only valid looks at the late drop)

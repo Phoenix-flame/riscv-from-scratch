@@ -6,7 +6,7 @@
 // fpga_top_linux with OpenZynq's ps7_gp0 and tb/ps7_hp0_model.v standing
 // in for the PS: the RISC-V's RAM is the model's DDR, over S_AXI_HP0. The
 // bench is the USB-serial adapter on JM1, at 115200 baud from the core's
-// 50 MHz FCLK1 (432 clocks a bit; Step 58). At each "boot> " it sends the next chunk of the stream
+// 55.56 MHz FCLK1 (480 clocks a bit; Step 62). At each "boot> " it sends the next chunk of the stream
 // (4-byte length + bytes, as tools/rvboot writes it): a corrupted image,
 // then libc_demo, which runs from DDR and powers the machine off.
 //
@@ -20,8 +20,8 @@
 // +ROM= and +STREAM= override them.
 // =====================================================================
 module fpga_top_linux_tb;
-    localparam CPB = 16 * 27;
-    wire clk = dut.clk;                             // FCLK1 from the PS model: 50 MHz
+    localparam CPB = 16 * 30;
+    wire clk = dut.clk;                             // FCLK1 from the PS model
 
     reg  rx = 1'b1;
     wire tx, led, led2;

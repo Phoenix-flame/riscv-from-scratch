@@ -469,11 +469,11 @@ $(BBB)/rom.hex: sw/boot/rom_start.S sw/boot/rom_main.c sw/boot/rom_sbi.c sw/boot
 	riscv64-unknown-elf-objcopy -O binary $(BBB)/rom.elf $(BBB)/rom.bin
 	python3 sw/bin2hex.py $(BBB)/rom.bin > $@
 
-# The Linux board build (Steps 57, 58): fpga_top_linux runs on the PS's FCLK1
-# at IO PLL / 20 = 50 MHz (divisor 27 is 115200 baud within 0.5 %) and has no
+# The Linux board build (Steps 57, 58, 62): fpga_top_linux runs on the PS's FCLK1
+# at IO PLL / 18 = 55.56 MHz (divisor 30 is 115200 baud within 0.5 %) and has no
 # Zba/Zbb/Zbc/Zbs, so its ROM and DT say both. (fpga_top_boot keeps $(BBB).)
 BBL = $(BB)/linux-board
-BBL_DEFS = -DPLAT_CLOCK_HZ=50000000 -DUART_DIVISOR=27 -DPLAT_NO_ZB
+BBL_DEFS = -DPLAT_CLOCK_HZ=55555556 -DUART_DIVISOR=30 -DPLAT_NO_ZB
 $(shell mkdir -p $(BBL))
 $(BBL)/rvfs-soc.dtb: sw/boot/rvfs-soc.dts sw/boot/platform.h
 	cpp -nostdinc -undef -x assembler-with-cpp $(BBL_DEFS) -I sw/boot $< | dtc -q -I dts -O dtb -o $@ -
