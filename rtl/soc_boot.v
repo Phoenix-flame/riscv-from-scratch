@@ -80,6 +80,7 @@ module soc_boot #(
     parameter REG_REDIRECT = 0,           // 1: a mispredicted branch redirects a cycle later (Step 58)
     parameter FWD_PRE      = 0,           // 1: forwarding compares registered a cycle early (Step 58)
     parameter IF_PAGE      = 0,           // 1: fetch through a registered page translation (Step 58)
+    parameter D_PAGE       = 0,           // 1: same-page loads/stores skip the lookup cycle (Step 61)
     parameter HPM_LATE     = 0,           // 1: hpmcounter3..7 count a cycle late (Step 58)
     parameter CACHE_BRAM   = 0            // 1: the caches' arrays in block RAM, read a cycle ahead (Step 59)
 ) (
@@ -149,7 +150,7 @@ module soc_boot #(
     wire [31:0] iaddr_next, daddr_next;   // the core's guesses at the next addresses
     wire        dhint_ok;                 // ... the D one a promise
     cpu_pipe_u #(.RESET_PC(ROM_BASE), .TLB_ENTRIES(TLB_ENTRIES), .BPRED(BPRED),
-                 .V_EXT(V_EXT), .SVADE(SVADE), .DIV_ITER(DIV_ITER), .MUL_2C(MUL_2C), .AGU(AGU), .XLATE_2C(XLATE_2C), .VALID_FLUSH(VALID_FLUSH), .REG_REDIRECT(REG_REDIRECT), .FWD_PRE(FWD_PRE), .IF_PAGE(IF_PAGE), .HPM_LATE(HPM_LATE),
+                 .V_EXT(V_EXT), .SVADE(SVADE), .DIV_ITER(DIV_ITER), .MUL_2C(MUL_2C), .AGU(AGU), .XLATE_2C(XLATE_2C), .VALID_FLUSH(VALID_FLUSH), .REG_REDIRECT(REG_REDIRECT), .FWD_PRE(FWD_PRE), .IF_PAGE(IF_PAGE), .D_PAGE(D_PAGE), .HPM_LATE(HPM_LATE),
                  .ZBA(ZB_EXT), .ZBB(ZB_EXT), .ZBC(ZB_EXT), .ZBS(ZB_EXT), .PMA_N(6), .PMA_BASE(PMA_BASE),
                  .PMA_SIZE(PMA_SIZE), .PMA_ATTR(PMA_ATTR)) u_core (
         .clk(clk), .rst(sys_rst), .timer_irq(timer_irq), .mtime(mtime),

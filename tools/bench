@@ -68,7 +68,7 @@ SW = {
 # ---------------------------------------------------------------------
 # Hardware configurations (tb/bench_tb.v parameters).
 # ---------------------------------------------------------------------
-RTL_CORE = ["alu", "regfile", "immgen", "control", "csr_s", "branch_predictor", "timer",
+RTL_CORE = ["alu", "regfile", "immgen", "control", "csr_s", "branch_predictor", "bpred_b", "timer",
             "uart_tx", "uart_hw", "tlb", "ptw", "zb_unit", "vec_unit", "cpu_pipe_u"]
 HW = {
     "ideal":      dict(desc="ideal 1-cycle memory, BTB + 2-bit predictor",
@@ -83,13 +83,13 @@ HW = {
                        soc="soc_pipe_c", params=dict(LAT=40, I_LINES=128, D_LINES=128)),
     "c1k-l40":    dict(desc="1+1 KiB caches, memory latency 40",
                        soc="soc_pipe_c", params=dict(LAT=40, I_LINES=32, D_LINES=32)),
-    # the Linux board's core (Steps 57-58): no predictor, every timing option
+    # the Linux board's core (Steps 57-60): every timing option
     "brd-ideal":  dict(desc="board core, ideal 1-cycle memory",
                        soc="soc_pipe_u", params=dict(), defines=["PIPE_U_BOARD"]),
     "brd-c16k-l40": dict(desc="board core, 16+16 KiB block-RAM caches, memory latency 40 (as on the board)",
-                         soc="soc_pipe_c", params=dict(LAT=40, I_LINES=512, D_LINES=512, BPRED=0),
+                         soc="soc_pipe_c", params=dict(LAT=40, I_LINES=512, D_LINES=512, BPRED=2),
                          defines=["PIPE_C_BOARD"]),
-    "brd-c2k-l40": dict(desc="board core, 2+2 KiB caches (Step 58's size), memory latency 40",
+    "brd-c2k-l40": dict(desc="board core as in Step 58: 2+2 KiB caches, no predictor, memory latency 40",
                         soc="soc_pipe_c", params=dict(LAT=40, I_LINES=64, D_LINES=64, BPRED=0),
                         defines=["PIPE_C_BOARD"]),
 }

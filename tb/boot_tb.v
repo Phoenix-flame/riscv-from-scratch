@@ -45,6 +45,7 @@ module boot_tb;
     parameter REG_REDIRECT = 0;           //                        1 (registered branch redirect)
     parameter FWD_PRE = 0;                //                        1 (forwarding compares a cycle early)
     parameter IF_PAGE = 0;                //                        1 (registered fetch-page translation)
+    parameter D_PAGE = 0;                 //                        1 (same-page loads/stores: one EX cycle)
     parameter HPM_LATE = 0;               //                        1 (hpm events a cycle late)
     parameter CACHE_BRAM = 0;             // 1: the block-RAM caches (Step 59)
     parameter I_LINES  = 64;              // cache sizes, in 32-byte lines (2 KiB each)
@@ -72,7 +73,7 @@ module boot_tb;
                .AXI_DATA_W(AXI_DATA_W), .DIV_ITER(DIV_ITER),
                .ZB_EXT(ZB_EXT), .BPRED(BPRED), .MUL_2C(MUL_2C), .AGU(AGU),
                .XLATE_2C(XLATE_2C), .VALID_FLUSH(VALID_FLUSH),
-               .REG_REDIRECT(REG_REDIRECT), .FWD_PRE(FWD_PRE), .IF_PAGE(IF_PAGE), .HPM_LATE(HPM_LATE),
+               .REG_REDIRECT(REG_REDIRECT), .FWD_PRE(FWD_PRE), .IF_PAGE(IF_PAGE), .D_PAGE(D_PAGE), .HPM_LATE(HPM_LATE),
                .I_LINES(I_LINES), .D_LINES(D_LINES), .CACHE_BRAM(CACHE_BRAM)) dut (
         .clk(clk), .rst(rst), .uart_rx_pin(rx), .uart_tx_pin(tx),
         .halted(halted), .exit_code(exit_code), .warm_reset(warm_reset),

@@ -57,7 +57,7 @@ SEG = struct.Struct("<III")             # struct rvbi_seg
 # must match sw/boot/platform.h
 PAYLOAD_BASE = 0x80004000
 
-RTL = ["alu", "regfile", "immgen", "control", "csr_s", "branch_predictor", "tlb", "ptw",
+RTL = ["alu", "regfile", "immgen", "control", "csr_s", "branch_predictor", "bpred_b", "tlb", "ptw",
        "zb_unit", "vec_unit", "cpu_pipe_u", "uart_tx_cfg", "uart_rx", "uart16550",
        "clint_sifive", "plic_sifive", "icache", "dcache", "line_arb",
        "oz/oz_burst_mem", "axi4_line_master", "soc_boot"]
@@ -177,7 +177,7 @@ MEMSYS = {
     # divisor 27, no Zb* in the DT), PS DDR through S_AXI_HP0, and the core
     # fpga_top_linux has: the iterative divider, no Zb*, no branch predictor
     "board-ddr": dict(memsys=2, ram_words=1 << 24, axi_data_w=64, divisor=27,
-                      div_iter=1, zb=0, bpred=0, mul_2c=1, agu=1, xlate_2c=1, valid_flush=1, reg_redirect=1, fwd_pre=1, if_page=1, hpm_late=1, cache_bram=1, i_lines=512, d_lines=512,
+                      div_iter=1, zb=0, bpred=2, mul_2c=1, agu=1, xlate_2c=1, valid_flush=1, reg_redirect=1, fwd_pre=1, if_page=1, d_page=1, hpm_late=1, cache_bram=1, i_lines=512, d_lines=512,
                       rom="linux-board/rom.hex", short=True,
                       desc="the Linux board build: caches + 64 MiB of DDR over HP0, 115200 baud "
                            "from 50 MHz, the board's core"),
@@ -200,6 +200,7 @@ def build_sim(sim, variant):
     rr = v.get("reg_redirect", 0)
     fp = v.get("fwd_pre", 0)
     ip = v.get("if_page", 0)
+    dpg = v.get("d_page", 0)
     hl = v.get("hpm_late", 0)
     cb = v.get("cache_bram", 0)
     il = v.get("i_lines", 64)
@@ -214,7 +215,7 @@ def build_sim(sim, variant):
                f"-GMEMSYS={v['memsys']}", f"-GRAM_WORDS={v['ram_words']}", f"-GDIVISOR={div}",
                f"-GAXI_DATA_W={axw}", f"-GDIV_ITER={dit}", f"-GZB_EXT={zb}", f"-GBPRED={bp}",
                f"-GMUL_2C={m2}", f"-GAGU={ag}", f"-GXLATE_2C={x2}", f"-GVALID_FLUSH={vf}",
-               f"-GREG_REDIRECT={rr}", f"-GFWD_PRE={fp}", f"-GIF_PAGE={ip}", f"-GHPM_LATE={hl}",
+               f"-GREG_REDIRECT={rr}", f"-GFWD_PRE={fp}", f"-GIF_PAGE={ip}", f"-GD_PAGE={dpg}", f"-GHPM_LATE={hl}",
                f"-GCACHE_BRAM={cb}", f"-GI_LINES={il}", f"-GD_LINES={dl}"]
               + extra + files, "verilator")
         return [str(obj / "boot_tb")]
@@ -225,7 +226,7 @@ def build_sim(sim, variant):
            f"-Pboot_tb.ZB_EXT={zb}", f"-Pboot_tb.BPRED={bp}",
            f"-Pboot_tb.MUL_2C={m2}", f"-Pboot_tb.AGU={ag}", f"-Pboot_tb.XLATE_2C={x2}",
            f"-Pboot_tb.VALID_FLUSH={vf}",
-           f"-Pboot_tb.REG_REDIRECT={rr}", f"-Pboot_tb.FWD_PRE={fp}", f"-Pboot_tb.IF_PAGE={ip}", f"-Pboot_tb.HPM_LATE={hl}",
+           f"-Pboot_tb.REG_REDIRECT={rr}", f"-Pboot_tb.FWD_PRE={fp}", f"-Pboot_tb.IF_PAGE={ip}", f"-Pboot_tb.D_PAGE={dpg}", f"-Pboot_tb.HPM_LATE={hl}",
            f"-Pboot_tb.CACHE_BRAM={cb}", f"-Pboot_tb.I_LINES={il}", f"-Pboot_tb.D_LINES={dl}"]
           + files, "iverilog")
     return ["vvp", "-n", str(vvp)]

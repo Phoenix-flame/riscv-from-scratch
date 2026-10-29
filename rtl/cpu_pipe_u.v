@@ -103,8 +103,10 @@
 module cpu_pipe_u #(
     parameter RESET_PC    = 32'h0,
     parameter TLB_ENTRIES = 4,        // per TLB
-    parameter BPRED       = 1,        // 1 = BTB + 2-bit predictor, 0 = not-taken
-    parameter BP_IDX_BITS = 6,        // predictor tables: 2**BP_IDX_BITS entries
+    parameter BPRED       = 1,        // 1 = BTB + 2-bit predictor, 0 = not-taken, 2 = the same in
+                                      //   block RAM, read a cycle ahead (Step 60, bpred_b.v)
+    parameter BP_IDX_BITS = 6,        // predictor tables: 2**BP_IDX_BITS entries (BPRED = 1)
+    parameter BP_B_IDX    = 9,        // BPRED = 2: 2**BP_B_IDX entries
     parameter M_EXT       = 1,        // RV32M multiply/divide
     parameter DIV_ITER    = 0,        // 1: divide/remainder in a 32-cycle unit (div_iter.v) instead of
                                       //    array dividers in the ALU -- small, and EX holds meanwhile (Step 57)
@@ -122,6 +124,8 @@ module cpu_pipe_u #(
                                       //    the next cycle's rd/rs; EX only ANDs them with reg_write (Step 58)
     parameter IF_PAGE     = 0,        // 1: fetch translates through a registered copy of the current page's
                                       //    translation; a new page costs one cycle to look up (Step 58)
+    parameter D_PAGE      = 0,        // 1 (with XLATE_2C): a load/store in the page of the last one skips
+                                      //   the lookup cycle, translated by a registered copy (Step 61)
     parameter HPM_LATE    = 0,        // 1: hpmcounter3..7 count their event a cycle late, from a register
                                       //    (mcycle / minstret stay exact) (Step 58)
     parameter A_EXT       = 1,        // RV32A atomics
@@ -315,14 +319,27 @@ module cpu_pipe_u #(
 
     reg [31:0] ifid_pc, ifid_instr, ifid_pred_target;
     reg        ifid_valid, ifid_ifault, ifid_iaf, ifid_pred_taken;
+    reg [2:0]  ifid_bp_info;
     wire       front_hold = ex_hold | load_use;
 
-    // ---- branch prediction (combinational on the IF PC) ----
+    // ---- branch prediction (combinational on the IF PC; BPRED = 2: read
+    //      at the edge before, at the PC's next value) ----
     wire        bp_taken;
     wire [31:0] bp_target;
+    wire [2:0]  bp_info;
     wire        bp_upd_en, bp_upd_taken, bp_upd_jump;
     wire [31:0] bp_upd_pc, bp_upd_target;
-    generate if (BPRED) begin : g_bp
+    wire [2:0]  bp_upd_info;
+    wire [31:0] pc_d;
+    generate if (BPRED == 2) begin : g_bpb
+        bpred_b #(.IDX_BITS(BP_B_IDX)) u_bp (
+            .clk(clk), .rst(rst),
+            .rd_pc(pc_d), .pc(pc), .taken(bp_taken), .target(bp_target), .info(bp_info),
+            .upd_en(bp_upd_en), .upd_pc(bp_upd_pc), .upd_taken(bp_upd_taken),
+            .upd_is_jump(bp_upd_jump), .upd_target(bp_upd_target), .upd_info(bp_upd_info)
+        );
+    end else if (BPRED) begin : g_bp
+        assign bp_info = 3'd0;
         branch_predictor #(.IDX_BITS(BP_IDX_BITS)) u_bp (
             .clk(clk), .rst(rst),
             .pc_if(pc), .predict_taken(bp_taken), .predict_target(bp_target),
@@ -330,11 +347,11 @@ module cpu_pipe_u #(
             .upd_is_jump(bp_upd_jump), .upd_target(bp_upd_target)
         );
     end else begin : g_nobp
-        assign bp_taken = 1'b0; assign bp_target = 32'd0;
+        assign bp_taken = 1'b0; assign bp_target = 32'd0; assign bp_info = 3'd0;
     end endgenerate
     wire [31:0] pc_next = bp_taken ? bp_target : pc + 32'd4;
 
-    wire [31:0] pc_d = freeze              ? pc       :
+    assign      pc_d = freeze              ? pc       :
                        flush               ? flush_pc :
                        (front_hold | ~if_ok) ? pc     : pc_next;
     always @(posedge clk)
@@ -346,7 +363,7 @@ module cpu_pipe_u #(
     always @(posedge clk) begin
         if (rst || (VALID_FLUSH == 0 && flush && !freeze)) begin
             ifid_instr <= NOP; ifid_pc <= 32'd0; ifid_valid <= 1'b0; ifid_ifault <= 1'b0;
-            ifid_iaf <= 1'b0; ifid_pred_taken <= 1'b0; ifid_pred_target <= 32'd0;
+            ifid_iaf <= 1'b0; ifid_pred_taken <= 1'b0; ifid_pred_target <= 32'd0; ifid_bp_info <= 3'd0;
         end else begin
             // (with VALID_FLUSH = 0 a flush took the branch above, so here it
             //  only ever comes with freeze; with 1 the fields below don't
@@ -358,7 +375,7 @@ module cpu_pipe_u #(
                 ifid_pc     <= pc;
                 ifid_valid  <= 1'b1;
                 ifid_ifault <= if_fault; ifid_iaf <= if_afault;
-                ifid_pred_taken <= bp_taken; ifid_pred_target <= bp_target;
+                ifid_pred_taken <= bp_taken; ifid_pred_target <= bp_target; ifid_bp_info <= bp_info;
             end else begin                                // I-port busy: bubble
                 ifid_instr <= NOP; ifid_valid <= 1'b0; ifid_ifault <= 1'b0; ifid_iaf <= 1'b0;
                 ifid_pred_taken <= 1'b0;
@@ -459,6 +476,7 @@ module cpu_pipe_u #(
                idex_is_csr, idex_is_mret, idex_ecall, idex_ebreak, idex_illegal,
                idex_sfence, idex_lr, idex_sc, idex_rmw, idex_ifault, idex_valid_q,
                idex_sret, idex_pred_taken, idex_fencei, idex_iaf;
+    reg [2:0]  idex_bp_info;
     // the wrong-path instruction in EX behind a registered redirect is dead
     wire idex_valid = idex_valid_q & ~rr_valid;
     wire [31:0] opA, opB;               // forwarded operands (EX)
@@ -475,7 +493,7 @@ module cpu_pipe_u #(
             idex_illegal<=0; idex_csr_addr<=0; idex_sfence<=0; idex_amo_f5<=0;
             idex_lr<=0; idex_sc<=0; idex_rmw<=0; idex_ifault<=0; idex_valid_q<=0;
             idex_opcode<=0; idex_funct7<=0; idex_zb<=0; idex_vec<=0;
-            idex_sret<=0; idex_instr<=0; idex_pred_taken<=0; idex_pred_target<=0;
+            idex_sret<=0; idex_instr<=0; idex_pred_taken<=0; idex_pred_target<=0; idex_bp_info<=0;
             idex_fencei<=0; idex_iaf<=0;
         end else if (freeze || ex_hold) begin
             // hold, but keep the operands current: a producer that leaves
@@ -497,7 +515,7 @@ module cpu_pipe_u #(
             idex_ifault<=ifid_ifault; idex_iaf<=ifid_iaf; idex_valid_q<=ifid_valid & ~((VALID_FLUSH != 0) & idex_kill);
             idex_sret<=id_sret; idex_instr<=ifid_instr; idex_fencei<=id_fencei;
             idex_opcode<=opcode; idex_funct7<=funct7; idex_zb<=id_zb; idex_vec<=id_vec;
-            idex_pred_taken<=ifid_pred_taken; idex_pred_target<=ifid_pred_target;
+            idex_pred_taken<=ifid_pred_taken; idex_pred_target<=ifid_pred_target; idex_bp_info<=ifid_bp_info;
         end
     end
 
@@ -609,9 +627,15 @@ module cpu_pipe_u #(
     reg  [31:0] xl_va, xl_pa, xl_epa;   // the TLB's PA; the PA the access uses
     reg  [3:0]  xl_perm;
     reg  [2:0]  xl_pma;                 // pma() of xl_epa
-    wire        xl_wait  = (XLATE_2C != 0) & ex_mem & ~xl_have;      // in ex_hold below
-    wire        ex_mem_d = ex_mem & ((XLATE_2C == 0) | xl_have);      // decisions may be made
-    wire [31:0] ex_va    = XLATE_2C ? xl_va : ex_va_live;
+    reg         pg_q;                   // D_PAGE: this one was translated in ID (pg_*)
+    reg  [31:0] pg_va;
+    reg  [19:0] pg_ppn;
+    reg  [3:0]  pg_perm;
+    reg  [2:0]  pg_pma;
+    wire        pg_on    = (D_PAGE != 0) & (XLATE_2C != 0) & pg_q;
+    wire        xl_wait  = (XLATE_2C != 0) & ex_mem & ~xl_have & ~pg_on;      // in ex_hold below
+    wire        ex_mem_d = ex_mem & ((XLATE_2C == 0) | xl_have | pg_on);      // decisions may be made
+    wire [31:0] ex_va    = XLATE_2C ? (pg_on ? pg_va : xl_va) : ex_va_live;
     wire        need_r   = (idex_mem_read & ~idex_sc) ;     // load, LR, AMO
     wire        need_w   = idex_mem_write | idex_sc | idex_rmw;
     // misaligned (Step 52): halfword on an odd address, word / atomic off
@@ -653,13 +677,13 @@ module cpu_pipe_u #(
         assign dtlb_hit = 1'b0; assign dtlb_pa = dtlb_va; assign dtlb_perm = 4'b0;
     end endgenerate
     // what the decisions below see: the lookup now, or the registered one
-    wire        d_hit  = XLATE_2C ? xl_hit  : dtlb_hit;
+    wire        d_hit  = XLATE_2C ? (pg_on | xl_hit) : dtlb_hit;
     wire [31:0] d_pa   = XLATE_2C ? xl_pa   : dtlb_pa;
-    wire [3:0]  d_perm = XLATE_2C ? xl_perm : dtlb_perm;
+    wire [3:0]  d_perm = XLATE_2C ? (pg_on ? pg_perm : xl_perm) : dtlb_perm;
     always @(posedge clk)
         if (rst || ex_go || !idex_valid || ptw_fill || tlb_flush_all || tlb_flush_one)
             xl_have <= 1'b0;
-        else if (XLATE_2C && ex_mem && !xl_have && !freeze)
+        else if (XLATE_2C && ex_mem && !xl_have && !pg_on && !freeze)
             xl_have <= 1'b1;
     // the lookup itself is taken every cycle until xl_have holds it, so its
     // enable never waits for freeze (the value xl_have keeps is the same)
@@ -691,10 +715,10 @@ module cpu_pipe_u #(
     wire perm_ok       = user_ok & (~need_r | readable) & (~need_w | d_perm[1]);
     wire ex_dfault     = ex_xlate & (d_hit ? ~perm_ok : ex_wres_fault);
     wire ex_dwalk      = ex_xlate & ~d_hit & ~ex_wres_fault;
-    wire [31:0] ex_pa  = XLATE_2C ? xl_epa : ex_xlate ? d_pa : ex_va;
+    wire [31:0] ex_pa  = XLATE_2C ? (pg_on ? {pg_ppn, pg_va[11:0]} : xl_epa) : ex_xlate ? d_pa : ex_va;
     // access faults: the walk could not read a PTE, or the physical address
     // does not allow the access (loads need R; stores, SC and AMOs need W)
-    wire [2:0]  ex_pma = XLATE_2C ? xl_pma : pma(ex_pa);
+    wire [2:0]  ex_pma = XLATE_2C ? (pg_on ? pg_pma : xl_pma) : pma(ex_pa);
     wire ex_daf_walk   = ex_dfault & ~d_hit & wres_af;
     wire ex_daf_pma    = ex_mem_d & ~ex_misal & ~ex_dfault & ~ex_dwalk &
                          ((need_r & ~ex_pma[0]) | (need_w & ~ex_pma[1]));
@@ -766,6 +790,55 @@ module cpu_pipe_u #(
     // IF_PAGE: drop the registered page translation whenever its answer may
     // have changed; else, off the page, register a finished lookup
     // (the copy itself loads regardless: only valid looks at the late drop)
+    // D_PAGE (Step 61): the page of the last load / store (dp_*), as
+    // XLATE_2C's cycle A translated it. A load or store whose base register
+    // needs no forwarding has its exact address in ID already (the register
+    // file's value + the immediate); if that is in the same page, its
+    // translation is taken from the copy there, registered with it (pg_*),
+    // and it spends one cycle in EX instead of two. The source is the
+    // lookup finishing in EX this cycle if there is one, else dp_*. Both
+    // are dropped on whatever can change a translation's answer (a CSR
+    // write, a trap, mret / sret, sfence.vma). The region check is done in
+    // ID too, on the full address (regions can be smaller than a page).
+    reg         dp_valid;
+    reg  [19:0] dp_vpn, dp_ppn;
+    reg  [3:0]  dp_perm;
+    wire        pg_inval = csr_commit | take_trap | mret_ex | sret_ex | sfence_ex;
+    wire        dp_we    = (D_PAGE != 0) & (XLATE_2C != 0) & xl_have & ex_mem & ~ex_misal &
+                           (xl_hit | ~vm_on);
+    wire [19:0] s_vpn    = dp_we ? xl_va[31:12]  : dp_vpn;
+    wire [19:0] s_ppn    = dp_we ? xl_epa[31:12] : dp_ppn;
+    wire [3:0]  s_perm   = dp_we ? xl_perm       : dp_perm;
+    wire [31:0] id_va    = rs1_data_id + imm_id;
+    wire        id_ldst  = (c_mem_read | c_mem_write) & ~id_is_amo & ~id_vec;
+    wire        id_misal = (funct3_id[1:0] == 2'b01) ? id_va[0] :
+                           (funct3_id[1:0] == 2'b10) ? (id_va[1:0] != 2'b00) : 1'b0;
+    // the base is exact in ID unless the instruction in EX or MEM writes it
+    wire        id_fwd   = (rs1_id != 5'd0) & ((rs1_id == idex_rd) | (rs1_id == exmem_rd));
+    wire        id_pg    = (dp_we | dp_valid) & id_ldst & ~id_misal & ~id_fwd & (id_va[31:12] == s_vpn);
+    always @(posedge clk) begin
+        if (rst || pg_inval)  dp_valid <= 1'b0;
+        else if (dp_we)       dp_valid <= 1'b1;
+        if (dp_we) begin dp_vpn <= xl_va[31:12]; dp_ppn <= xl_epa[31:12]; dp_perm <= xl_perm; end
+        // with ID/EX: load, or hold
+        if (rst)                         pg_q <= 1'b0;
+        else if (!freeze && !ex_hold)    pg_q <= (D_PAGE != 0) & id_pg & ~pg_inval;
+        if (!freeze && !ex_hold) begin
+            pg_va <= id_va; pg_ppn <= s_ppn; pg_perm <= s_perm; pg_pma <= pma({s_ppn, id_va[11:0]});
+        end
+    end
+`ifndef SYNTHESIS
+    // simulation only: a load / store translated in ID must have the address
+    // EX computes, and the translation the D-TLB gives now (if it still holds it)
+    always @(posedge clk)
+        if (!rst && ex_go && ex_mem && pg_on &&
+            (pg_va != ex_va_live || (vm_on && dtlb_hit && (dtlb_pa[31:12] != pg_ppn || dtlb_perm != pg_perm)) ||
+             (!vm_on && pg_ppn != pg_va[31:12]) || pg_pma != pma(ex_pa))) begin
+            $display("D_PAGE: the translation made in ID is wrong at pc %h (va %h, EX %h)", idex_pc, pg_va, ex_va_live);
+            $finish;
+        end
+`endif
+
     wire ip_load = IF_PAGE && !ip_hit && !if_walk_l;
     always @(posedge clk) begin
         if (rst || csr_commit || take_trap || mret_ex || sret_ex || sfence_ex || ptw_fill || ptw_fault)
@@ -844,6 +917,7 @@ module cpu_pipe_u #(
     assign bp_upd_taken  = ex_taken;
     assign bp_upd_jump   = idex_jump | idex_jalr;
     assign bp_upd_target = ex_target;
+    assign bp_upd_info   = idex_bp_info;
 
     // fence.i: refetch everything younger (its pc4 is the not-taken target)
     wire br_late = (REG_REDIRECT != 0) & ex_go & mispred & ~take_trap;
@@ -1073,7 +1147,7 @@ module cpu_pipe_u #(
     assign d_addr  = ptw_busy ? ptw_addr : v_mem_active ? v_pa : exmem_addr;
     // the next D-port address: the load / store in EX, about to enter MEM
     // (a walk, the vector unit or an AMO's second half guess wrong -- a cycle)
-    assign d_addr_next = XLATE_2C ? xl_epa : ex_pa;
+    assign d_addr_next = ex_pa;          // (XLATE_2C: from registers)
     wire [2:0] ptw_pma = pma(ptw_addr);
     wire   ptw_mem_ok = ptw_pma[0];
     assign d_req   = (ptw_req & ptw_mem_ok) | v_req_g | m_req;

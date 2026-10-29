@@ -54,7 +54,7 @@ module fpga_top_linux #(
     parameter [31:0] DDR_BASE = 32'h1000_0000,     // where it starts in the PS map
     parameter DIV_ITER     = 1,                    // the 32-cycle divider: the array dividers do not fit (Step 57)
     parameter ZB_EXT       = 0,                    // no Zba/Zbb/Zbc/Zbs: nothing that boots here uses them
-    parameter BPRED        = 0,                    // no branch predictor: area, not correctness
+    parameter BPRED        = 2,                    // the block-RAM predictor, read a cycle ahead (Step 60)
     parameter MUL_2C       = 1,                    // multiplies registered both sides (Step 58)
     parameter AGU          = 1,                    // loads/stores get their own address adder (Step 58)
     parameter XLATE_2C     = 1,                    // a load/store: D-TLB lookup, registered, then its faults (Step 58)
@@ -62,6 +62,7 @@ module fpga_top_linux #(
     parameter REG_REDIRECT = 1,                    // a taken branch redirects a cycle later (Step 58)
     parameter FWD_PRE      = 1,                    // forwarding compares registered a cycle early (Step 58)
     parameter IF_PAGE      = 1,                    // fetch through a registered page translation (Step 58)
+    parameter D_PAGE       = 1,                    // a load/store in the last one's page: one cycle in EX (Step 61)
     parameter HPM_LATE     = 1,                    // hpmcounter3..7 count a cycle late (Step 58)
     parameter CACHE_BRAM   = 1,                    // 16 + 16 KiB caches in block RAM (Step 59)
     parameter I_LINES      = 512,
@@ -152,7 +153,7 @@ module fpga_top_linux #(
                .DIV_ITER(DIV_ITER), .ZB_EXT(ZB_EXT), .BPRED(BPRED),
                .MUL_2C(MUL_2C), .AGU(AGU), .XLATE_2C(XLATE_2C),
                .VALID_FLUSH(VALID_FLUSH), .REG_REDIRECT(REG_REDIRECT),
-               .FWD_PRE(FWD_PRE), .IF_PAGE(IF_PAGE), .HPM_LATE(HPM_LATE),
+               .FWD_PRE(FWD_PRE), .IF_PAGE(IF_PAGE), .D_PAGE(D_PAGE), .HPM_LATE(HPM_LATE),
                .CACHE_BRAM(CACHE_BRAM), .I_LINES(I_LINES), .D_LINES(D_LINES)) u_soc (
         .clk(clk), .rst(rst), .uart_rx_pin(uart_rx), .uart_tx_pin(uart_tx),
         .halted(halted), .exit_code(), .warm_reset(),

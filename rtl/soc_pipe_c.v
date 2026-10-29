@@ -66,11 +66,14 @@ module soc_pipe_c #(
 `ifndef BRD_IF_PAGE
 `define BRD_IF_PAGE 1
 `endif
+`ifndef BRD_D_PAGE
+`define BRD_D_PAGE 1
+`endif
     cpu_pipe_u #(.TLB_ENTRIES(TLB_ENTRIES), .BPRED(BPRED), .VLEN(VLEN), .ZICNTR(ZICNTR), .V_EXT(0),
                  .ZBA(0), .ZBB(0), .ZBC(0), .ZBS(0),
                  .DIV_ITER(`BRD_DIV_ITER), .MUL_2C(`BRD_MUL_2C), .AGU(1), .XLATE_2C(`BRD_XLATE_2C),
                  .VALID_FLUSH(1), .REG_REDIRECT(`BRD_REG_REDIRECT), .FWD_PRE(1),
-                 .IF_PAGE(`BRD_IF_PAGE), .HPM_LATE(1)) u_core (
+                 .IF_PAGE(`BRD_IF_PAGE), .D_PAGE(`BRD_D_PAGE), .HPM_LATE(1)) u_core (
 `else
     cpu_pipe_u #(.TLB_ENTRIES(TLB_ENTRIES), .BPRED(BPRED), .VLEN(VLEN), .ZICNTR(ZICNTR)) u_core (
 `endif

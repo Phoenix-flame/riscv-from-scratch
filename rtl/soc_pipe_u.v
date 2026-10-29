@@ -41,9 +41,9 @@ module soc_pipe_u #(
 `ifdef PIPE_U_BOARD
     // the Linux board's core (fpga_top_linux, Steps 57-58) in this SoC, so
     // its Sv32 / S-mode / process programs run on it (make pipe-u-board)
-    cpu_pipe_u #(.TLB_ENTRIES(TLB_ENTRIES), .BPRED(0), .VLEN(VLEN), .ZICNTR(ZICNTR), .V_EXT(0),
+    cpu_pipe_u #(.TLB_ENTRIES(TLB_ENTRIES), .BPRED(2), .VLEN(VLEN), .ZICNTR(ZICNTR), .V_EXT(0),
                  .DIV_ITER(1), .MUL_2C(1), .AGU(1), .XLATE_2C(1), .VALID_FLUSH(1),
-                 .REG_REDIRECT(1), .FWD_PRE(1), .IF_PAGE(1), .HPM_LATE(1)) u_core (
+                 .REG_REDIRECT(1), .FWD_PRE(1), .IF_PAGE(1), .D_PAGE(1), .HPM_LATE(1)) u_core (
 `else
     cpu_pipe_u #(.TLB_ENTRIES(TLB_ENTRIES), .BPRED(BPRED), .VLEN(VLEN), .ZICNTR(ZICNTR)) u_core (
 `endif

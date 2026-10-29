@@ -17,7 +17,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent.parent
 BUILD = REPO / "build" / "vtest"
-RTL = ["alu", "regfile", "immgen", "control", "csr_s", "branch_predictor", "timer", "uart_tx",
+RTL = ["alu", "regfile", "immgen", "control", "csr_s", "branch_predictor", "bpred_b", "timer", "uart_tx",
        "uart_hw", "tlb", "ptw", "zb_unit", "vec_unit", "cpu_pipe_u", "soc_pipe_u"]   # last: the SoC
 sys.path.insert(0, str(Path(__file__).parent))
 import vgen  # noqa: E402

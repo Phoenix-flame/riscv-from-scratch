@@ -286,7 +286,7 @@ tlb: sw/tlb.hex ## translated fetch + I/D TLBs + sfence.vma, vs a walk-every-acc
 	$(IV) -o $(B)/tlb_tb.vvp $(RTL_FPGA_TLB) tb/tlb_tb.v && $(VVP) $(B)/tlb_tb.vvp
 
 # ---- Step 42: the unified pipeline (RV32IMA + M/U + Sv32 + TLBs) ------
-RTL_PIPE_U = rtl/alu.v rtl/regfile.v rtl/immgen.v rtl/control.v rtl/csr_s.v rtl/branch_predictor.v \
+RTL_PIPE_U = rtl/alu.v rtl/regfile.v rtl/immgen.v rtl/control.v rtl/csr_s.v rtl/branch_predictor.v rtl/bpred_b.v \
              rtl/timer.v rtl/uart_tx.v rtl/uart_hw.v rtl/tlb.v rtl/ptw.v rtl/zb_unit.v rtl/vec_unit.v \
              rtl/cpu_pipe_u.v rtl/soc_pipe_u.v
 
@@ -317,7 +317,7 @@ pipe-u-board: sw/tlb.hex sw/at.hex sw/smmu_vm.hex sw/sv.hex sw/smode.hex ## pipe
 	$(IV) -DPIPE_U_BOARD -o $(B)/pipe_u_smode_brd.vvp $(RTL_PIPE_U) tb/pipe_u_smode_tb.v && $(VVP) $(B)/pipe_u_smode_brd.vvp
 
 # ---- Step 43: I-cache / D-cache in front of slow (DDR-like) memory -----
-RTL_PIPE_C = rtl/alu.v rtl/regfile.v rtl/immgen.v rtl/control.v rtl/csr_s.v rtl/branch_predictor.v \
+RTL_PIPE_C = rtl/alu.v rtl/regfile.v rtl/immgen.v rtl/control.v rtl/csr_s.v rtl/branch_predictor.v rtl/bpred_b.v \
              rtl/timer.v rtl/uart_tx.v rtl/uart_hw.v rtl/tlb.v rtl/ptw.v rtl/zb_unit.v rtl/vec_unit.v \
              rtl/cpu_pipe_u.v rtl/mem_slow.v rtl/icache.v rtl/dcache.v \
              rtl/mem_bridge.v rtl/soc_pipe_c.v
@@ -485,7 +485,7 @@ $(BBL)/rom.hex: sw/boot/rom_start.S sw/boot/rom_main.c sw/boot/rom_sbi.c sw/boot
 	riscv64-unknown-elf-objcopy -O binary $(BBL)/rom.elf $(BBL)/rom.bin
 	python3 sw/bin2hex.py $(BBL)/rom.bin > $@
 
-RTL_BOOT = rtl/alu.v rtl/regfile.v rtl/immgen.v rtl/control.v rtl/csr_s.v rtl/branch_predictor.v \
+RTL_BOOT = rtl/alu.v rtl/regfile.v rtl/immgen.v rtl/control.v rtl/csr_s.v rtl/branch_predictor.v rtl/bpred_b.v \
            rtl/tlb.v rtl/ptw.v rtl/zb_unit.v rtl/vec_unit.v rtl/cpu_pipe_u.v rtl/uart_tx_cfg.v \
            rtl/uart_rx.v rtl/uart16550.v rtl/clint_sifive.v rtl/plic_sifive.v rtl/icache.v \
            rtl/dcache.v rtl/line_arb.v rtl/oz/oz_burst_mem.v rtl/axi4_line_master.v rtl/soc_boot.v

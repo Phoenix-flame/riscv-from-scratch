@@ -108,7 +108,7 @@ CORES = {
     # sees the suite (body in M), once with the body in U and Sv32 on.
     "pipe_u": {
         "desc": "unified pipeline RV32IMA M/S/U+MMU+BP (cpu_pipe_u.v)",
-        "rtl": COMMON_RTL + ["csr_s", "branch_predictor", "tlb", "ptw", "zb_unit", "vec_unit", "cpu_pipe_u"],
+        "rtl": COMMON_RTL + ["csr_s", "branch_predictor", "bpred_b", "tlb", "ptw", "zb_unit", "vec_unit", "cpu_pipe_u"],
         "tb": "tb/rvtest_pu_tb.v",
         "define": None,
         "march": "rv32ima_zicsr_zifencei_zba_zbb_zbc_zbs",
@@ -120,7 +120,7 @@ CORES = {
     # pipeline's EX hold, on ideal memory and behind the caches
     "pipe_u_div": {
         "desc": "... same, with the iterative divider (DIV_ITER=1)",
-        "rtl": COMMON_RTL + ["csr_s", "branch_predictor", "tlb", "ptw", "zb_unit", "vec_unit", "cpu_pipe_u"],
+        "rtl": COMMON_RTL + ["csr_s", "branch_predictor", "bpred_b", "tlb", "ptw", "zb_unit", "vec_unit", "cpu_pipe_u"],
         "tb": "tb/rvtest_pu_tb.v",
         "define": "RVT_DIV_ITER",
         "march": "rv32ima_zicsr_zifencei_zba_zbb_zbc_zbs",
@@ -130,7 +130,7 @@ CORES = {
     },
     "pipe_u_vm": {
         "desc": "... same, test body in U with Sv32 on (identity map)",
-        "rtl": COMMON_RTL + ["csr_s", "branch_predictor", "tlb", "ptw", "zb_unit", "vec_unit", "cpu_pipe_u"],
+        "rtl": COMMON_RTL + ["csr_s", "branch_predictor", "bpred_b", "tlb", "ptw", "zb_unit", "vec_unit", "cpu_pipe_u"],
         "tb": "tb/rvtest_pu_tb.v",
         "define": None,
         "march": "rv32ima_zicsr_zifencei_zba_zbb_zbc_zbs",
@@ -143,7 +143,7 @@ CORES = {
     # (Step 49): the RAM image already holds .text at 0, and fetch reads it.
     "pipe_u_uni": {
         "desc": "... same, one memory for fetch and data (as soc_boot)",
-        "rtl": COMMON_RTL + ["csr_s", "branch_predictor", "tlb", "ptw", "zb_unit", "vec_unit", "cpu_pipe_u"],
+        "rtl": COMMON_RTL + ["csr_s", "branch_predictor", "bpred_b", "tlb", "ptw", "zb_unit", "vec_unit", "cpu_pipe_u"],
         "tb": "tb/rvtest_pu_tb.v",
         "define": "RVT_UNIFIED",
         "march": "rv32ima_zicsr_zifencei_zba_zbb_zbc_zbs",
@@ -154,7 +154,7 @@ CORES = {
     # ... and behind small I/D caches on slow memory (Step 43).
     "pipe_c": {
         "desc": "unified pipeline + 512 B I$/D$ on slow memory",
-        "rtl": COMMON_RTL + ["csr_s", "branch_predictor", "tlb", "ptw", "zb_unit", "vec_unit", "cpu_pipe_u", "icache", "dcache", "mem_slow"],
+        "rtl": COMMON_RTL + ["csr_s", "branch_predictor", "bpred_b", "tlb", "ptw", "zb_unit", "vec_unit", "cpu_pipe_u", "icache", "dcache", "mem_slow"],
         "tb": "tb/rvtest_pc_tb.v",
         "define": None,
         "march": "rv32ima_zicsr_zifencei_zba_zbb_zbc_zbs",
@@ -166,7 +166,7 @@ CORES = {
     # needs the D-cache written back and the I-cache invalidated.
     "pipe_c_uni": {
         "desc": "unified pipeline + caches, one memory behind both (as soc_boot)",
-        "rtl": COMMON_RTL + ["csr_s", "branch_predictor", "tlb", "ptw", "zb_unit", "vec_unit", "cpu_pipe_u", "icache", "dcache", "mem_slow", "line_arb"],
+        "rtl": COMMON_RTL + ["csr_s", "branch_predictor", "bpred_b", "tlb", "ptw", "zb_unit", "vec_unit", "cpu_pipe_u", "icache", "dcache", "mem_slow", "line_arb"],
         "tb": "tb/rvtest_pc_tb.v",
         "define": "RVT_UNIFIED",
         "march": "rv32ima_zicsr_zifencei_zba_zbb_zbc_zbs",
@@ -176,7 +176,7 @@ CORES = {
     },
     "pipe_c_uni_div": {
         "desc": "... caches, one memory, with the iterative divider (DIV_ITER=1)",
-        "rtl": COMMON_RTL + ["csr_s", "branch_predictor", "tlb", "ptw", "zb_unit", "vec_unit", "cpu_pipe_u", "icache", "dcache", "mem_slow", "line_arb"],
+        "rtl": COMMON_RTL + ["csr_s", "branch_predictor", "bpred_b", "tlb", "ptw", "zb_unit", "vec_unit", "cpu_pipe_u", "icache", "dcache", "mem_slow", "line_arb"],
         "tb": "tb/rvtest_pc_tb.v",
         "define": "RVT_UNIFIED,RVT_DIV_ITER",
         "march": "rv32ima_zicsr_zifencei_zba_zbb_zbc_zbs",
@@ -189,7 +189,7 @@ CORES = {
     # ... the same core on ideal memory: the EX holds without the caches' stalls
     "pipe_u_board": {
         "desc": "... the Linux board's core on ideal memory",
-        "rtl": COMMON_RTL + ["csr_s", "branch_predictor", "tlb", "ptw", "zb_unit", "vec_unit", "cpu_pipe_u"],
+        "rtl": COMMON_RTL + ["csr_s", "branch_predictor", "bpred_b", "tlb", "ptw", "zb_unit", "vec_unit", "cpu_pipe_u"],
         "tb": "tb/rvtest_pu_tb.v",
         "define": "RVT_DIV_ITER,RVT_BOARD",
         "march": "rv32ima_zicsr_zifencei",
@@ -201,7 +201,7 @@ CORES = {
     # so the board core's registered lookup, walks and page faults are used
     "pipe_u_board_vm": {
         "desc": "... the Linux board's core, body in U with Sv32 on",
-        "rtl": COMMON_RTL + ["csr_s", "branch_predictor", "tlb", "ptw", "zb_unit", "vec_unit", "cpu_pipe_u"],
+        "rtl": COMMON_RTL + ["csr_s", "branch_predictor", "bpred_b", "tlb", "ptw", "zb_unit", "vec_unit", "cpu_pipe_u"],
         "tb": "tb/rvtest_pu_tb.v",
         "define": "RVT_DIV_ITER,RVT_BOARD",
         "march": "rv32ima_zicsr_zifencei",
@@ -212,7 +212,7 @@ CORES = {
     },
     "pipe_c_board_vm": {
         "desc": "... the Linux board's core behind the caches, body in U with Sv32 on",
-        "rtl": COMMON_RTL + ["csr_s", "branch_predictor", "tlb", "ptw", "zb_unit", "vec_unit", "cpu_pipe_u", "icache", "dcache", "mem_slow"],
+        "rtl": COMMON_RTL + ["csr_s", "branch_predictor", "bpred_b", "tlb", "ptw", "zb_unit", "vec_unit", "cpu_pipe_u", "icache", "dcache", "mem_slow"],
         "tb": "tb/rvtest_pc_tb.v",
         "define": "RVT_DIV_ITER,RVT_BOARD",
         "march": "rv32ima_zicsr_zifencei",
@@ -223,7 +223,7 @@ CORES = {
     },
     "pipe_c_uni_board": {
         "desc": "... caches, one memory, the Linux board's core (DIV_ITER, MUL_2C, AGU, no Zb*, no BP)",
-        "rtl": COMMON_RTL + ["csr_s", "branch_predictor", "tlb", "ptw", "zb_unit", "vec_unit", "cpu_pipe_u", "icache", "dcache", "mem_slow", "line_arb"],
+        "rtl": COMMON_RTL + ["csr_s", "branch_predictor", "bpred_b", "tlb", "ptw", "zb_unit", "vec_unit", "cpu_pipe_u", "icache", "dcache", "mem_slow", "line_arb"],
         "tb": "tb/rvtest_pc_tb.v",
         "define": "RVT_UNIFIED,RVT_DIV_ITER,RVT_BOARD",
         "march": "rv32ima_zicsr_zifencei",
@@ -233,7 +233,7 @@ CORES = {
     },
     "pipe_c_vm": {
         "desc": "... same, test body in U with Sv32 on (identity map)",
-        "rtl": COMMON_RTL + ["csr_s", "branch_predictor", "tlb", "ptw", "zb_unit", "vec_unit", "cpu_pipe_u", "icache", "dcache", "mem_slow"],
+        "rtl": COMMON_RTL + ["csr_s", "branch_predictor", "bpred_b", "tlb", "ptw", "zb_unit", "vec_unit", "cpu_pipe_u", "icache", "dcache", "mem_slow"],
         "tb": "tb/rvtest_pc_tb.v",
         "define": None,
         "march": "rv32ima_zicsr_zifencei_zba_zbb_zbc_zbs",

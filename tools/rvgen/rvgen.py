@@ -234,6 +234,7 @@ def rtl_files(cfg):
             f.append("rtl/vec_unit.v")
         if cfg.bp:
             f.append("rtl/branch_predictor.v")
+            f.append("rtl/bpred_b.v")
         if cfg.mmu:
             f += ["rtl/tlb.v", "rtl/ptw.v"]
         f += ["rtl/icache.v", "rtl/dcache.v"] if cfg.caches else ["rtl/mem_bridge.v"]
